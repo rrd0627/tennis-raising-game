@@ -1,0 +1,6 @@
+{ "name": "tennis-raising-game", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": {
+    "serve": "npx --yes http-server -c-1 -p 8080 .",
+    "build": "npx --yes esbuild@0.24.0 js/main.js --bundle --format=iife --minify --alias:three=./vendor/three.module.min.js --outfile=dist/bundle.js && node tools/inline.js",
+    "balance": "node tools/balance.js"
+  } }
