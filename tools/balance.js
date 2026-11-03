@@ -14,15 +14,16 @@ function run(ra, rb, n = 1500) {
 }
 for (const [a, b] of [[40, 40], [45, 40], [50, 40], [55, 40], [60, 40], [30, 20], [75, 65], [70, 50]]) run(a, b);
 
-// 주인공(A1)이 항상 같은 샷을 고를 때 같은 실력끼리 승률. 어느 하나가 지나치게 높으면 안 된다.
-function runIntent(name, input, r = 40, n = 1500) {
+// 플레이 방향을 고정했을 때와 주인공(A1)이 늦게 바꿨을 때 같은 실력끼리 승률
+function runTempo(name, tempo, lead = Infinity, r = 40, n = 1500) {
   let wins = 0, errs = 0, shots = 0;
   for (let i = 0; i < n; i++) {
     const A = makeNpcTeam(rng, r, ['A1', 'A2']), B = makeNpcTeam(rng, r, ['B1', 'B2']);
     const sim = new MatchSim(A, B, { rng });
+    if (tempo) A.choices.tempo = tempo;
     while (!sim.over) {
-      sim.playGame(ev => (ev.kind === 'rally' && ev.next === 0 ? (typeof input === 'function' ? input(sim) : input) : undefined));
-      [0, 1].forEach(t => { sim.teams[t].choices = aiChoices(sim, t, rng); });
+      sim.playGame(ev => (ev.kind === 'rally' && ev.next === 0 ? { lead } : undefined));
+      sim.teams[1].choices = aiChoices(sim, 1, rng);
     }
     if (sim.winner === 0) wins++;
     const rec = sim.P[0].rec;
@@ -30,16 +31,9 @@ function runIntent(name, input, r = 40, n = 1500) {
   }
   console.log(`${name}: 승률 ${(wins / n * 100).toFixed(1)}% | 범실률 ${(errs / shots * 100).toFixed(1)}%`);
 }
-console.log('--- 직접 고른 샷 (40 vs 40)');
-const safe = { lead: Infinity };
-runIntent('자동', { shot: 'auto', dir: 'auto', ...safe });
-for (const shot of ['drive', 'slice', 'lob', 'drop']) runIntent(shot, { shot, dir: 'auto', ...safe });
-for (const dir of ['cross', 'dtl', 'center', 'angle']) runIntent(`드라이브+${dir}`, { shot: 'drive', dir, ...safe });
-const cycle = dirs => { let i = 0; return () => ({ shot: 'auto', dir: dirs[i++ % dirs.length], ...safe }); };
-runIntent('코스 번갈아 (크로스·센터)', cycle(['cross', 'center']));
-runIntent('코스 번갈아 (크로스·다운더라인·센터·앵글)', cycle(['cross', 'dtl', 'center', 'angle']));
-const netUp = sim => sim.P.filter(p => p.team === 1).some(p => p.pos === 'net');
-runIntent('상대 네트면 로브', sim => ({ shot: netUp(sim) ? 'lob' : 'auto', dir: 'auto', ...safe }));
-runIntent('상대 둘 다 뒤면 드롭', sim => ({ shot: netUp(sim) ? 'auto' : 'drop', dir: 'auto', ...safe }));
-console.log('--- 늦게 바꾼 경우 (매번 자동 샷을 치기 직전에 변경)');
-for (const lead of [0.6, 0.45, 0.3, 0.15, 0]) runIntent(`${lead}초 전`, { shot: 'auto', dir: 'auto', lead });
+console.log('--- 플레이 방향 고정 (40 vs 40, 상대는 점수에 따라 바꿈)');
+runTempo('공격적으로', 'attack');
+runTempo('평소대로', 'normal');
+runTempo('침착하게', 'safe');
+console.log('--- 늦게 바꾼 경우 (주인공이 매번 치기 직전에 변경, 평소대로)');
+for (const lead of [0.6, 0.45, 0.3, 0.15, 0]) runTempo(`${lead}초 전`, 'normal', lead);

@@ -1,13 +1,13 @@
-// 육성 루프 — 주간 스케줄, 자원, 이벤트, 메신저, 대회·랭킹·승급, 엔딩 (기획 문서 3·5·6·8·9장)
+// 육성 루프 — 1주 1행동, 피로·부상, 이벤트, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, STAT_GROUPS, GROUP_BY_ID, TECH_GROUPS, ACT, ACTIVITIES, slotType, DEFAULT_ROUTINE, PARTNERS, PARTNER,
-  OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, PRIZE, STAGE_NAME, weekInfo, COACH_TASK_LINES, COACH_SECRETS, ENDINGS, DAY_NAMES,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, TRAIN_IDS, PARTNERS, PARTNER, GOALS,
+  OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
 import { makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
-export const GROWTH = 0.8; // 전체 성장 속도 (tools/season.js 로 조정)
-const SAVE_KEY = 'tennis-raising-save-v1';
+export const GROWTH = 3.6; // 훈련 1회의 성장 속도 (tools/season.js 로 조정)
+const SAVE_KEY = 'tennis-raising-save-v2';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
 
@@ -26,14 +26,14 @@ function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt
 export function newGame(name, background = 'none') {
   const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
   const state = {
-    v: 1, seed, rs: seed, name: name || '나', week: 1, money: 1500000, salary: 3000000, living: 2300000,
-    fatigue: 15, stress: 20, confidence: 50, condition: 0,
+    v: 2, seed, rs: seed, name: name || '나', week: 1,
+    fatigue: 10, stress: 15, confidence: 50, condition: 0,
     division: '개나리', work: 50, coach: 10, club: 5,
-    stats: {}, focus: 'stroke', coachTask: 'stroke',
-    routine: [...DEFAULT_ROUTINE], locks: {}, injury: null, forcedRest: false, slump: false,
-    partners: {}, calendar: [], entries: {}, outgoing: [], inbox: [], msgSeq: 1,
+    stats: {}, faces: {}, overtime: false, injury: null, slump: false,
+    partners: {}, calendar: [], entries: {}, asked: {}, invited: [], inbox: [], msgSeq: 1,
     points: { 개나리: { national: [], local: [] }, 국화: { national: [], local: [] } }, npc: {},
     results: [], titles: { local: 0, national: 0, gukwhaLocal: 0, gukwhaNational: 0 },
+    goalIdx: 0, goalsDone: [],
     injuries: 0, highStressWeeks: 0, flags: {}, unlocks: [], secretsGot: [], choices: null,
     pendingEvents: [], weekLog: null, ending: null, yips: 0,
   };
@@ -51,9 +51,10 @@ export function newGame(name, background = 'none') {
       state.npc[div][type] = arr.sort((a, b) => b - a);
     }
   }
-  addMsg(state, 'coach', `${state.name} 님, 반가워요! 첫 달은 스트로크부터 잡아 봅시다. 주간 계획에서 활동을 칸에 넣고 '이번 주 시작'을 누르면 돼요.`);
+  rollFaces(state, rng);
+  addMsg(state, 'coach', `${state.name} 님, 반가워요! 일주일에 한 가지만 고르면 돼요. 얼굴이 보이는 훈련은 같이 해서 효과가 더 커요.`);
   addMsg(state, 'hana', '나 이번에 테니스 시작했어! 우리 같이 대회도 나가 보자 😆');
-  addMsg(state, 'system', '목표: 개나리부 전국대회 우승으로 국화가 되고, 국화부에서 우승하기. 기간은 3년(156주)입니다.');
+  addMsg(state, 'system', '최종 목표: 개나리부 전국대회 우승으로 국화가 되고, 국화부에서 우승하기. 기간은 3년(156주)입니다.');
   return state;
 }
 
@@ -66,146 +67,123 @@ export function addMsg(state, from, text, extra = {}) {
   state.inbox.push(m);
   return m;
 }
-export function unread(state) { return state.inbox.filter(m => !m.read || (m.kind === 'invite' && m.status === 'pending')).length; }
+export function unread(state) { return state.inbox.filter(m => !m.read).length; }
 
 // ── 능력치 요약 ───────────────────────────────────────────
 export function groupAvg(stats, gid) { return avg(GROUP_BY_ID[gid].stats.map(([id]) => stats[id])); }
 export function overall(stats) { return avg(ALL_STATS.map(id => stats[id])); }
 export function mentalAvg(stats) { return groupAvg(stats, 'mental'); }
+const bigIds = big => big.groups.flatMap(gid => GROUP_BY_ID[gid].stats.map(([id]) => id));
+export function bigValues(stats) { return Object.fromEntries(BIG_STATS.map(b => [b.id, avg(bigIds(b).map(id => stats[id]))])); }
 
 export function partnerStats(state, pid) {
   const def = PARTNER[pid], ps = state.partners[pid];
   return makeStats(mulberry32(hashStr(pid)), ps.level, def.bias, 5);
 }
 
-// ── 주간 계획 ─────────────────────────────────────────────
+// ── 대회 찾기 ─────────────────────────────────────────────
+export function tour(state, tid) { return state.calendar.find(t => t.id === tid); }
 export function tournamentThisWeek(state) {
-  const e = Object.entries(state.entries).find(([tid]) => { const t = tour(state, tid); return t && t.week === state.week; });
+  const e = Object.entries(state.entries).find(([tid]) => tour(state, tid)?.week === state.week);
   return e ? { t: tour(state, e[0]), entry: e[1] } : null;
 }
-export function tour(state, tid) { return state.calendar.find(t => t.id === tid); }
+export function openTournament(state) { return state.calendar.find(t => t.week === state.week) || null; }
+export function nextTournament(state) { return state.calendar.find(t => t.week > state.week) || null; }
 
-export function weekLocks(state) {
-  const locks = { ...state.locks };
-  const tw = tournamentThisWeek(state);
-  if (tw) { locks[tw.t.day * 2] = { act: 'tournament', reason: tw.t.name }; locks[tw.t.day * 2 + 1] = { act: 'tournament', reason: tw.t.name }; }
-  if (state.forcedRest) for (let i = 0; i < 14; i++) if (!locks[i]) locks[i] = { act: 'rest', reason: '강제 휴식' };
-  return locks;
-}
-
-export function allowedActs(state, slot) {
-  const type = slotType(slot);
-  return ACTIVITIES.filter(a => a.slots.includes(type)).map(a => {
-    let blocked = null;
-    if (state.injury && (a.tennis || a.id === 'gym')) blocked = '부상 중';
-    if (a.cost > 0 && state.money < a.cost) blocked = '돈 부족';
-    return { ...a, blocked };
-  });
-}
-
-// ── 주간 실행 ─────────────────────────────────────────────
-export function runWeek(state) {
-  const rng = rngOf(state);
-  const wi = weekInfo(state.week);
-  const locks = weekLocks(state);
-  const log = { week: state.week, days: DAY_NAMES.map(d => ({ day: d, items: [] })), gains: {}, money: 0, notes: [], replies: [] };
-  const startStats = { ...state.stats };
-  const moneyStart = state.money;
-  const startFat = state.fatigue, startStress = state.stress;
-  const coachKOf = gid => (gid === state.coachTask ? 1.3 : 1);
-  const condK = 1 + state.condition * 0.08;
-  const slumpK = state.slump ? 0.5 : 1;
-  const seen = {};
-  const summer = wi.w >= 14 && wi.w <= 26;
-  const rainy = wi.w >= 20 && wi.w <= 24;
-  const heat = wi.w >= 22 && wi.w <= 30;
-
-  const grow = (id, amt, K) => {
-    const v = state.stats[id];
-    const g = GROWTH * amt * K * (1 - v / 120) * (0.6 + rng() * 0.8);
-    state.stats[id] = clamp(v + g, 1, 99);
-  };
-
-  for (let i = 0; i < 14; i++) {
-    const d = Math.floor(i / 2);
-    if (i % 2 === 0 && d < 5) { state.stress += 2; state.fatigue += 2; }
-    const lk = locks[i];
-    let id = lk ? lk.act : state.routine[i];
-    if (id === 'tournament') continue;
-    let a = ACT[id];
-    if (!a) continue;
-    let note = lk ? lk.reason : '';
-    if (state.injury && (a.tennis || a.id === 'gym')) { a = ACT.rest; note = '부상으로 휴식'; }
-    if (rainy && a.tennis && (a.id === 'club' || a.id === 'rally' || a.id === 'bungae') && rng() < 0.35) { a = ACT.rest; note = '장마로 코트 취소'; }
-    if (a.cost > 0 && state.money < a.cost) { a = ACT.rest; note = '돈이 없어 쉬었음'; }
-    state.money -= a.cost;
-    seen[a.id] = (seen[a.id] || 0) + 1;
-    const boreK = Math.max(0.5, 1 - (seen[a.id] - 1) * 0.07 * (a.bore || 1));
-    const K = condK * slumpK * boreK;
-    if (a.groups) for (const [gid, amt] of Object.entries(a.groups)) for (const [sid] of GROUP_BY_ID[gid].stats) grow(sid, amt, K * coachKOf(gid));
-    if (a.stats) for (const [sid, amt] of Object.entries(a.stats)) grow(sid, amt * (state.coachTask === 'counter' && sid.startsWith('c_') ? 1.3 : 1), K);
-    if (a.focus) {
-      let gid = state.focus;
-      if (a.id === 'machine' && (gid === 'counter' || gid === 'course')) gid = 'stroke';
-      const ids = GROUP_BY_ID[gid].stats.map(s => s[0]).sort(() => rng() - 0.5).slice(0, 3);
-      for (const sid of ids) grow(sid, a.focus, K * coachKOf(gid) * (a.id === 'private_lesson' || a.id === 'dawn_lesson' ? 1 + state.coach / 300 : 1));
-    }
-    let fat = a.fatigue || 0;
-    if (heat && a.tennis && fat > 0) fat *= 1.5;
-    if (slotType(i) === 'dawn' && fat > 0) fat += 2;
-    state.fatigue += fat;
-    state.stress += a.stress || 0;
-    state.work += a.work || 0;
-    state.coach += a.coach || 0;
-    state.club += a.clubRep || 0;
-    if (a.heal && state.injury) { state.injury.weeks -= a.heal; if (state.injury.weeks <= 0) { state.injury = null; log.notes.push('부상이 나았다!'); } }
-    if (a.id === 'meditate' && state.yips > 0) { state.yips--; if (state.yips === 0) log.notes.push('서브 입스를 극복했다.'); }
-    if (a.partnerAff) {
-      const pid = bestPartner(state);
-      if (pid) { state.partners[pid].aff = clamp(state.partners[pid].aff + a.partnerAff, 0, 100); state.partners[pid].combo = clamp(state.partners[pid].combo + 1.5, 0, 100); note = `${PARTNER[pid].name}와 함께`; }
-    }
-    if (a.id === 'club') meetCheck(state, 'club', rng, log);
-    if (a.id === 'bungae') meetCheck(state, 'bungae', rng, log);
-    log.days[d].items.push({ slot: i, act: a.id, note });
+// ── 이번 주 행동 ──────────────────────────────────────────
+// 훈련 칸에 뜨는 얼굴: 그 훈련을 고르면 같이 한다
+function rollFaces(state, rng) {
+  const slots = TRAIN_IDS.filter(id => ACT[id].tennis).sort(() => rng() - 0.5);
+  state.faces = {};
+  for (const p of PARTNERS) {
+    if (!slots.length) break;
+    if (!partnerAvailable(state, p.id, state.week) && rng() < 0.35) state.faces[slots.pop()] = p.id;
   }
-  // 발신한 대회 요청 → 답장
-  for (const o of state.outgoing.filter(o => !o.done)) resolveOutgoing(state, o, rng, log);
-  state.outgoing = state.outgoing.filter(o => !o.done);
-  // 주간 기본 회복
-  state.fatigue -= 14; state.stress -= 3;
-  state.fatigue = clamp(state.fatigue, 0, 100); state.stress = clamp(state.stress, 0, 100);
-  state.work = clamp(state.work, 0, 100); state.coach = clamp(state.coach, 0, 100); state.club = clamp(state.club, 0, 100);
-  for (const id of ALL_STATS) { const g = state.stats[id] - startStats[id]; if (g > 0.05) log.gains[id] = g; }
-  log.money = state.money - moneyStart;
-  log.fatigue = state.fatigue - startFat; log.stress = state.stress - startStress;
+  if (slots.length && rng() < 0.35) state.faces[slots.pop()] = 'coach';
+}
+function actionK(state, id) {
+  const face = state.faces[id];
+  return (1 + state.condition * 0.08) * (state.slump ? 0.5 : 1) * (face === 'coach' ? 1.2 : face ? 1.25 : 1);
+}
+function isHeat(state) { const w = weekInfo(state.week).w; return w >= 22 && w <= 30; }
+function fatigueOf(state, a) { return a.fatigue * (a.tennis && a.fatigue > 0 && isHeat(state) ? 1.3 : 1); }
+function injuryChance(state) { return clamp((state.fatigue - 30) / 250, 0, 0.35) * (1 - state.stats.flex / 200); }
+
+// 버튼에 보여 줄 예상치
+export function previewAction(state, id) {
+  const a = ACT[id], K = actionK(state, id), gains = [];
+  if (a.groups) for (const big of BIG_STATS) {
+    let sum = 0;
+    for (const gid of big.groups) if (a.groups[gid]) for (const [sid] of GROUP_BY_ID[gid].stats) sum += GROWTH * a.groups[gid] * K * (1 - state.stats[sid] / 120);
+    if (sum > 0) gains.push([big.id, sum / bigIds(big).length]);
+  }
+  gains.sort((x, y) => y[1] - x[1]);
+  return { gains, injury: a.tennis ? injuryChance(state) : 0, fatigue: fatigueOf(state, a) };
+}
+
+function growGroup(state, gid, amt, K, rng) {
+  for (const [sid] of GROUP_BY_ID[gid].stats) {
+    const v = state.stats[sid];
+    state.stats[sid] = clamp(v + GROWTH * amt * K * (1 - v / 120) * (0.6 + rng() * 0.8), 1, 99);
+  }
+}
+
+export function runWeek(state, id) {
+  const rng = rngOf(state);
+  const a = ACT[id];
+  const log = { week: state.week, act: id, gains: {}, notes: [], with: null };
+  const before = bigValues(state.stats), f0 = state.fatigue, s0 = state.stress;
+  if (a.groups) for (const [gid, amt] of Object.entries(a.groups)) growGroup(state, gid, amt, actionK(state, id), rng);
+  const face = a.train ? state.faces[id] : null;
+  if (face === 'coach') { state.coach += 2; log.with = 'coach'; }
+  else if (face) {
+    const ps = state.partners[face];
+    ps.aff = clamp(ps.aff + 3, 0, 100); ps.combo = clamp(ps.combo + 2, 0, 100);
+    log.with = face;
+  }
+  if (a.tennis && rng() < injuryChance(state)) {
+    const names = ['테니스 엘보', '발목 염좌', '손목 통증', '종아리 근육 경련', '어깨 통증'];
+    state.injury = { name: names[Math.floor(rng() * names.length)], weeks: 2 + Math.floor(rng() * 3) };
+    state.injuries++;
+    state.pendingEvents.push({ id: 'injury' });
+  }
+  state.fatigue += fatigueOf(state, a) - 3;
+  state.stress += (a.stress || 0) + 4; // 4는 회사 생활
+  state.work += a.work || 0;
+  state.overtime = false;
+  if (a.tennis) { state.club += 0.25; if (rng() < 0.15) meetCheck(state, rng() < 0.5 ? 'club' : 'bungae', rng); }
+  if (id === 'rest' && state.injury) state.injury.weeks--;
+  clampStatus(state);
+  const after = bigValues(state.stats);
+  for (const b of BIG_STATS) { const g = after[b.id] - before[b.id]; if (g >= 0.05) log.gains[b.id] = g; }
+  log.fatigue = state.fatigue - f0; log.stress = state.stress - s0;
   state.weekLog = log;
   return log;
 }
-
-function bestPartner(state) {
-  const ks = PARTNERS.filter(p => state.partners[p.id].known && state.partners[p.id].div === state.division);
-  if (!ks.length) return null;
-  return ks.reduce((a, b) => (state.partners[a.id].aff >= state.partners[b.id].aff ? a : b)).id;
+function clampStatus(state) {
+  state.fatigue = clamp(state.fatigue, 0, 100); state.stress = clamp(state.stress, 0, 100);
+  state.work = clamp(state.work, 0, 100); state.coach = clamp(state.coach, 0, 100); state.club = clamp(state.club, 0, 100);
+  state.confidence = clamp(state.confidence, 0, 100);
 }
 
-function meetCheck(state, how, rng, log) {
+function meetCheck(state, how, rng) {
   for (const p of PARTNERS) {
     const ps = state.partners[p.id];
     if (ps.known) continue;
     let ok = false;
-    if (p.meet === how && how === 'club' && state.club >= 14 && rng() < 0.35) ok = true;
-    if (p.meet === how && how === 'bungae' && rng() < 0.3) ok = true;
-    if (p.meet === 'club2' && how === 'club' && state.club >= 40 && rng() < 0.2) ok = true;
+    if (p.meet === how && how === 'club' && state.club >= 14) ok = true;
+    if (p.meet === how && how === 'bungae') ok = true;
+    if (p.meet === 'club2' && how === 'club' && state.club >= 40) ok = true;
     if (ok) {
       ps.known = true; ps.aff = 15;
       addMsg(state, p.id, `안녕하세요! ${how === 'club' ? '정모' : '번개'}에서 같이 쳤던 ${p.name}이에요. ${p.line}`);
-      log.notes.push(`새 인맥: ${p.name} (${p.arch})`);
+      state.pendingEvents.push({ id: 'meet', pid: p.id });
       return;
     }
   }
 }
 
-// ── 메신저: 대회 초대 ─────────────────────────────────────
+// ── 파트너 ────────────────────────────────────────────────
 export function partnerAvailable(state, pid, week) {
   const def = PARTNER[pid], ps = state.partners[pid];
   if (!ps.known) return '모르는 사람';
@@ -215,121 +193,89 @@ export function partnerAvailable(state, pid, week) {
   return null;
 }
 export function acceptChance(state, pid, t) {
+  if (!state.results.length && pid === 'hana') return 1; // 첫 대회는 입문 동기가 함께 나가 준다
   const ps = state.partners[pid];
   const me = overall(state.stats);
-  let p = 0.28 + ps.aff / 170 + (me - ps.level) / 60 + state.club / 450;
+  let p = 0.4 + ps.aff / 170 + (me - ps.level) / 60 + state.club / 450;
   if (t.type === 'national') p += ps.level > me + 10 ? -0.08 : 0.06;
   return clamp(p, 0.05, 0.95);
 }
-export function canRegisterWeek(state, week) {
+function canRegisterWeek(state, week) {
   return !Object.keys(state.entries).some(tid => tour(state, tid)?.week === week);
 }
-export function requestPartner(state, tid, pid) {
-  const t = tour(state, tid);
-  if (!t || t.week <= state.week) return '마감된 대회입니다.';
-  if (!canRegisterWeek(state, t.week)) return '그 주에는 이미 출전하는 대회가 있습니다.';
-  const why = partnerAvailable(state, pid, t.week);
-  if (why) return why;
-  if (state.outgoing.some(o => o.tid === tid && o.pid === pid)) return '이미 연락했습니다.';
-  state.outgoing.push({ tid, pid, week: state.week });
-  addMsg(state, 'me:' + pid, `${t.name} ${state.division}부 같이 나갈래요?`, { to: pid, mine: true, read: true });
-  return null;
-}
-function resolveOutgoing(state, o, rng, log) {
-  const t = tour(state, o.tid), ps = state.partners[o.pid], def = PARTNER[o.pid];
-  o.done = true;
-  if (!canRegisterWeek(state, t.week)) return;
-  const ok = rng() < acceptChance(state, o.pid, t) && rng() > 0.12;
-  if (ok) {
-    register(state, t, o.pid);
-    addMsg(state, o.pid, `좋아요! ${t.name} 같이 나가요. 접수는 제가 할게요 🎾`, { kind: 'reply' });
-    log.replies.push(`${def.name}: ${t.name} 수락`);
-  } else {
-    const lines = ['아 그 주는 선약이 있어요 ㅠㅠ', '이번엔 다른 분이랑 나가기로 했어요. 다음에 해요!', '음… 다음에 하자. 실력 좀 더 늘면!'];
-    const line = ps.level > overall(state.stats) + 12 ? lines[2] : lines[Math.floor(rng() * 2)];
-    addMsg(state, o.pid, line, { kind: 'reply' });
-    log.replies.push(`${def.name}: 거절`);
+function register(state, t, pid) { state.entries[t.id] = { partner: pid }; }
+// 이번 주 대회에 지금 같이 나가자고 연락한다. 답은 바로 온다.
+export function askPartner(state, tid, pid) {
+  const rng = rngOf(state), t = tour(state, tid), ps = state.partners[pid];
+  state.asked[pid] = state.week;
+  if (rng() < acceptChance(state, pid, t)) {
+    register(state, t, pid);
+    addMsg(state, pid, `좋아요! ${t.name} 같이 나가요 🎾`);
+    return { ok: true };
   }
-}
-function register(state, t, pid) {
-  state.entries[t.id] = { partner: pid };
-  state.money -= t.fee;
-}
-export function answerInvite(state, msgId, answer) {
-  const m = state.inbox.find(x => x.id === msgId);
-  if (!m || m.status !== 'pending') return;
-  const t = tour(state, m.tid), ps = state.partners[m.from];
-  m.read = true;
-  if (answer === 'accept') {
-    if (!canRegisterWeek(state, t.week)) { m.status = 'expired'; addMsg(state, m.from, '아 이미 다른 대회 잡혔구나! 다음에 같이 가요.'); return '그 주에는 이미 출전하는 대회가 있습니다.'; }
-    m.status = 'accepted'; register(state, t, m.from); ps.aff = clamp(ps.aff + 3, 0, 100); ps.declines = 0;
-    addMsg(state, m.from, '오예! 접수할게요. 그날 봐요 💪', { kind: 'reply' });
-  } else if (answer === 'decline') {
-    m.status = 'declined'; ps.declines++; ps.aff = clamp(ps.aff - (ps.declines >= 2 ? 8 : 3), 0, 100);
-    addMsg(state, m.from, ps.declines >= 2 ? '…알겠어요. 바쁘신가 봐요.' : '앗 아쉽다. 다음에 같이 나가요!', { kind: 'reply' });
-  } else if (answer === 'hold') {
-    m.status = 'held';
-  }
-  return null;
+  const lines = ['아 이번 주는 선약이 있어요 ㅠㅠ', '이번엔 다른 분이랑 나가기로 했어요. 다음에 해요!', '음… 다음에 하자. 실력 좀 더 늘면!'];
+  const line = ps.level > overall(state.stats) + 12 ? lines[2] : lines[Math.floor(rng() * 2)];
+  addMsg(state, pid, line);
+  return { ok: false, line };
 }
 function genInvites(state, rng) {
-  let made = 0;
+  if (Object.keys(state.entries).some(tid => tour(state, tid)?.week >= state.week)) return;
   const upcoming = state.calendar.filter(t => t.week >= state.week + 1 && t.week <= state.week + 3);
   const recent = state.results.slice(-3).reduce((a, r) => a + (['W', 'F', 'SF'].includes(r.stage) ? 1 : 0), 0);
-  for (const t of upcoming) {
-    if (made >= 2) break;
-    if (!canRegisterWeek(state, t.week)) continue;
-    for (const p of PARTNERS) {
-      if (made >= 2) break;
-      if (partnerAvailable(state, p.id, t.week)) continue;
-      if (state.inbox.some(m => m.kind === 'invite' && m.tid === t.id && m.from === p.id)) continue;
-      const ps = state.partners[p.id];
-      const pr = 0.04 + ps.aff / 700 + state.club / 600 + recent * 0.04 + (t.type === 'national' ? -0.01 : 0);
-      if (rng() < pr) {
-        const pre = t.type === 'national' ? '전국대회' : '대회';
-        addMsg(state, p.id, `${weekInfo(t.week).label.split(' · ')[1]} ${DAY_NAMES[t.day]}요일 ${t.name}(${pre}) ${state.division}부 같이 나갈래요?`, { kind: 'invite', tid: t.id, status: 'pending' });
-        made++;
-      }
+  for (const t of upcoming) for (const p of PARTNERS) {
+    if (partnerAvailable(state, p.id, t.week)) continue;
+    const key = `${t.id}:${p.id}`;
+    if (state.invited.includes(key)) continue;
+    const ps = state.partners[p.id];
+    if (rng() < 0.4 * (0.04 + ps.aff / 700 + state.club / 600 + recent * 0.04)) {
+      state.invited.push(key);
+      state.pendingEvents.push({ id: 'invite', tid: t.id, pid: p.id });
+      return;
     }
+  }
+}
+
+// ── 목표 ──────────────────────────────────────────────────
+export function currentGoal(state) {
+  const g = GOALS[state.goalIdx];
+  return g ? { ...g, left: g.by - state.week + 1 } : null;
+}
+function goalDone(state, id) {
+  if (id === 'first') return state.results.length > 0;
+  if (id === 'local_sf') return state.results.some(r => r.type === 'local' && ['SF', 'F', 'W'].includes(r.stage));
+  if (id === 'promote' || id === 'promote_late') return state.division === '국화';
+  return state.titles.gukwhaLocal + state.titles.gukwhaNational > 0;
+}
+function checkGoals(state) {
+  for (let g = GOALS[state.goalIdx]; g; g = GOALS[state.goalIdx]) {
+    if (g.id === 'promote_late' && state.goalsDone.includes('promote')) { state.goalIdx++; continue; }
+    if (goalDone(state, g.id)) {
+      state.goalIdx++; state.goalsDone.push(g.id);
+      state.confidence += 10; state.coach += 3;
+      state.pendingEvents.push({ id: 'goal', goal: g.id });
+    } else if (state.week >= g.by) {
+      state.goalIdx++;
+      if (state.week < TOTAL_WEEKS) state.pendingEvents.push({ id: 'goalMiss', goal: g.id });
+    } else return;
   }
 }
 
 // ── 주 마감 ───────────────────────────────────────────────
 export function endWeek(state) {
   const rng = rngOf(state);
-  const wi = weekInfo(state.week);
-  const notes = [];
-  // 월급
-  if (wi.w % 4 === 0) { state.money += state.salary - state.living; notes.push(`월급 ${(state.salary / 10000).toFixed(0)}만 입금, 생활비 ${(state.living / 10000).toFixed(0)}만 차감`); }
   // 부상
-  if (state.injury) { state.injury.weeks--; if (state.injury.weeks <= 0) { state.injury = null; notes.push('부상이 나았다.'); } }
-  else if (state.fatigue >= 70) {
-    const p = 0.05 + (state.fatigue - 70) / 200 - state.stats.flex / 1000;
-    if (rng() < p) {
-      const names = ['테니스 엘보', '발목 염좌', '손목 통증', '종아리 근육 경련', '어깨 통증'];
-      state.injury = { name: names[Math.floor(rng() * names.length)], weeks: 2 + Math.floor(rng() * 4) };
-      state.injuries++;
-      state.pendingEvents.push({ id: 'injury' });
-    }
-  }
-  state.forcedRest = state.fatigue >= 90;
-  if (state.forcedRest) notes.push('피로가 한계다. 다음 주는 강제로 쉰다.');
+  if (state.injury) { state.injury.weeks--; if (state.injury.weeks <= 0) { state.injury = null; addMsg(state, 'system', '부상이 나았다. 다시 훈련할 수 있다.'); } }
   const mAvg = mentalAvg(state.stats);
   const wasSlump = state.slump;
   state.slump = state.stress > 45 + mAvg / 2;
   if (state.slump && !wasSlump) state.pendingEvents.push({ id: 'slump' });
   if (state.stress >= 85) state.highStressWeeks++;
   // 컨디션
-  let c = Math.round(gauss(rng) * 0.8 + (state.fatigue < 40 ? 0.5 : 0) + (state.stress < 30 ? 0.5 : 0) - (state.fatigue > 70 ? 1 : 0) - (state.stress > 70 ? 1 : 0));
+  const c = Math.round(gauss(rng) * 0.8 + (state.fatigue < 40 ? 0.5 : 0) + (state.stress < 30 ? 0.5 : 0) - (state.fatigue > 70 ? 1 : 0) - (state.stress > 70 ? 1 : 0));
   state.condition = clamp(c, -2, 2);
   state.confidence += (50 - state.confidence) * 0.05;
   // 파트너 성장
   for (const p of PARTNERS) state.partners[p.id].level = clamp(state.partners[p.id].level + p.growth, 1, 95);
-  // 보류한 초대 만료
-  for (const m of state.inbox) if (m.kind === 'invite' && (m.status === 'held' || m.status === 'pending')) {
-    const t = tour(state, m.tid);
-    if (t.week <= state.week || (m.status === 'held' && rng() < 0.5)) { m.status = 'expired'; state.partners[m.from].aff = clamp(state.partners[m.from].aff - 2, 0, 100); }
-  }
   // 승진 심사
   if ([26, 78, 130].includes(state.week)) state.pendingEvents.push({ id: 'promo' });
   // 코치 비기
@@ -338,26 +284,28 @@ export function endWeek(state) {
   if (state.flags.rivalMetWeek && !state.partners.arah.known && state.week >= state.flags.rivalMetWeek + 6 && state.division === '개나리') {
     state.partners.arah.known = true; state.partners.arah.aff = 20;
     addMsg(state, 'arah', `${PARTNER.arah.line} 그 팀 나왔어. 당신 경기 봤거든.`);
+    state.pendingEvents.push({ id: 'meet', pid: 'arah' });
   }
-  if (state.division === '국화' && !state.partners.yujin.known) { state.partners.yujin.known = true; state.partners.yujin.aff = 15; addMsg(state, 'yujin', '국화 된 거 축하해요. 언제 한번 같이 나가요.'); }
-  if (state.division === '국화' && !state.partners.mikyung.known && state.club >= 25) { state.partners.mikyung.known = true; state.partners.mikyung.aff = 20; addMsg(state, 'mikyung', '정모에서 봤어요. 국화부 같이 나가 볼래요?'); }
+  if (state.division === '국화' && !state.partners.yujin.known) { state.partners.yujin.known = true; state.partners.yujin.aff = 15; addMsg(state, 'yujin', '국화 된 거 축하해요. 언제 한번 같이 나가요.'); state.pendingEvents.push({ id: 'meet', pid: 'yujin' }); }
+  if (state.division === '국화' && !state.partners.mikyung.known && state.club >= 25) { state.partners.mikyung.known = true; state.partners.mikyung.aff = 20; addMsg(state, 'mikyung', '정모에서 봤어요. 국화부 같이 나가 볼래요?'); state.pendingEvents.push({ id: 'meet', pid: 'mikyung' }); }
+  checkGoals(state);
+  clampStatus(state);
 
   state.week++;
-  state.locks = {};
-  if (state.week > TOTAL_WEEKS) { state.ending = evaluateEnding(state); return notes; }
+  if (state.week > TOTAL_WEEKS) { state.ending = evaluateEnding(state); return; }
   const nwi = weekInfo(state.week);
-  // 코치 월간 과제
-  if (nwi.w % 4 === 1) {
-    const weakest = TECH_GROUPS.reduce((a, b) => (groupAvg(state.stats, a) <= groupAvg(state.stats, b) ? a : b));
-    state.coachTask = weakest;
-    addMsg(state, 'coach', `${COACH_TASK_LINES[weakest]} (이번 달 과제: ${GROUP_BY_ID[weakest].name} 훈련 효율 +30%)`);
+  if (nwi.w === 22) addMsg(state, 'system', '폭염 주의. 9주 동안 테니스 훈련의 피로가 30% 늘어난다.');
+  // 부상 중이면 잡아 둔 대회는 기권
+  const tw = tournamentThisWeek(state);
+  if (tw && state.injury) {
+    state.partners[tw.entry.partner].aff = clamp(state.partners[tw.entry.partner].aff - 3, 0, 100);
+    delete state.entries[tw.t.id];
+    state.pendingEvents.push({ id: 'withdraw', tname: tw.t.name, pid: tw.entry.partner });
   }
-  if (nwi.w === 20) addMsg(state, 'system', '장마가 시작됐다. 야외 코트 일정이 취소될 수 있다.');
-  if (nwi.w === 22) addMsg(state, 'system', '폭염 주의. 테니스 활동의 피로가 50% 늘어난다.');
+  rollFaces(state, rng);
   genInvites(state, rng);
   rollEvents(state, rng);
   save(state);
-  return notes;
 }
 
 // ── 이벤트 ────────────────────────────────────────────────
@@ -371,25 +319,33 @@ function rollEvents(state, rng) {
   if (tw && rng() < 0.04) state.pendingEvents.push({ id: 'wedding' });
   if (!state.flags.secretary && state.club >= 30 && rng() < 0.1) state.pendingEvents.push({ id: 'secretary' });
   if (state.week === 82 && !state.flags.coachMove) state.pendingEvents.push({ id: 'coachMove' });
-  if (state.flags.secretary && wi.w % 4 === 2) state.locks[10] = { act: 'club', reason: '총무 업무' };
+  if (state.flags.secretary && wi.w % 4 === 2) state.fatigue = clamp(state.fatigue + 5, 0, 100);
 }
 
 export function eventView(state, ev) {
   const P = PARTNER;
   switch (ev.id) {
-    case 'deadline': return { who: 'boss', title: '프로젝트 마감 주간', text: '팀장: "이번 주는 다들 저녁에 좀 남아 줘야겠어."', choices: [['accept', '받아들인다 (평일 저녁 모두 야근, 평판↑)'], ['refuse', '빠진다 (평판 -8)']] };
-    case 'dinner': return { who: 'boss', title: '회식 공지', text: '목요일 저녁 회식이 잡혔다.', choices: [['accept', '참석한다 (목요일 저녁 회식)'], ['refuse', '빠진다 (평판 -3)']] };
-    case 'boss': return { who: 'boss', title: '팀장님도 테니스를?', text: '팀장: "자네 테니스 친다며? 나도 주말에 좀 쳐."', choices: [['accept', '같이 랠리 하자고 한다 (평판+6, 클럽 명성+2)'], ['refuse', '정중히 넘긴다']] };
-    case 'string': return { who: 'system', title: '스트링이 끊어졌다!', text: '대회를 앞두고 연습하다 스트링이 끊어졌다.', choices: [['accept', '바로 교체한다 (3만 원)'], ['refuse', '예비 라켓으로 나간다 (대회 컨디션 -1)']] };
+    case 'deadline': return { who: 'boss', title: '프로젝트 마감 주간', text: '팀장: "이번 주는 다들 남아 줘야겠어."', choices: [['accept', '남는다 (이번 주는 야근만, 평판 +8)'], ['refuse', '빠진다 (평판 -8)']] };
+    case 'dinner': return { who: 'boss', title: '회식 공지', text: '이번 주 회식이 잡혔다.', choices: [['accept', '참석한다 (평판 +3, 피로 +5)'], ['refuse', '빠진다 (평판 -3)']] };
+    case 'boss': return { who: 'boss', title: '팀장님도 테니스를?', text: '팀장: "자네 테니스 친다며? 나도 주말에 좀 쳐."', choices: [['accept', '같이 랠리 하자고 한다 (평판 +6, 클럽 명성 +2)'], ['refuse', '정중히 넘긴다']] };
+    case 'string': return { who: 'system', title: '스트링이 끊어졌다!', text: '대회를 앞두고 연습하다 스트링이 끊어졌다.', choices: [['accept', '바로 교체한다 (스트레스 +3)'], ['refuse', '예비 라켓으로 나간다 (대회 컨디션 -1)']] };
     case 'wedding': return { who: 'system', title: '친구 결혼식', text: '이번 주 대회 날, 오랜 친구의 결혼식이 겹쳤다.', choices: [['accept', '결혼식에 간다 (대회 기권, 파트너 친밀도 -6, 스트레스 -10)'], ['refuse', '대회에 나간다 (스트레스 +6)']] };
-    case 'secretary': return { who: 'club', title: '클럽 총무 제안', text: '회장님: "총무 좀 맡아 줄 수 있어요?"', choices: [['accept', '맡는다 (클럽 명성 +10, 매달 토요일 오전 업무)'], ['refuse', '사양한다']] };
-    case 'coachMove': return { who: 'coach', title: '코치님 이직', text: '코치: "저 다른 클럽으로 옮겨요. 레슨비가 좀 오르는데… 따라올래요?"', choices: [['accept', '따라간다 (레슨비 +20%, 코치 신뢰 유지)'], ['refuse', '새 코치를 찾는다 (코치 신뢰 20으로)']] };
-    case 'promo': { const ok = state.work >= 65; return { who: 'boss', title: '승진 심사', text: ok ? '평판이 좋았다. 승진! 월급 +10%' : '이번 승진 심사는 아쉽게 떨어졌다.', choices: [['ok', '확인']] }; }
-    case 'injury': return { who: 'system', title: `부상: ${state.injury?.name || ''}`, text: `${state.injury?.weeks || 0}주 동안 테니스와 헬스를 못 한다. 물리치료를 받으면 빨리 낫는다.`, choices: [['ok', '확인']] };
-    case 'slump': return { who: 'coach', title: '슬럼프', text: '코치: "요즘 공이 안 맞죠? 스트레스가 너무 쌓였어요. 좀 쉬어요." (훈련 효율 절반)', choices: [['ok', '확인']] };
-    case 'secret': { const s = COACH_SECRETS.find(x => x.id === ev.secret); return { who: 'coach', title: `코치 비기: ${s.name}`, text: `코치: "${s.text}" (경기 중 게임 사이 선택에 '${s.name}' 추가)`, choices: [['ok', '배운다']] }; }
+    case 'secretary': return { who: 'club', title: '클럽 총무 제안', text: '회장님: "총무 좀 맡아 줄 수 있어요?"', choices: [['accept', '맡는다 (클럽 명성 +10, 매달 피로 +5)'], ['refuse', '사양한다']] };
+    case 'coachMove': return { who: 'coach', title: '코치님 이직', text: '코치: "저 다른 클럽으로 옮겨요. 좀 멀어지는데… 따라올래요?"', choices: [['accept', '따라간다 (코치 신뢰 유지, 스트레스 +5)'], ['refuse', '새 코치를 찾는다 (코치 신뢰 20으로)']] };
+    case 'promo': { const ok = state.work >= 65; return { who: 'boss', title: '승진 심사', text: ok ? '평판이 좋았다. 승진! (자신감 +5)' : '이번 승진 심사는 아쉽게 떨어졌다.', choices: [['ok', '확인']] }; }
+    case 'injury': return { who: 'system', title: `부상: ${state.injury?.name || ''}`, text: `${state.injury?.weeks || 0}주 동안 테니스 훈련과 대회를 못 한다. 쉬면 빨리 낫는다.`, choices: [['ok', '확인']] };
+    case 'slump': return { who: 'coach', title: '슬럼프', text: '코치: "요즘 공이 안 맞죠? 스트레스가 너무 쌓였어요. 좀 쉬어요." (훈련 효과 절반)', choices: [['ok', '확인']] };
+    case 'secret': { const s = COACH_SECRETS.find(x => x.id === ev.secret); return { who: 'coach', title: `코치 비기: ${s.name}`, text: `코치: "${s.text}" (경기의 세부 작전에 '${s.name}' 추가)`, choices: [['ok', '배운다']] }; }
     case 'promotion': return { who: 'system', title: '🌼 국화 승급!', text: `개나리부 전국대회 우승! 이제 ${state.name} 님은 국화입니다. 앞으로는 국화부 대회에만 나갑니다.`, choices: [['ok', '좋아!']] };
     case 'rival': return { who: 'arah', title: '라이벌 등장', text: `${P.arah.name}: "${ev.text || '다음엔 안 봐줘.'}"`, choices: [['ok', '…두고 보자']] };
+    case 'invite': {
+      const t = tour(state, ev.tid), p = P[ev.pid];
+      return { who: ev.pid, title: `${p.name}의 대회 초대`, text: `"${weekInfo(t.week).label.split(' · ')[1]} ${t.name}(${t.type === 'national' ? '전국대회' : '비전국대회'}) ${state.division}부 같이 나갈래요?"`, choices: [['accept', '같이 나간다'], ['refuse', '이번엔 거절한다']] };
+    }
+    case 'meet': return { who: ev.pid, title: '새로운 인연', text: `${P[ev.pid].name} (${P[ev.pid].arch}): "${P[ev.pid].line}"`, choices: [['ok', '반가워요']] };
+    case 'withdraw': return { who: ev.pid, title: '대회 기권', text: `부상으로 ${ev.tname}에 못 나간다고 ${P[ev.pid].name}에게 연락했다. (친밀도 -3)`, choices: [['ok', '확인']] };
+    case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
+    case 'goalMiss': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "${g.text}는 아쉬웠어요. 괜찮아요, 다음 목표로 가요."`, choices: [['ok', '다시 해 보자']] }; }
     default: return { who: 'system', title: '알림', text: '', choices: [['ok', '확인']] };
   }
 }
@@ -397,10 +353,10 @@ export function eventView(state, ev) {
 export function resolveEvent(state, ev, choice) {
   const yes = choice === 'accept';
   switch (ev.id) {
-    case 'deadline': if (yes) { for (let d = 0; d < 5; d++) state.locks[d * 2 + 1] = { act: 'overtime', reason: '마감 야근' }; state.work += 8; } else state.work -= 8; break;
-    case 'dinner': if (yes) state.locks[7] = { act: 'dinner', reason: '회식' }; else state.work -= 3; break;
+    case 'deadline': if (yes) { state.overtime = true; state.work += 8; } else state.work -= 8; break;
+    case 'dinner': if (yes) { state.work += 3; state.fatigue += 5; } else state.work -= 3; break;
     case 'boss': state.flags.boss = true; if (yes) { state.work += 6; state.club += 2; state.fatigue += 5; } break;
-    case 'string': if (yes) state.money -= 30000; else state.flags.spareRacket = true; break;
+    case 'string': if (yes) state.stress += 3; else state.flags.spareRacket = true; break;
     case 'wedding': {
       const tw = tournamentThisWeek(state);
       if (yes && tw) { state.partners[tw.entry.partner].aff -= 6; delete state.entries[tw.t.id]; state.stress -= 10; }
@@ -408,8 +364,8 @@ export function resolveEvent(state, ev, choice) {
       break;
     }
     case 'secretary': state.flags.secretary = yes; if (yes) state.club += 10; break;
-    case 'coachMove': state.flags.coachMove = true; if (yes) state.flags.lessonUp = true; else state.coach = 20; break;
-    case 'promo': if (state.work >= 65) state.salary = Math.round(state.salary * 1.1); break;
+    case 'coachMove': state.flags.coachMove = true; if (yes) state.stress += 5; else state.coach = 20; break;
+    case 'promo': if (state.work >= 65) state.confidence += 5; break;
     case 'secret': {
       const s = COACH_SECRETS.find(x => x.id === ev.secret);
       state.secretsGot.push(s.id);
@@ -417,10 +373,15 @@ export function resolveEvent(state, ev, choice) {
       for (const [k, v] of Object.entries(s.stats)) state.stats[k] = clamp(state.stats[k] + v, 1, 99);
       break;
     }
+    case 'invite': {
+      const t = tour(state, ev.tid), ps = state.partners[ev.pid];
+      if (yes) { register(state, t, ev.pid); ps.aff = clamp(ps.aff + 3, 0, 100); ps.declines = 0; addMsg(state, ev.pid, '오예! 접수할게요. 그날 봐요 💪'); }
+      else { ps.declines++; ps.aff = clamp(ps.aff - (ps.declines >= 2 ? 8 : 3), 0, 100); addMsg(state, ev.pid, ps.declines >= 2 ? '…알겠어요. 바쁘신가 봐요.' : '앗 아쉽다. 다음에 같이 나가요!'); }
+      break;
+    }
     default: break;
   }
-  state.work = clamp(state.work, 0, 100); state.club = clamp(state.club, 0, 100);
-  state.stress = clamp(state.stress, 0, 100); state.fatigue = clamp(state.fatigue, 0, 100);
+  clampStatus(state);
 }
 
 // ── 랭킹 ─────────────────────────────────────────────────
@@ -451,8 +412,12 @@ export function teamSeed(state, t, pid) {
 export function startTournament(state, tid) {
   const rng = rngOf(state);
   const t = tour(state, tid), e = state.entries[tid];
+  state.stress += 4; // 대회 주에도 회사는 간다
+  state.overtime = false;
   const seed = teamSeed(state, t, e.partner);
-  const mu = (state.division === '국화' ? 60 : 37) + (t.type === 'national' ? 3 : -3);
+  // 입문기: 1년차 상반기 상대는 약하게 시작해 26주에 걸쳐 원래 수준으로 오른다
+  const ramp = state.division === '개나리' ? clamp((26 - state.week) / 26, 0, 1) * 11 : 0;
+  const mu = (state.division === '국화' ? 60 : 37) + (t.type === 'national' ? 3 : -3) - ramp;
   const bye = seed !== null && seed <= 2;
   const mk = (rating) => {
     const club = CLUB_NAMES[Math.floor(rng() * CLUB_NAMES.length)];
@@ -496,7 +461,6 @@ export function buildTeams(state, tr) {
   const cond = state.condition - (tr.spare ? 1 : 0);
   const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond };
   if (state.yips > 0) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
-  if (state.injury) for (const k of Object.keys(me.stats)) me.stats[k] *= 0.85;
   const ps = state.partners[tr.partner];
   const partner = { id: tr.partner, name: PARTNER[tr.partner].name, stats: partnerStats(state, tr.partner), conf: 45 + ps.aff / 5, condition: 0 };
   const human = { players: [me, partner], combo: ps.combo, isHuman: true, choices: { ...(state.choices || {}) } };
@@ -543,12 +507,13 @@ function finishTournament(state, tr, stage) {
   tr.finished = true; tr.final = stage;
   const pts = POINTS[tr.type][stage];
   state.points[tr.div][tr.type].push({ week: state.week, pts, tid: tr.tid });
-  const prize = (PRIZE[tr.type] || {})[stage] || 0;
-  state.money += prize;
-  tr.prize = prize; tr.pts = pts;
+  tr.pts = pts;
   state.fatigue = clamp(state.fatigue + tr.matchIdx * 6, 0, 100);
   state.stress = clamp(state.stress + (stage === 'W' ? -15 : stage === 'G' ? 6 : 0), 0, 100);
   state.club = clamp(state.club + (stage === 'W' ? 8 : stage === 'F' ? 5 : stage === 'SF' ? 3 : 1), 0, 100);
+  // 실전 경험
+  const rng = rngOf(state);
+  for (const gid of ['mental', 'tactics', 'counter']) growGroup(state, gid, 0.25 * tr.matchIdx, 1, rng);
   const ps = state.partners[tr.partner];
   ps.combo = clamp(ps.combo + 3, 0, 100);
   state.results.push({ week: state.week, tid: tr.tid, name: tr.name, type: tr.type, div: tr.div, stage, partner: tr.partner });
@@ -561,7 +526,7 @@ function finishTournament(state, tr, stage) {
       state.division = '국화'; state.promotedWeek = state.week;
       if (ps.div === '개나리') ps.div = '국화';
       // 남은 개나리부 접수 취소
-      for (const tid of Object.keys(state.entries)) { const t = tour(state, tid); if (t.week > state.week) { delete state.entries[tid]; state.money += t.fee; } }
+      for (const tid of Object.keys(state.entries)) { const t = tour(state, tid); if (t.week > state.week) delete state.entries[tid]; }
       state.pendingEvents.push({ id: 'promotion' });
     }
   }
@@ -589,4 +554,4 @@ export function evaluateEnding(state) {
   return { ...e, partner: partnerEnd ? PARTNER[partnerEnd.id].name : null };
 }
 
-export { STAGE_NAME };
+export { STAGE_NAME, DAY_NAMES };

@@ -13,7 +13,11 @@ export function mulberry32(a) {
 export function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 밸런스 상수 (tools/balance.js 로 조정)
-export const TUNE = { errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72, lateErr: 0.25, lateWindow: 0.6 };
+export const TUNE = {
+  errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72, lateErr: 0.25, lateWindow: 0.6,
+  // 플레이 방향. err·win: 범실·위너 배율, q: 샷 품질, serve: 퍼스트 서브 성공률. 범실이 위너보다 많아 win을 크게 잡는다
+  tempo: { safe: { err: 0.92, win: 0.8, q: -8, serve: 0.03 }, normal: { err: 1, win: 1, q: 0, serve: 0 }, attack: { err: 1.12, win: 1.4, q: 8, serve: -0.03 } },
+};
 const avg = (...xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
 
 export const SHOT_NAME = {
@@ -29,8 +33,6 @@ const HEIGHT = { topspin_lob: 'high', def_lob: 'high', moon_volley: 'high', fh_s
 const WINNER_F = { smash: 2.2, swing_volley: 1.7, passing: 1.4, dropshot: 1.3, drop_volley: 1.3, fh_volley: 1.25, bh_volley: 1.1, topspin_lob: 1.0, fh_drive: 1.0, bh_drive: 0.9, return: 0.8, moon_volley: 0.7, fh_slice: 0.55, bh_slice: 0.55, chip_return: 0.5, low_volley: 0.5, half_volley: 0.35, def_lob: 0.15 };
 const RISK = { dropshot: 0.06, drop_volley: 0.05, swing_volley: 0.06, passing: 0.04, topspin_lob: 0.04, half_volley: 0.05, smash: 0.02 };
 const DIR_RISK = { dtl: 0.04, angle: 0.05, short: 0.03 };
-// 노리고 친 코스의 보상 (직접 고른 샷에만 적용)
-const AIM_WIN = { dtl: 1.3, angle: 1.5 }, AIM_PRESS = { dtl: 6, angle: 10 };
 const SPEED = { serve: 30, serve2: 20, smash: 28, fh_drive: 21, bh_drive: 19, passing: 22, return: 19, swing_volley: 24, fh_volley: 17, bh_volley: 16, low_volley: 13, half_volley: 13, fh_slice: 15, bh_slice: 15, chip_return: 14, topspin_lob: 13, def_lob: 10, moon_volley: 10, dropshot: 10, drop_volley: 9 };
 
 export const CHOICE_DEFS = [
@@ -42,11 +44,8 @@ export const CHOICE_DEFS = [
 ];
 export const DEFAULT_CHOICES = { attack: 'none', formation: 'diag', shot: 'none', tempo: 'normal', mental: 'keep' };
 export const LOCKED_SHOT_OPTS = ['serve_volley', 'lob_net', 'deep_slice'];
-// 경기 중 주인공이 직접 고르는 다음 샷. 공이 오기 전에 정해 두고, 칠 때 적용된다.
-export const INTENT_DEFS = [
-  { key: 'shot', name: '다음 샷', opts: [['auto', '자동'], ['drive', '강타'], ['slice', '슬라이스'], ['lob', '로브'], ['drop', '드롭']] },
-  { key: 'dir', name: '코스', opts: [['auto', '자동'], ['cross', '크로스'], ['dtl', '다운더라인'], ['center', '센터'], ['angle', '앵글']] },
-];
+// 경기 중 언제든 고르는 플레이 방향. 템포를 바꾸며, 내가 치기 직전에 바꾸면 범실이 는다.
+export const TEMPO_OPTS = [['attack', '공격적으로'], ['normal', '평소대로'], ['safe', '침착하게']];
 
 // ── 선수 만들기 ───────────────────────────────────────────
 export function makeStats(rng, rating, bias = {}, spread = 6) {
@@ -117,8 +116,9 @@ export class MatchSim {
     return r.value;
   }
 
-  // 게임을 샷 단위로 진행한다. 화면은 공이 날아가는 동안 next()를 미뤄 그사이 바뀐 선택을 넘겨준다.
-  // 내보내는 값: pointStart(ctx) / rally(shots, next=다음 타자 index, contactH) → next({shot, dir, lead}) / pointEnd(pt, last)
+  // 게임을 샷 단위로 진행한다. 화면은 공이 날아가는 동안 next()를 미뤄 그사이 바뀐 선택을 반영한다.
+  // 내보내는 값: pointStart(ctx) / rally(shots, next=다음 타자 index, contactH) → next({lead}) / pointEnd(pt, last)
+  // lead: 플레이 방향을 마지막으로 바꾼 뒤 칠 때까지 지난 경기 시간(초)
   *gameSteps() {
     if (this.over) return null;
     this.applyGameStartChoices();
@@ -242,8 +242,7 @@ export class MatchSim {
     pos0[si] = serverPos; pos0[ri] = recvPos;
     if (sT.choices.formation === 'iform') { const mi = this.P.indexOf(sMate); pos0[mi] = [0.3 * cx, zs * 3.0]; }
     let winner = null, endType = null, endBy = null, lastByTeam = [null, null];
-    const tempoErr = t => (t.choices.tempo === 'safe' ? 0.78 : t.choices.tempo === 'attack' ? 1.3 : 1);
-    const tempoWin = t => (t.choices.tempo === 'safe' ? 0.75 : t.choices.tempo === 'attack' ? 1.3 : 1);
+    const tempoOf = t => TUNE.tempo[t.choices.tempo] || TUNE.tempo.normal;
     const fat = p => p.F;
     const rec = (p, type, k) => { const r = p.rec.shots[type] || (p.rec.shots[type] = { n: 0, win: 0, err: 0 }); r[k]++; };
     const recCounter = (p, c, ok) => { const r = p.rec.counter[c] || (p.rec.counter[c] = { tot: 0, ok: 0 }); r.tot++; if (ok) r.ok++; };
@@ -252,7 +251,7 @@ export class MatchSim {
     // 서브
     const s = server.stats, r = receiver.stats;
     server.rec.fsTot++;
-    const pin = clamp(0.47 + s.first_serve / 230 + M(server) * 0.8 - fat(server) / 300 + (sT.choices.tempo === 'safe' ? 0.05 : sT.choices.tempo === 'attack' ? -0.05 : 0), 0.35, 0.9);
+    const pin = clamp(0.47 + s.first_serve / 230 + M(server) * 0.8 - fat(server) / 300 + tempoOf(sT).serve, 0.35, 0.9);
     let first = rng() < pin;
     let D, type = 'serve';
     const svcBounce = [-cx * 2.2, -zs * 4.6];
@@ -291,22 +290,18 @@ export class MatchSim {
     for (let k = 0; k < 40; k++) {
       const input = yield { kind: 'rally', shots, next: this.P.indexOf(H), contactH: inc.height === 'high' ? 1.6 : H.pos === 'net' ? 1.2 : 0.9 };
       const T = this.teams[H.team];
-      const choice = this.chooseShot(H, inc, input);
+      const choice = this.chooseShot(H, inc);
       const { type: st, dir } = choice;
       const S = this.statFor(H, st, inc);
       const Sc = st === 'return' || st === 'chip_return' ? S : H.stats[COURSE_STAT[dir] || 'cross'];
       const combo = (T.combo || 0) * 0.08;
       let Q = TUNE.statW * S + (1 - TUNE.statW) * Sc + gauss(rng) * TUNE.noise + M(H) * 100 + combo - fat(H) * 0.8 - inc.D * TUNE.qD;
-      if (T.choices.tempo === 'safe') Q -= 3; else if (T.choices.tempo === 'attack') Q += 4;
+      Q += tempoOf(T).q;
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
       // 칠 때가 다 돼서 바꾸면 범실이 는다 (늦을수록, 집중력이 낮을수록)
       const late = input ? clamp(1 - input.lead / TUNE.lateWindow, 0, 1) : 0;
       if (late > 0) H.rec.late++;
-      // 같은 코스를 연달아 노리면 상대가 읽는다
-      const aim = input?.dir === dir ? dir : null;
-      H.aimRun = aim && aim === H.lastAim ? H.aimRun + 1 : 0; H.lastAim = aim;
-      const read = Math.min(H.aimRun, 3);
-      let err =(TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + late * TUNE.lateErr * (1.3 - H.stats.focus / 100)) * tempoErr(T);
+      let err =(TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + late * TUNE.lateErr * (1.3 - H.stats.focus / 100)) * tempoOf(T).err;
       err = clamp(err, 0.02, 0.65);
       tire(H);
       const posNow = this.snapshot();
@@ -334,7 +329,7 @@ export class MatchSim {
       // 센터 혼선
       if (dir === 'center') {
         const os = this.opps(H);
-        const conf = clamp((62 - avg(...os.map(o => o.stats.comm)) - (Rteam.combo || 0) * 0.1) / 260, 0, 0.18) * 0.5 ** read;
+        const conf = clamp((62 - avg(...os.map(o => o.stats.comm)) - (Rteam.combo || 0) * 0.1) / 260, 0, 0.18);
         if (rng() < conf) {
           const to = [0, -this.zSign(H.team) * 7];
           H.rec.winners++; rec(H, st, 'win');
@@ -377,10 +372,10 @@ export class MatchSim {
       else Def = (R.stats.first_step + R.stats.speed + R.stats.positioning) / 3;
       if (st === 'smash') Def *= 0.72;
       if (dir === 'dtl' && R.pos === 'net') Def -= 8;
-      Def += this.gmod(R) * 50 + read * 3;
+      Def += this.gmod(R) * 50;
       const lob = st === 'topspin_lob' || st === 'def_lob' || st === 'moon_volley';
       if (lob && R.pos === 'net') { Def = Def * 0.75 + this.mate(R).stats.cover * 0.25; }
-      let w = clamp((TUNE.winBase + (Q - Def) * TUNE.winSlope) * (WINNER_F[st] || 1), 0, 0.5) * tempoWin(T) * (AIM_WIN[aim] || 1);
+      let w = clamp((TUNE.winBase + (Q - Def) * TUNE.winSlope) * (WINNER_F[st] || 1), 0, 0.5) * tempoOf(T).win;
       if (st === 'def_lob') w = Math.min(w, 0.04);
       const Ri = this.P.indexOf(R);
       const rz = this.zSign(R.team);
@@ -407,7 +402,7 @@ export class MatchSim {
       if (st === 'topspin_lob' && T.choices.shot === 'lob_net') { H.pos = 'net'; this.mate(H).pos = 'net'; }
       lastByTeam[H.team] = H; lastShooter = H;
       inc = {
-        D: clamp(Q - Def * TUNE.dCarry + 10 + (AIM_PRESS[aim] || 0), 0, 95), height: HEIGHT[st] || 'mid', type: st, from: H, counter,
+        D: clamp(Q - Def * TUNE.dCarry + 10, 0, 95), height: HEIGHT[st] || 'mid', type: st, from: H, counter,
         forceBh: T.choices.attack === 'back' && rng() < 0.6,
       };
       H = R;
@@ -464,17 +459,7 @@ export class MatchSim {
     return crossT;
   }
 
-  // 고른 샷을 지금 상황(리턴·네트·공 높이)에서 칠 수 있는 실제 샷으로 바꾼다
-  intentShot(kind, H, inc, fh, isReturn) {
-    const side = fh ? 'fh' : 'bh', net = H.pos === 'net';
-    if (kind === 'lob') return net ? 'moon_volley' : inc.D > 65 ? 'def_lob' : 'topspin_lob';
-    if (kind === 'drop') return net ? 'drop_volley' : 'dropshot';
-    if (isReturn) return kind === 'slice' ? 'chip_return' : 'return';
-    if (net) return kind === 'slice' || inc.height === 'low' ? 'low_volley' : inc.height === 'high' ? 'smash' : `${side}_volley`;
-    return kind === 'slice' ? `${side}_slice` : `${side}_drive`;
-  }
-
-  chooseShot(H, inc, input) {
+  chooseShot(H, inc) {
     const rng = this.rng, T = this.teams[H.team], ch = T.choices, s = H.stats;
     const os = this.opps(H);
     const oppNet = os.some(o => o.pos === 'net');
@@ -524,7 +509,6 @@ export class MatchSim {
       type = keys[keys.length - 1];
       for (const k of keys) { r -= w[k]; if (r <= 0) { type = k; break; } }
     }
-    if (input?.shot && input.shot !== 'auto') type = this.intentShot(input.shot, H, inc, fh, isReturn);
     // 방향
     const d = {};
     const lob = type === 'topspin_lob' || type === 'def_lob' || type === 'moon_volley';
@@ -542,7 +526,6 @@ export class MatchSim {
     const dk = Object.keys(d);
     let tot = dk.reduce((a, k) => a + d[k], 0), r = rng() * tot, dir = dk[0];
     for (const k of dk) { r -= d[k]; if (r <= 0) { dir = k; break; } }
-    if (input?.dir && input.dir !== 'auto' && !lob && type !== 'dropshot' && type !== 'drop_volley') dir = input.dir;
     return { type, dir };
   }
 

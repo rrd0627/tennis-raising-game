@@ -27,7 +27,6 @@ export const STAT_GROUP_OF = {};
 export const ALL_STATS = [];
 for (const g of STAT_GROUPS) for (const [id, name] of g.stats) { STAT_NAME[id] = name; STAT_GROUP_OF[id] = g.id; ALL_STATS.push(id); }
 export const GROUP_BY_ID = Object.fromEntries(STAT_GROUPS.map(g => [g.id, g]));
-export const TECH_GROUPS = STAT_GROUPS.filter(g => g.tech).map(g => g.id);
 
 // 대처 짝: 이 샷을 받는 쪽이 쓰는 능력치
 export const COUNTER_OF = {
@@ -41,40 +40,50 @@ export function grade(v) {
   if (v >= 40) return 'C'; if (v >= 30) return 'D'; if (v >= 20) return 'E'; return 'F';
 }
 
-// ── 활동 19종 ─────────────────────────────────────────────
-// slots: dawn(평일 새벽) eve(평일 저녁) wkd(주말 오전·오후)
-// groups/stats: 기본 성장량(base). focus: 훈련 초점 그룹에 주는 성장량.
-export const ACTIVITIES = [
-  { id: 'overtime', cat: '직장', name: '야근', icon: '야', slots: ['eve'], cost: -50000, work: 3, stress: 8, fatigue: 5, desc: '수당 +5만, 직장 평판↑' },
-  { id: 'dinner', cat: '직장', name: '회식', icon: '회', slots: ['eve'], cost: 0, work: 4, stress: -2, fatigue: 8, desc: '직장 평판↑, 피로↑' },
-  { id: 'selfdev', cat: '직장', name: '자기계발', icon: '자', slots: ['dawn', 'eve'], cost: 20000, work: 2, stress: 3, fatigue: 2, desc: '승진 점수' },
-  { id: 'group_lesson', cat: '레슨', name: '그룹 레슨', icon: '그', slots: ['eve'], cost: 25000, tennis: true, groups: { stroke: 0.4, net: 0.4, serve: 0.35, course: 0.25 }, coach: 2, fatigue: 6, desc: '기술 전반 소폭' },
-  { id: 'private_lesson', cat: '레슨', name: '개인 레슨', icon: '개', slots: ['dawn', 'eve', 'wkd'], cost: 60000, tennis: true, focus: 1.7, coach: 3, fatigue: 8, desc: '훈련 초점 기술 대폭' },
-  { id: 'dawn_lesson', cat: '레슨', name: '새벽 레슨', icon: '새', slots: ['dawn'], cost: 50000, tennis: true, focus: 1.6, coach: 3, fatigue: 10, work: -1, desc: '개인 레슨급, 피로 큼' },
-  { id: 'clinic', cat: '레슨', name: '복식 전술 클리닉', icon: '클', slots: ['wkd'], cost: 40000, tennis: true, groups: { tactics: 0.9 }, stats: { c_poach: 0.6, comm: 0.5 }, fatigue: 6, desc: '포지셔닝·포치·포메이션' },
-  { id: 'machine', cat: '연습', name: '볼머신', icon: '볼', slots: ['dawn', 'eve'], cost: 10000, tennis: true, focus: 1.1, bore: 2, fatigue: 5, desc: '훈련 초점 기술, 금방 지루함' },
-  { id: 'wall', cat: '연습', name: '벽치기', icon: '벽', slots: ['dawn', 'eve'], cost: 0, tennis: true, stats: { fh_drive: 0.7, bh_drive: 0.7, focus: 0.4 }, bore: 2, fatigue: 4, desc: '공짜. 드라이브·집중력' },
-  { id: 'rally', cat: '연습', name: '랠리 연습', icon: '랠', slots: ['eve', 'wkd'], cost: 5000, tennis: true, groups: { stroke: 0.5, net: 0.4, course: 0.35 }, partnerAff: 4, fatigue: 6, desc: '파트너 친밀도↑' },
-  { id: 'club', cat: '연습', name: '클럽 정모 게임', icon: '정', slots: ['wkd'], cost: 7500, tennis: true, groups: { tactics: 0.5, mental: 0.45, counter: 0.55, course: 0.2 }, clubRep: 3, fatigue: 10, desc: '실전 감각, 클럽 명성, 파트너 발굴' },
-  { id: 'bungae', cat: '연습', name: '번개 게임', icon: '번', slots: ['eve', 'wkd'], cost: 5000, tennis: true, groups: { counter: 0.6, mental: 0.3 }, clubRep: 1, fatigue: 8, desc: '대처 능력, 새 인맥' },
-  { id: 'gym', cat: '피지컬', name: '헬스·러닝', icon: '헬', slots: ['dawn', 'eve'], cost: 8000, stats: { stamina: 1.0, power: 0.8, speed: 0.7, first_step: 0.6 }, fatigue: 6, desc: '피지컬' },
-  { id: 'stretch', cat: '피지컬', name: '스트레칭·요가', icon: '요', slots: ['dawn', 'eve', 'wkd'], cost: 0, stats: { flex: 1.1 }, fatigue: -3, injury: -0.02, desc: '유연성, 부상 위험↓' },
-  { id: 'meditate', cat: '멘탈', name: '명상·루틴 만들기', icon: '명', slots: ['dawn', 'eve', 'wkd'], cost: 0, stats: { composure: 0.8, clutch: 0.6, focus: 0.4, resilience: 0.4 }, stress: -4, desc: '평정심·압박감 내성' },
-  { id: 'video', cat: '멘탈', name: '경기 영상 분석', icon: '영', slots: ['eve'], cost: 0, stats: { analysis: 1.0, shot_sel: 0.8, positioning: 0.3 }, stress: 2, desc: '상대 분석·샷 선택' },
-  { id: 'rest', cat: '회복', name: '휴식·수면', icon: '휴', slots: ['dawn', 'eve', 'wkd'], cost: 0, fatigue: -15, desc: '피로 -15' },
-  { id: 'family', cat: '회복', name: '가족·친구·취미', icon: '가', slots: ['eve', 'wkd'], cost: 20000, stress: -15, fatigue: -3, desc: '스트레스 -15' },
-  { id: 'physio', cat: '회복', name: '물리치료·마사지', icon: '치', slots: ['eve', 'wkd'], cost: 50000, fatigue: -20, heal: 1, desc: '피로 -20, 부상 치료' },
+// 화면에 보여 주는 큰 능력치 6개. 세부 능력치는 능력치 화면에서 본다.
+export const BIG_STATS = [
+  { id: 'stroke', name: '스트로크', groups: ['stroke', 'course'] },
+  { id: 'net', name: '네트', groups: ['net'] },
+  { id: 'serve', name: '서브·리턴', groups: ['serve'] },
+  { id: 'physical', name: '피지컬', groups: ['physical'] },
+  { id: 'tactics', name: '전술·대처', groups: ['tactics', 'counter'] },
+  { id: 'mental', name: '멘탈', groups: ['mental'] },
 ];
-export const ACT = Object.fromEntries(ACTIVITIES.map(a => [a.id, a]));
-export const ACT_CAT_COLOR = { '직장': '#8a94a6', '레슨': '#e8739e', '연습': '#4aa3df', '피지컬': '#f0a33a', '멘탈': '#9b7be0', '회복': '#5cbf8a' };
+
+// ── 1주에 행동 하나 ───────────────────────────────────────
+// groups: 능력치 계열별 성장 비율. tennis: 부상 위험이 있는 훈련. 대회 출전은 화면에서 따로 처리한다.
+export const ACTIONS = [
+  { id: 'stroke', name: '스트로크', icon: '🎾', train: true, tennis: true, groups: { stroke: 1, course: 0.7 }, fatigue: 18, stress: 1 },
+  { id: 'net', name: '네트', icon: '🏐', train: true, tennis: true, groups: { net: 1, counter: 0.5 }, fatigue: 18, stress: 1 },
+  { id: 'serve', name: '서브·리턴', icon: '💥', train: true, tennis: true, groups: { serve: 1, counter: 0.25, course: 0.25 }, fatigue: 16, stress: 1 },
+  { id: 'physical', name: '피지컬', icon: '💪', train: true, tennis: true, groups: { physical: 1 }, fatigue: 22, stress: 1 },
+  { id: 'mental', name: '멘탈', icon: '🧘', train: true, groups: { mental: 0.8, tactics: 0.7, counter: 0.2 }, fatigue: 12, stress: -2 },
+  { id: 'rest', name: '휴식', icon: '😴', fatigue: -45, stress: -8 },
+  { id: 'family', name: '가족·친구', icon: '🏠', fatigue: -10, stress: -30 },
+  { id: 'overtime', name: '야근', icon: '💼', fatigue: 10, stress: 10, work: 4 },
+];
+export const ACT = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+export const TRAIN_IDS = ACTIONS.filter(a => a.train).map(a => a.id);
 
 export const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일'];
-export function slotType(i) { const d = Math.floor(i / 2); return d >= 5 ? 'wkd' : (i % 2 === 0 ? 'dawn' : 'eve'); }
-export function slotLabel(i) { const d = Math.floor(i / 2); return d >= 5 ? (i % 2 === 0 ? '오전' : '오후') : (i % 2 === 0 ? '새벽' : '저녁'); }
 
-export const DEFAULT_ROUTINE = [
-  'rest', 'group_lesson', 'rest', 'gym', 'rest', 'group_lesson', 'stretch', 'video', 'rest', 'family',
-  'club', 'rest', 'rally', 'rest',
+// 시나리오 목표. by 주까지 달성한다.
+export const GOALS = [
+  { id: 'first', by: 13, text: '1년차 봄까지 첫 대회 나가 보기' },
+  { id: 'local_sf', by: 39, text: '1년차 가을까지 비전국대회 4강' },
+  { id: 'promote', by: 104, text: '2년차 말까지 개나리부 전국대회 우승' },
+  { id: 'promote_late', by: 156, text: '3년차 말까지 개나리부 전국대회 우승' },
+  { id: 'champion', by: 156, text: '3년차 말까지 국화부 대회 우승' },
+];
+
+// 인트로 컷 (임시 그림. 컷 그림만 나중에 바꾼다)
+export const INTRO_SCENES = [
+  { icon: '⏰', bg: '#2c3550', text: '오전 6시 50분. 오늘도 알람이 울린다.' },
+  { icon: '🚇', bg: '#46536b', text: '출근 지하철. 어제랑 같은 칸, 같은 자리.' },
+  { icon: '💻', bg: '#1b2130', text: '밤 9시. 사무실엔 모니터 불빛만 남았다.' },
+  { icon: '🌃', bg: '#22384f', text: '퇴근길. 어디선가 톡, 톡, 공 소리가 들린다.' },
+  { icon: '🎾', bg: '#2f8a5b', text: '조명 켜진 코트. 나도… 저거 해 보고 싶다.' },
+  { icon: '📱', bg: '#c9772e', text: '다음 날 점심시간. 테니스 레슨을 등록했다.' },
 ];
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────
@@ -125,9 +134,9 @@ export function buildCalendar(rng, seasons = 3) {
       const abs = s * 52 + w;
       const winter = w >= 47 || w <= 2;
       if (NATIONAL_WEEKS.includes(w)) {
-        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length], fee: 35000 });
-      } else if (!winter && rng() < 0.72) {
-        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length], fee: 30000 });
+        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
+      } else if (!winter && (rng() < 0.4 || abs === 4)) { // 첫 달에는 반드시 비전국대회가 열린다
+        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
       }
     }
   }
@@ -135,7 +144,6 @@ export function buildCalendar(rng, seasons = 3) {
 }
 
 export const POINTS = { local: { W: 100, F: 60, SF: 35, QF: 20, R16: 12, G: 5 }, national: { W: 300, F: 180, SF: 105, QF: 60, R16: 35, G: 15 } };
-export const PRIZE = { local: { W: 100000, F: 50000, SF: 20000 }, national: { W: 300000, F: 150000, SF: 60000 } };
 export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', G: '예선 탈락' };
 
 export const SEASON_NAMES = ['봄', '여름', '가을', '겨울'];
@@ -146,14 +154,6 @@ export function weekInfo(week) {
   const month = Math.ceil(w / 4);
   return { season, w, quarter: SEASON_NAMES[q], month, label: `${season}년차 ${SEASON_NAMES[q]} · ${w}주` };
 }
-
-export const COACH_TASK_LINES = {
-  stroke: '이번 달은 스트로크 잡자. 공이 너무 짧아.',
-  net: '이번 달은 네트 플레이야. 발리에서 자꾸 뜨더라.',
-  serve: '서브·리턴부터 다시 하자. 게임은 거기서 시작해.',
-  course: '이번 달은 코스. 같은 공도 어디로 보내느냐야.',
-  counter: '이번 달은 대처 훈련. 상대 공에 끌려다니지 말자.',
-};
 
 export const COACH_SECRETS = [
   { at: 30, id: 'sv', name: '서브 앤 발리', text: '서브 넣고 첫 발리까지 한 호흡이야. 해 봐.', stats: { first_serve: 3, fh_volley: 3, half_volley: 3 }, unlock: 'serve_volley' },
