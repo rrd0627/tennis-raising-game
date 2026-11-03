@@ -50,27 +50,42 @@ export const BIG_STATS = [
   { id: 'mental', name: '멘탈', groups: ['mental'] },
 ];
 
-// ── 1주에 행동 하나 ───────────────────────────────────────
-// groups: 능력치 계열별 성장 비율. tennis: 부상 위험이 있는 훈련. 대회 출전은 화면에서 따로 처리한다.
+// ── 이번 턴에 할 일 (1턴 = 2주) ───────────────────────────
+// tennis: 부상 위험이 있는 행동. unlock: 이야기가 진행되어야 나타난다. 대회 출전은 화면에서 따로 처리한다.
 export const ACTIONS = [
-  { id: 'stroke', name: '스트로크', icon: '🎾', train: true, tennis: true, groups: { stroke: 1, course: 0.7 }, fatigue: 18, stress: 1 },
-  { id: 'net', name: '네트', icon: '🏐', train: true, tennis: true, groups: { net: 1, counter: 0.5 }, fatigue: 18, stress: 1 },
-  { id: 'serve', name: '서브·리턴', icon: '💥', train: true, tennis: true, groups: { serve: 1, counter: 0.25, course: 0.25 }, fatigue: 16, stress: 1 },
-  { id: 'physical', name: '피지컬', icon: '💪', train: true, tennis: true, groups: { physical: 1 }, fatigue: 22, stress: 1 },
-  { id: 'mental', name: '멘탈', icon: '🧘', train: true, groups: { mental: 0.8, tactics: 0.7, counter: 0.2 }, fatigue: 12, stress: -2 },
+  { id: 'lesson', name: '레슨', icon: '🎾', tennis: true, fatigue: 18, stress: 1 },
+  { id: 'practice', name: '혼자 연습', icon: '🧱', tennis: true, unlock: 'practice', fatigue: 10, stress: 0 },
+  { id: 'club', name: '클럽 게임', icon: '👥', tennis: true, unlock: 'club', groups: { tactics: 0.5, counter: 0.5, mental: 0.35, course: 0.2 }, fatigue: 16, stress: -2 },
   { id: 'rest', name: '휴식', icon: '😴', fatigue: -45, stress: -8 },
   { id: 'family', name: '가족·친구', icon: '🏠', fatigue: -10, stress: -30 },
   { id: 'overtime', name: '야근', icon: '💼', fatigue: 10, stress: 10, work: 4 },
 ];
 export const ACT = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
-export const TRAIN_IDS = ACTIONS.filter(a => a.train).map(a => a.id);
+
+// 레슨 내용. 처음엔 코치가 정하고, 경기에서 약점을 깨달으면 직접 고를 수 있게 된다.
+export const LESSONS = {
+  stroke: { name: '스트로크', groups: { stroke: 1, course: 0.7 } },
+  net: { name: '네트 플레이', groups: { net: 1, counter: 0.4 } },
+  serve: { name: '서브·리턴', groups: { serve: 1, counter: 0.2, course: 0.2 } },
+  physical: { name: '체력', groups: { physical: 1 }, fatigue: 4 },
+  mental: { name: '멘탈·전술', groups: { mental: 0.8, tactics: 0.7, counter: 0.2 }, fatigue: -6, stress: -3 },
+  c_moon: { name: '문발리 대처', counter: true, groups: { counter: 0.3 }, stats: { c_moon: 2.2 } },
+  c_slice: { name: '슬라이스 대처', counter: true, groups: { counter: 0.3 }, stats: { c_slice: 2.2 } },
+  c_lob: { name: '로브 대처', counter: true, groups: { counter: 0.3 }, stats: { c_lob: 2.2 } },
+  c_drop: { name: '드롭샷 대처', counter: true, groups: { counter: 0.3 }, stats: { c_drop: 2.2 } },
+  c_angle: { name: '앵글 대처', counter: true, groups: { counter: 0.3 }, stats: { c_angle: 2.2 } },
+  c_power: { name: '강서브 대처', counter: true, groups: { counter: 0.3 }, stats: { c_power: 2.2 } },
+  c_poach: { name: '포치 대처', counter: true, groups: { counter: 0.3 }, stats: { c_poach: 2.2 } },
+  c_body: { name: '바디샷 대처', counter: true, groups: { counter: 0.3 }, stats: { c_body: 2.2 } },
+};
+export const BASIC_LESSONS = ['stroke', 'net', 'serve', 'physical', 'mental'];
 
 export const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일'];
 
 // 시나리오 목표. by 주까지 달성한다.
 export const GOALS = [
   { id: 'first', by: 13, text: '1년차 봄까지 첫 대회 나가 보기' },
-  { id: 'local_sf', by: 39, text: '1년차 가을까지 비전국대회 4강' },
+  { id: 'local_qf', by: 51, text: '1년차 안에 비전국대회 8강' },
   { id: 'promote', by: 104, text: '2년차 말까지 개나리부 전국대회 우승' },
   { id: 'promote_late', by: 156, text: '3년차 말까지 개나리부 전국대회 우승' },
   { id: 'champion', by: 156, text: '3년차 말까지 국화부 대회 우승' },
@@ -124,27 +139,30 @@ export const CLUB_NAMES = ['해솔클럽', '은빛클럽', '푸른숲TC', '달�
 // ── 대회 달력 (가상 대회명) ────────────────────────────────
 const LOCAL_NAMES = ['해솔구청장배', '은빛시장배', '푸른숲 클럽연합배', '달빛구 친선대회', '한강 새봄배', '산들 단풍배', '라온 시민배', '청솔배', '다온 우정배', '노을 생활체육대회', '은하 구민배', '바람개비 친선배'];
 const NATIONAL_NAMES = ['전국 은하수배', '전국 바람개비배', '전국 한빛배', '전국 노을배', '연맹회장배 전국대회', '전국 매화배', '전국 단풍배', '전국 해오름배', '전국 미리내배'];
-export const NATIONAL_WEEKS = [6, 11, 16, 21, 29, 33, 37, 41, 45];
+export const NATIONAL_WEEKS = [9, 19, 29, 37, 45];
 
 export function buildCalendar(rng, seasons = 3) {
   const list = [];
   for (let s = 0; s < seasons; s++) {
     let ln = 0, nn = 0;
-    for (let w = 1; w <= 52; w++) {
+    for (let w = 1; w <= 51; w += 2) { // 1턴 = 2주
       const abs = s * 52 + w;
       const winter = w >= 47 || w <= 2;
       if (NATIONAL_WEEKS.includes(w)) {
-        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
-      } else if (!winter && (rng() < 0.4 || abs === 4)) { // 첫 달에는 반드시 비전국대회가 열린다
-        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
+        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', draw: rng() < 0.35 ? 128 : 64, name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
+      } else if (!winter && abs >= 7 && (rng() < 0.3 || abs === 7)) { // 첫 대회는 4턴째(7주)의 비전국대회
+        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', draw: 32, name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
       }
     }
   }
   return list;
 }
 
-export const POINTS = { local: { W: 100, F: 60, SF: 35, QF: 20, R16: 12, G: 5 }, national: { W: 300, F: 180, SF: 105, QF: 60, R16: 35, G: 15 } };
-export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', G: '예선 탈락' };
+export const POINTS = {
+  local: { W: 100, F: 60, SF: 35, QF: 20, R16: 12, R32: 8, G: 5 },
+  national: { W: 300, F: 180, SF: 105, QF: 60, R16: 35, R32: 24, R64: 18, R128: 14, G: 10 },
+};
+export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', R32: '32강', R64: '64강', R128: '128강', G: '예선 탈락' };
 
 export const SEASON_NAMES = ['봄', '여름', '가을', '겨울'];
 export function weekInfo(week) {

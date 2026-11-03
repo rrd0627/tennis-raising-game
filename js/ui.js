@@ -1,16 +1,16 @@
 // 화면 — 타이틀, 인트로, 주간 행동, 결과, 메신저, 대회·랭킹, 능력치, 대회/경기, 엔딩
 import * as G from './game.js';
 import {
-  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, ACTIONS, BIG_STATS, INTRO_SCENES, DAY_NAMES, PARTNERS, PARTNER,
+  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, LESSONS, BIG_STATS, INTRO_SCENES, DAY_NAMES, PARTNERS, PARTNER,
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
-import { MatchSim, aiChoices, CHOICE_DEFS, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME, TUNE } from './sim.js';
+import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME } from './sim.js';
 import { MatchView, webglOK } from './match3d.js';
 import { portraitURL, PLAYER_LOOK, oppLook } from './art.js';
 
 const app = document.getElementById('app');
 let S = null;
-const V = { screen: 'title', tab: null, thread: null, sheet: null, bg: 'none', scene: 0 };
+const V = { screen: 'title', tab: null, thread: null, sheet: null, bg: 'none', scene: 0, detail: false };
 let M = null; // 경기 진행 상태
 let introTimer = null;
 
@@ -97,7 +97,7 @@ const SCREENS = {
     let moves;
     if (tw) moves = `<div class="alert tour">🏆 이번 주 <b>${esc(tw.t.name)}</b> ${S.division}부 · 파트너 ${esc(PARTNER[tw.entry.partner].name)}</div><button class="btn primary big" data-a="tourgo">대회 출전하기 ▶</button>`;
     else if (S.overtime) moves = `<div class="alert bad">💼 이번 주는 마감 야근이다. 훈련은 다음 주로.</div><button class="btn primary big" data-a="act" data-id="overtime">야근하고 한 주 넘기기 ▶</button>`;
-    else moves = `<div class="lbl">이번 주에 할 일 하나를 고르세요</div><div class="moves">${ACTIONS.filter(a => a.id !== 'overtime').map(moveCard).join('')}${tourCard()}</div>`;
+    else moves = `<div class="lbl">이번 2주 동안 무엇을 할까요?</div><div class="moves">${G.visibleActions(S).map(moveCard).join('')}${tourCard()}</div>`;
     return `
     <div class="screen week">
       <header class="topbar">
@@ -121,7 +121,7 @@ const SCREENS = {
         <button class="nb" data-a="go" data-s="tours">🏆<span>대회·랭킹</span></button>
         <button class="nb" data-a="go" data-s="stats">📊<span>능력치</span></button>
       </nav>
-      ${V.sheet === 'partner' ? pickerHTML() : ''}
+      ${V.sheet === 'partner' ? pickerHTML() : V.sheet === 'lesson' ? lessonHTML() : ''}
       ${S.pendingEvents.length ? eventHTML(S.pendingEvents[0]) : ''}
     </div>`;
   },
@@ -129,20 +129,20 @@ const SCREENS = {
   result: () => {
     const L = S.weekLog, a = ACT[L.act];
     const gains = Object.entries(L.gains).sort((x, y) => y[1] - x[1]);
+    const title = L.act === 'lesson' ? `레슨 · ${LESSONS[L.topic].name}` : L.act === 'practice' ? `혼자 연습 · ${LESSONS[L.topic].name} 복습` : a.name;
     return `
     <div class="screen result">
-      <header class="topbar"><div><div class="wk">${weekInfo(L.week).label}</div><div class="sub">이번 주 결과</div></div></header>
-      <div class="card resultcard">
-        <div class="resulthead"><span>${a.icon}</span><h3>${a.name}${a.train ? ' 훈련' : ''}</h3></div>
-        ${L.with ? `<div class="with">${portrait(L.with, 'smile', 'pt xs')}<span>${L.with === 'coach' ? '코치님과 함께 훈련했다 (효과 +20%)' : `${esc(withJosa(PARTNER[L.with].name))} 함께 훈련했다 (효과 +25%, 친밀도·콤비↑)`}</span></div>` : ''}
-        ${gains.length ? `<div class="gains">${gains.map(([id, g]) => `<span>${BIG_NAME[id]} <b>+${g.toFixed(1)}</b></span>`).join('')}</div>` : ''}
-        <div class="row2"><div><small>피로</small><b>${Math.round(S.fatigue)} (${signed(L.fatigue)})</b></div><div><small>스트레스</small><b>${Math.round(S.stress)} (${signed(L.stress)})</b></div></div>
-      </div>
-      <div class="actions"><button class="btn primary big" data-a="endweek">다음 주로 ▶</button></div>
+      <header class="topbar"><div><div class="wk">${weekInfo(L.week).label}</div><div class="sub">${a.icon} ${esc(title)}</div></div></header>
+      ${L.mile ? `<div class="mile"><small>★ 이정표</small><b>${esc(L.mile.title)}</b><p>${esc(L.mile.text)}</p></div>` : ''}
+      ${L.scene ? `<div class="scenecard">${portrait(L.scene.who, 'smile', 'pt')}<p>${esc(L.scene.text)}</p></div>` : ''}
+      ${L.with ? `<div class="with">${portrait(L.with, 'smile', 'pt xs')}<span>${esc(withJosa(PARTNER[L.with].name))} 같이 했다 (친밀도·콤비↑)</span></div>` : ''}
+      ${gains.length ? `<div class="gains">${gains.map(([id, g]) => `<span>${BIG_NAME[id]} <b>+${g.toFixed(1)}</b></span>`).join('')}</div>` : ''}
+      <div class="row2 quiet"><div><small>피로</small><b>${Math.round(S.fatigue)} (${signed(L.fatigue)})</b></div><div><small>스트레스</small><b>${Math.round(S.stress)} (${signed(L.stress)})</b></div></div>
+      <div class="actions"><button class="btn primary big" data-a="endweek">다음으로 ▶</button></div>
     </div>`;
   },
 
-  msg: () => {
+    msg: () => {
     const threads = {};
     for (const m of S.inbox) { (threads[m.from] = threads[m.from] || []).push(m); }
     if (V.thread) {
@@ -185,11 +185,11 @@ const SCREENS = {
     }
     const up = S.calendar.filter(t => t.week >= S.week && t.week < S.week + 12);
     return `<div class="screen tours">${head}
-      <p class="hint">개나리부 <b>전국대회</b>에서 우승하면 국화로 승급합니다. 대회 주에 출전을 고르면 파트너에게 연락할 수 있어요. 한 달에 한 번쯤이 적당합니다.</p>
+      <p class="hint">개나리부 <b>전국대회</b>에서 우승하면 국화로 승급합니다. 대회가 열리는 턴에 출전을 고르면 파트너에게 연락할 수 있어요. 두 달에 한 번쯤이 적당합니다.</p>
       <div class="cal">${up.map(t => {
         const e = S.entries[t.id];
         const act = e ? `<span class="ok">출전 · ${esc(PARTNER[e.partner].name)}</span>` : t.week === S.week ? `<span class="muted">이번 주</span>` : '';
-        return `<div class="trow ${t.type}"><div class="tw">${weekInfo(t.week).label.split(' · ')[1]}<small>${DAY_NAMES[t.day]}요일</small></div><div class="tn"><b>${esc(t.name)}</b><small><span class="tag ${t.type}">${t.type === 'national' ? '전국' : '비전국'}</span></small></div><div class="ta">${act}</div></div>`;
+        return `<div class="trow ${t.type}"><div class="tw">${weekInfo(t.week).label.split(' · ')[1]}<small>${DAY_NAMES[t.day]}요일</small></div><div class="tn"><b>${esc(t.name)}</b><small><span class="tag ${t.type}">${t.type === 'national' ? '전국' : '비전국'}</span> 본선 ${t.draw}강</small></div><div class="ta">${act}</div></div>`;
       }).join('')}</div>
     </div>`;
   },
@@ -219,12 +219,12 @@ const SCREENS = {
     const tr = S.tournament;
     const opps = tr.stage === 'group' ? tr.group.opps : [];
     return `<div class="screen tour">
-      <div class="tour-head ${tr.type}"><small>${tr.type === 'national' ? '전국대회' : '비전국대회'} · ${tr.div}부</small><h2>${esc(tr.name)}</h2>
+      <div class="tour-head ${tr.type}"><small>${tr.type === 'national' ? '전국대회' : '비전국대회'} · ${tr.div}부 · 본선 ${tr.draw}강</small><h2>${esc(tr.name)}</h2>
       <p>${tr.seed ? `시드 ${tr.seed}번${tr.bye ? ' · 예선 면제' : ''}` : '노시드'}</p></div>
       <div class="vs">${portrait('me', 'focus', 'pt')}${portrait(tr.partner, 'smile', 'pt')}<div><b>${esc(S.name)} · ${esc(PARTNER[tr.partner].name)}</b><small>콤비 ${Math.round(S.partners[tr.partner].combo)} · 컨디션 ${COND[S.condition + 2]}${tr.spare ? ' · 예비 라켓' : ''}</small></div></div>
-      ${opps.length ? `<div class="card"><h3>예선 조 (3팀 중 1위 본선)</h3>${opps.map(o => oppRow(o)).join('')}</div>` : `<div class="card"><p>상위 시드라 예선 없이 본선부터 시작합니다.</p></div>`}
-      <div class="card"><h3>대회 방식</h3><p>6게임 단세트 · 노애드 · 6:6 타이브레이크. 본선은 ${tr.koRounds === 4 ? '16강' : '8강'}부터.</p></div>
-      <div class="actions"><button class="btn primary big" data-a="match">첫 경기 시작 ▶</button></div>
+      ${opps.length ? `<div class="card"><h3>예선 상대 (1승이면 본선)</h3>${opps.map(o => oppRow(o)).join('')}</div>` : `<div class="card"><p>상위 시드라 예선 없이 본선부터 시작합니다.</p></div>`}
+      ${planHTML(opps[0] || G.currentOpponent(tr))}
+      <div class="actions"><button class="btn primary big" data-a="match">${opps.length ? '첫 경기 시작 ▶' : '본선 시작 ▶'}</button></div>
     </div>`;
   },
 
@@ -233,8 +233,9 @@ const SCREENS = {
     const opp = G.currentOpponent(tr);
     return `<div class="screen tour">
       <div class="tour-head ${tr.type}"><small>${esc(tr.name)} · ${tr.div}부</small><h2>${G.stageLabel(tr)}</h2></div>
-      ${tr.log.length ? `<div class="card"><h3>지금까지</h3>${tr.log.map(l => `<div class="resrow"><span>${l.stage}</span><b>${esc(l.opp)}</b><span>${l.games[0]}-${l.games[1]}</span><b class="${l.won ? 'pos' : 'neg'}">${l.won ? '승' : '패'}</b></div>`).join('')}</div>` : ''}
+      ${tr.log.length ? `<div class="card"><h3>지금까지</h3>${tr.log.map(logRow).join('')}</div>` : ''}
       <div class="card"><h3>다음 상대</h3>${oppRow(opp)}</div>
+      ${planHTML(opp)}
       <div class="actions"><button class="btn primary big" data-a="match">경기 시작 ▶</button></div>
     </div>`;
   },
@@ -249,18 +250,15 @@ const SCREENS = {
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
-        <div class="timing" id="timing"><i></i><span>${TIMING_TEXT.idle}</span></div>
-        <div class="tempo">${tempoButtons('normal')}</div>
         <div class="ctrl">
           <button class="chip sm on" data-a="spd" data-v="hl">하이라이트</button><button class="chip sm" data-a="spd" data-v="1">전체 1×</button><button class="chip sm" data-a="spd" data-v="3">전체 3×</button>
           <button class="chip sm" data-a="skipgame">게임 스킵</button><button class="chip sm" data-a="skipmatch">결과 보기</button>
         </div>
         <div class="logline" id="logline">경기 시작!</div>
       </div>
-      <div class="panel" id="panel"></div>
     </div>`,
 
-  report: () => {
+    report: () => {
     const R = V.report;
     const tr = S.tournament;
     const p = R.me, q = R.partner;
@@ -275,7 +273,7 @@ const SCREENS = {
         ${row('위너', p.winners, q.winners)}${row('범실', p.errors, q.errors)}
         ${row('포치 성공', `${p.poachWin}/${p.poachTry}`, `${q.poachWin}/${q.poachTry}`)}
         ${row('어시스트', p.assists, q.assists)}
-      </table><p>브레이크 성공 ${R.bp[0]}/${R.bp[1]}</p>${p.late ? `<p>급하게 바꾼 샷 ${p.late}회 · 그중 범실 ${p.lateErr}회</p>` : ''}</div>
+      </table><p>브레이크 성공 ${R.bp[0]}/${R.bp[1]}</p></div>
       ${counters.length ? `<div class="card"><h3>대처 성공률 (${esc(S.name)})</h3>${counters.map(([c, v]) => `<div class="cbar"><span>${STAT_NAME[c]}</span><div class="bar"><i style="width:${v.ok / v.tot * 100}%"></i></div><b>${v.ok}/${v.tot}</b></div>`).join('')}</div>` : ''}
       <div class="actions"><button class="btn primary big" data-a="aftermatch">${tr.finished ? '대회 결과 보기' : '다음 경기로'}</button></div>
     </div>`;
@@ -286,10 +284,11 @@ const SCREENS = {
     const promo = tr.final === 'W' && tr.type === 'national' && tr.div === '개나리';
     return `<div class="screen tour">
       <div class="tour-head ${tr.type}"><small>${esc(tr.name)} · ${tr.div}부</small><h2>${STAGE_NAME[tr.final]}${tr.final === 'W' ? ' 🏆' : ''}</h2></div>
-      <div class="vs">${portrait('me', tr.final === 'W' ? 'joy' : ['F', 'SF'].includes(tr.final) ? 'smile' : 'cry', 'pt')}${portrait(tr.partner, tr.final === 'W' ? 'joy' : 'smile', 'pt')}<div><b>랭킹 포인트 +${tr.pts}</b><small>피로 +${tr.matchIdx * 6}, 실전 경험으로 멘탈·전술·대처 상승</small></div></div>
+      <div class="vs">${portrait('me', tr.final === 'W' ? 'joy' : ['F', 'SF'].includes(tr.final) ? 'smile' : 'cry', 'pt')}${portrait(tr.partner, tr.final === 'W' ? 'joy' : 'smile', 'pt')}<div><b>랭킹 포인트 +${tr.pts}</b><small>피로 +${tr.fatigue}, 실전 경험으로 멘탈·전술·대처 상승</small></div></div>
+      <div class="scenecard"><p>${esc(tr.scene)}</p></div>
       ${promo ? `<div class="alert good big">🌼 국화 승급! 이제 국화부 대회에만 나갑니다.</div>` : ''}
-      <div class="card">${tr.log.map(l => `<div class="resrow"><span>${l.stage}</span><b>${esc(l.opp)}</b><small>${esc(l.arch)}</small><span>${l.games[0]}-${l.games[1]}</span><b class="${l.won ? 'pos' : 'neg'}">${l.won ? '승' : '패'}</b></div>`).join('')}</div>
-      <div class="actions"><button class="btn primary big" data-a="endweek">다음 주로 ▶</button></div>
+      <div class="card">${tr.log.map(logRow).join('')}</div>
+      <div class="actions"><button class="btn primary big" data-a="endweek">다음으로 ▶</button></div>
     </div>`;
   },
 
@@ -308,31 +307,60 @@ const SCREENS = {
 function gauge(n, v, cls) { return `<div class="gauge ${cls}"><small>${n}</small><div class="bar"><i style="width:${Math.round(v)}%"></i></div><b>${Math.round(v)}</b></div>`; }
 function statBar(n, v, hint = '') { return `<div class="stat"><span>${esc(n)}${hint ? `<small>${hint}</small>` : ''}</span><div class="bar"><i style="width:${Math.min(100, v)}%"></i></div><b>${Math.round(v)}<em class="g g-${grade(v)}">${grade(v)}</em></b></div>`; }
 function counterHint(id) { return { c_moon: '↔ 문발리', c_slice: '↔ 슬라이스·칩', c_lob: '↔ 로브', c_drop: '↔ 드롭샷', c_angle: '↔ 앵글', c_power: '↔ 강서브', c_poach: '↔ 포치', c_body: '↔ 바디샷' }[id] || ''; }
+function logRow(l) { return `<div class="resrow"><span>${l.stage}</span><b>${esc(l.opp)}</b>${l.auto ? '<small>결과만</small>' : ''}<span>${l.games[0]}-${l.games[1]}</span><b class="${l.won ? 'pos' : 'neg'}">${l.won ? '승' : '패'}</b></div>`; }
 function oppRow(o) { return `<div class="opp">${portrait(`opp:${o.seed % 997}:0`, 'focus', 'pt sm')}${portrait(`opp:${o.seed % 997}:1`, 'base', 'pt sm')}<div><b>${esc(o.names.join(' · '))}</b><small>${esc(o.club)} · ${esc(o.archName)} · ${grade(o.rating)}급</small></div></div>`; }
 
-// 주간 행동 카드
+// 행동 카드
 function moveCard(a) {
   const p = G.previewAction(S, a.id);
   const blocked = S.injury && a.tennis;
-  const face = a.train ? S.faces[a.id] : null;
-  const effect = a.train
-    ? p.gains.slice(0, 2).map(([b, g]) => `${BIG_NAME[b]} +${g.toFixed(1)}`).join(' · ')
-    : `피로 ${signed(a.fatigue)} · 스트레스 ${signed(a.stress)}`;
-  const risk = a.tennis ? `피로 +${Math.round(p.fatigue)} · 부상 ${Math.round(p.injury * 100)}%` : a.train ? `피로 +${Math.round(p.fatigue)} · 스트레스 ${signed(a.stress)}` : '';
-  return `<button class="move ${a.train ? '' : 'recover'} ${p.injury >= 0.1 ? 'risky' : ''}" data-a="act" data-id="${a.id}" ${blocked ? 'disabled' : ''}>
+  const face = S.faces[a.id];
+  const stress = p.stress ? ` · 스트레스 ${signed(p.stress)}` : '';
+  let effect;
+  if (a.id === 'lesson') effect = S.lessons.length ? `코치 추천: ${LESSONS[p.topic].name} · 직접 고르기` : `오늘은 코치님이 정해 줘요: ${LESSONS[p.topic].name}`;
+  else if (a.id === 'practice') effect = `${LESSONS[S.lastTopic].name} 복습`;
+  else if (a.id === 'club') effect = '실전 감각, 새로운 사람들';
+  else effect = `피로 ${signed(a.fatigue)}${stress}`;
+  const risk = a.tennis ? `피로 +${Math.round(p.fatigue)} · 부상 ${Math.round(p.injury * 100)}%` : '';
+  return `<button class="move ${a.tennis ? '' : 'recover'} ${p.injury >= 0.1 ? 'risky' : ''}" data-a="act" data-id="${a.id}" ${blocked ? 'disabled' : ''}>
     <span class="mhead"><b>${a.icon}</b><span>${a.name}</span>${face ? portrait(face, 'smile', 'pt xs') : ''}</span>
     <small class="ef">${blocked ? '부상 중' : effect}</small>
     ${risk && !blocked ? `<small class="rk">${risk}</small>` : ''}
-    ${face && !blocked ? `<small class="fc">${esc(withJosa(whoName(face)))} 같이 (효과↑)</small>` : ''}
+    ${face && !blocked ? `<small class="fc">${esc(withJosa(whoName(face)))} 같이 (효과 +${Math.round((G.faceBonus(S, face) - 1) * 100)}%)</small>` : ''}
   </button>`;
 }
 function tourCard() {
   const t = G.openTournament(S);
   if (!t) {
     const n = G.nextTournament(S);
-    return `<button class="move tourmove" disabled><span class="mhead"><b>🏆</b><span>대회</span></span><small class="ef">이번 주 대회 없음</small>${n ? `<small class="rk">${n.week - S.week}주 뒤 ${esc(n.name)}</small>` : ''}</button>`;
+    return `<button class="move tourmove" disabled><span class="mhead"><b>🏆</b><span>대회</span></span><small class="ef">지금 열리는 대회 없음</small>${n ? `<small class="rk">${n.week - S.week}주 뒤 ${esc(n.name)}</small>` : ''}</button>`;
   }
-  return `<button class="move tourmove on" data-a="tourpick" ${S.injury ? 'disabled' : ''}><span class="mhead"><b>🏆</b><span>대회 출전</span></span><small class="ef">${esc(t.name)} (${t.type === 'national' ? '전국' : '비전국'})</small><small class="rk">파트너에게 연락하기</small></button>`;
+  return `<button class="move tourmove on" data-a="tourpick" ${S.injury ? 'disabled' : ''}><span class="mhead"><b>🏆</b><span>대회 출전</span></span><small class="ef">${esc(t.name)} (${t.type === 'national' ? '전국' : '비전국'} · ${t.draw}강)</small><small class="rk">파트너에게 연락하기</small></button>`;
+}
+// 레슨에서 뭘 배울지 고르기 (깨달음이 생긴 뒤부터)
+function lessonHTML() {
+  const rec = G.coachTopic(S);
+  const row = (topic, label) => {
+    const p = G.previewAction(S, 'lesson', topic);
+    return `<button class="lessonrow" data-a="lessonpick" data-topic="${topic}"><b>${esc(label)}</b><small>${p.gains.slice(0, 2).map(([b, g]) => `${BIG_NAME[b]} +${g.toFixed(1)}`).join(' · ')}</small></button>`;
+  };
+  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1">
+    <h3>이번 레슨에서 뭘 배울까요?</h3>
+    ${row(rec, `코치님께 맡기기 (${LESSONS[rec].name})`)}
+    ${S.lessons.filter(t => t !== rec).map(t => row(t, LESSONS[t].name)).join('')}
+    <p class="hint">경기에서 약점을 깨달을 때마다 배울 수 있는 것이 늘어납니다.</p>
+  </div></div>`;
+}
+// 경기 전 작전
+function planHTML(opp) {
+  const ch = { ...DEFAULT_CHOICES, ...(S.choices || {}) };
+  const rec = opp ? coachRecommend(opp.arch) : null;
+  return `<div class="card plan"><h3>오늘의 작전</h3>
+    ${rec ? `<div class="coachrec">${portrait('coach', 'focus', 'pt xs')}<span>${esc(rec.line)}</span></div>` : ''}
+    <div class="tempo">${TEMPO_OPTS.map(([v, n]) => `<button class="tempobtn t-${v} ${ch.tempo === v ? 'on' : ''}" data-a="tempo" data-v="${v}">${n}${rec?.tempo === v ? '<small>코치 추천</small>' : ''}</button>`).join('')}</div>
+    <button class="chip sm morebtn ${V.detail ? 'on' : ''}" data-a="plandetail">세부 작전</button>
+    ${V.detail ? `<div class="pdetail">${CHOICE_DEFS.filter(def => def.key !== 'tempo' && def.key !== 'mental').map(def => `<div class="crow"><span>${def.name}</span><div>${def.opts.filter(([v]) => !(def.key === 'shot' && LOCKED_SHOT_OPTS.includes(v) && !S.unlocks.includes(v))).map(([v, n]) => `<button class="chip sm ${ch[def.key] === v ? 'on' : ''}" data-a="choice" data-k="${def.key}" data-v="${v}">${n}</button>`).join('')}</div></div>`).join('')}</div>` : ''}
+  </div>`;
 }
 
 function bubble(m) {
@@ -372,7 +400,14 @@ function showScene(i) {
 }
 
 // ── 입력 처리 ─────────────────────────────────────────────
-function beginTournament(tid) { G.startTournament(S, tid); G.save(S); V.sheet = null; V.screen = 'tourIntro'; }
+function beginTournament(tid) { G.startTournament(S, tid); G.save(S); V.sheet = null; V.detail = false; V.screen = 'tourIntro'; }
+// 8강 전 본선은 결과만 처리하고 다음 화면을 정한다
+function nextTourScreen() {
+  const tr = S.tournament;
+  while (G.isAutoRound(tr)) G.playAutoMatch(S, tr);
+  G.save(S);
+  V.screen = tr.finished ? 'tourResult' : 'between';
+}
 async function onClick(e) {
   const stop = e.target.closest('[data-stop]');
   const t = e.target.closest('[data-a]');
@@ -392,8 +427,10 @@ async function onClick(e) {
     case 'tab': V.tab = d.id; break;
     case 'act': {
       if (S.pendingEvents.length) return;
-      G.runWeek(S, d.id); S.phase = 'result'; G.save(S); V.screen = 'result'; break;
+      if (d.id === 'lesson' && S.lessons.length) { V.sheet = 'lesson'; break; }
+      G.runWeek(S, d.id); S.phase = 'result'; G.save(S); V.sheet = null; V.screen = 'result'; break;
     }
+    case 'lessonpick': G.runWeek(S, 'lesson', d.topic); S.phase = 'result'; G.save(S); V.sheet = null; V.screen = 'result'; break;
     case 'tourpick': V.sheet = 'partner'; break;
     case 'closesheet': V.sheet = null; break;
     case 'ask': {
@@ -407,8 +444,13 @@ async function onClick(e) {
     case 'tourgo': beginTournament(G.tournamentThisWeek(S).t.id); break;
     case 'evt': { const ev = S.pendingEvents.shift(); G.resolveEvent(S, ev, d.c); G.save(S); break; }
     case 'thread': V.thread = d.id || null; break;
-    case 'match': V.screen = 'match'; render(); runMatch(); return;
-    case 'aftermatch': V.screen = S.tournament.finished ? 'tourResult' : 'between'; break;
+    case 'match':
+      if (G.isAutoRound(S.tournament)) { nextTourScreen(); break; }
+      V.screen = 'match'; render(); runMatch(); return;
+    case 'aftermatch': nextTourScreen(); break;
+    case 'tempo': S.choices = { ...DEFAULT_CHOICES, ...(S.choices || {}), tempo: d.v, mental: d.v === 'safe' ? 'breathe' : 'keep' }; G.save(S); break;
+    case 'choice': S.choices = { ...DEFAULT_CHOICES, ...(S.choices || {}), [d.k]: d.v }; G.save(S); break;
+    case 'plandetail': V.detail = !V.detail; break;
     case 'endweek': {
       S.tournament = null; S.phase = 'plan';
       G.endWeek(S);
@@ -418,90 +460,18 @@ async function onClick(e) {
     }
     case 'spd': if (M) { M.hl = d.v === 'hl'; M.speed = M.hl ? 1 : +d.v; if (M.view) M.view.speed = M.speed; app.querySelectorAll('[data-a=spd]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v)); } return;
     case 'skipgame': if (M) { M.skipGame = true; M.view && (M.view.speed = 20); } return;
-    case 'skipmatch': if (M) { M.skipMatch = true; M.skipGame = true; M.view && (M.view.speed = 20); M.resolvePanel && M.resolvePanel(); } return;
-    case 'tempo': if (M) setTempo(d.v, !!t.closest('.panel')); return;
-    case 'choice': if (M) { M.sim.teams[0].choices[d.k] = d.v; renderPanel(); } return;
-    case 'coachrec': if (M && M.rec) { const { tempo, ...rest } = M.rec.set; Object.assign(M.sim.teams[0].choices, rest); if (tempo) setTempo(tempo, true); renderPanel(); } return;
-    case 'paneldetail': if (M) { M.detail = !M.detail; renderPanel(); } return;
-    case 'nextgame': if (M && M.resolvePanel) M.resolvePanel(); return;
-    case 'autopanel': if (M) { M.auto = !M.auto; renderPanel(); } return;
+    case 'skipmatch': if (M) { M.skipMatch = true; M.skipGame = true; M.view && (M.view.speed = 20); } return;
     default: return;
   }
   render();
 }
 
 // ── 경기 진행 ─────────────────────────────────────────────
-function tempoButtons(cur) { return TEMPO_OPTS.map(([v, n]) => `<button class="tempobtn t-${v} ${cur === v ? 'on' : ''}" data-a="tempo" data-v="${v}">${n}</button>`).join(''); }
-// 플레이 방향은 언제든 바꿀 수 있다. 내가 치기 직전에 바꾸면 엔진이 범실 확률을 올린다.
-function setTempo(v, paused) {
-  const ch = M.sim.teams[0].choices;
-  if (ch.tempo === v) return;
-  ch.tempo = v;
-  ch.mental = v === 'safe' ? 'breathe' : 'keep';
-  if (!paused && M.view) M.tempoAt = M.view.gameTime;
-  syncTempo();
-}
-function syncTempo() { const cur = M.sim.teams[0].choices.tempo; app.querySelectorAll('[data-a=tempo]').forEach(b => b.classList.toggle('on', b.dataset.v === cur)); }
-function updateTiming() {
-  const el = document.getElementById('timing');
-  if (!el || !M?.view) return;
-  const view = M.view, W = TUNE.lateWindow;
-  const left = view.eta - view.gameTime;
-  const state = !M.incoming ? 'idle' : view.eta - M.tempoAt < W ? 'rushed' : left <= W ? 'late' : 'safe';
-  if (state !== M.timing) {
-    M.timing = state;
-    el.className = `timing ${state}`;
-    el.lastElementChild.textContent = TIMING_TEXT[state];
-    view.setRingDanger(state === 'late' || state === 'rushed');
-  }
-  el.firstElementChild.style.width = M.incoming ? `${Math.max(0, left / view.etaDur) * 100}%` : '0';
-}
-// 게임 하나를 샷 단위로 진행. 공이 날아가는 동안 엔진을 멈춰 두고, 도착하면 그 순간의 선택으로 친다.
-async function playGameLive(sim) {
-  const view = M.view;
-  const it = sim.gameSteps();
-  let r = it.next(), live = false, begun = false, played = 0;
-  while (!r.done) {
-    const ev = r.value;
-    let input;
-    if (ev.kind === 'pointStart') {
-      live = !!view && !M.skipGame && (!M.hl || ev.ctx.big);
-      begun = false; played = 0;
-      if (live && ev.ctx.big && ev.ctx.label) showBig(ev.ctx.label);
-    } else if (ev.kind === 'rally') {
-      if (live) {
-        if (!begun) { await view.beginPoint(ev.shots[0]); begun = true; }
-        for (; played < ev.shots.length; played++) {
-          const later = ev.shots[played + 1];
-          M.incoming = !later && ev.next === 0;
-          await view.playShot(ev.shots[played], later || { h: ev.next, contactH: ev.contactH });
-        }
-        M.incoming = false;
-      }
-      if (ev.next === 0) input = { lead: live ? view.gameTime - M.tempoAt : Infinity };
-    } else if (live) {
-      const pt = ev.pt;
-      if (!begun) await view.beginPoint(pt.shots[0]);
-      await view.playRest(pt, played, { onCutin: cutin });
-      setLog(pt.text); hud(pt);
-      if (pt.big && ['win', 'ace', 'poach'].includes(pt.endType) && M.speed === 1 && !M.skipGame) await view.replay(pt);
-      hideBig();
-    } else if (!M.skipGame) {
-      // 하이라이트: 큰 포인트가 아니면 지금 고른 방향으로 바로 처리하고, 게임 마지막 포인트만 다시 보여 준다
-      if (view && ev.last) await view.playPoint(ev.pt, { onCutin: cutin });
-      setLog(ev.pt.text); hud(ev.pt);
-      if (!view || !ev.last) await sleep(view ? 450 : 380 / M.speed);
-    }
-    r = it.next(input);
-  }
-  return r.value;
-}
 async function runMatch() {
   const tr = S.tournament;
   const { human, npc, opp } = G.buildTeams(S, tr);
-  const sim = new MatchSim(human, npc, { startFatigue: [tr.matchIdx * 2.5 + S.fatigue / 20, tr.matchIdx * 2] });
-  M = { sim, speed: 1, hl: true, skipGame: false, skipMatch: false, auto: false, detail: false, opp, tempoAt: -Infinity, incoming: false, timing: 'idle' };
-  syncTempo();
+  const sim = new MatchSim(human, npc, { startFatigue: G.startFatigue(S, tr) });
+  M = { sim, speed: 1, hl: true, skipGame: false, skipMatch: false, opp };
   const stage = document.getElementById('stage');
   const players = [
     { charId: 'player', look: PLAYER_LOOK }, { charId: tr.partner, look: { ...PARTNER[tr.partner].color, band: '#ffffff' } },
@@ -511,7 +481,6 @@ async function runMatch() {
     try {
       M.view = new MatchView(stage, { surface: tr.type === 'national' ? 'hard' : (opp.seed % 5 === 0 ? 'clay' : 'turf'), banner: `${tr.name} ${tr.div}부` });
       await M.view.setPlayers(players);
-      M.view.onFrame = updateTiming;
     } catch (err) { console.warn(err); M.view = null; }
   }
   if (!M.view) stage.classList.add('textmode');
@@ -519,18 +488,29 @@ async function runMatch() {
   while (!sim.over) {
     sim.teams[1].choices = aiChoices(sim, 1);
     M.curServe = sim.serveTeam;
-    const g = await playGameLive(sim);
+    const g = sim.playGame();
+    for (const [pi, pt] of g.points.entries()) {
+      const lastOfGame = pi === g.points.length - 1;
+      if (M.hl && M.view && !M.skipGame && !pt.big && !lastOfGame) { setLog(pt.text); hud(pt); await sleep(450); continue; }
+      if (M.skipGame || !M.view) { if (!M.view && !M.skipGame) { setLog(pt.text); hud(pt); await sleep(380 / M.speed); } continue; }
+      if (pt.big && pt.label) showBig(pt.label);
+      await M.view.playPoint(pt, { onCutin: cutin });
+      setLog(pt.text); hud(pt);
+      if (pt.big && ['win', 'ace', 'poach'].includes(pt.endType) && M.speed === 1 && !M.skipGame) await M.view.replay(pt);
+      hideBig();
+    }
     if (M.view) M.view.speed = M.speed;
     M.skipGame = M.skipMatch;
     M.curServe = sim.serveTeam;
     hud(null);
     if (sim.over) break;
-    if (!M.skipMatch) await panel(g);
+    if (!M.skipMatch) { setLog(`게임 ${g.gameWinner === 0 ? '획득!' : '내줌'} ${sim.games[0]} - ${sim.games[1]}`); await sleep(M.hl ? 700 : 400); }
   }
   // 기록
-  S.choices = { ...sim.teams[0].choices, mental: 'keep' };
+  S.choices = { ...sim.teams[0].choices, mental: sim.teams[0].choices.tempo === 'safe' ? 'breathe' : 'keep' };
   const me = sim.P[0], pa = sim.P[1];
-  const coachLine = coachSays(sim);
+  const firstWin = sim.winner === 0 && !S.flags.firstWin;
+  const coachLine = firstWin ? '대회 첫 승이에요! 오늘 일은 오래 기억날 거예요.' : coachSays(sim);
   V.report = { won: sim.winner === 0, games: [...sim.games], oppName: opp.names.join(' · '), me: me.rec, partner: pa.rec, bp: [sim.bp.won[0], sim.bp.tot[0]], coachLine };
   G.recordMatch(S, tr, sim);
   G.save(S);
@@ -541,7 +521,6 @@ async function runMatch() {
   render();
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const TIMING_TEXT = { idle: '공이 오기 전에 플레이 방향을 정해 두세요', safe: '공이 온다! 아직 바꿀 수 있어요', late: '지금 바꾸면 범실 위험!', rushed: '급하게 바꿨어요! 범실 위험' };
 
 function hud(pt) {
   if (!M) return;
@@ -575,53 +554,22 @@ async function cutin(s) {
   c.className = 'cutin';
 }
 
-function coachRecommend(sim) {
-  const t = sim.teams[1];
-  const a = t.arch?.id;
-  const rec = {
-    moon: { line: '문발리로 띄워요. 투업으로 붙어서 스매시로 끝내요.', set: { formation: 'up', shot: 'power' } },
-    slice: { line: '슬라이스가 낮게 와요. 침착하게 버티고 로브로 흔들어요.', set: { tempo: 'safe', shot: 'moon' } },
-    power: { line: '강타형이에요. 슬라이스로 낮게 깔아요.', set: { shot: 'slice', tempo: 'normal' } },
-    net: { line: '전위가 세요. 로브로 넘기고 다운더라인으로 앨리를 찔러요.', set: { shot: 'moon', attack: 'alley' } },
-    wall: { line: '수비형이에요. 공격적으로 올라가서 먼저 끝내요.', set: { shot: 'dash', tempo: 'attack' } },
-  }[a] || { line: '하던 대로 해요.', set: {} };
-  if (sim.teams[0].found) { rec.line = `${STAT_NAME[sim.teams[0].found]}가 약해요. 약점 공략으로 가요!`; rec.set = { ...rec.set, attack: 'weak' }; }
-  return rec;
-}
-function panel(g) {
-  return new Promise(res => {
-    if (M.auto) { setTimeout(res, 300); return; }
-    M.resolvePanel = () => { M.resolvePanel = null; document.getElementById('panel')?.classList.remove('show'); res(); };
-    M.lastGame = g;
-    renderPanel();
-    document.getElementById('panel').classList.add('show');
-  });
-}
-function renderPanel() {
-  const p = document.getElementById('panel');
-  if (!p || !M) return;
-  const sim = M.sim, T = sim.teams[0], ch = T.choices;
-  M.rec = coachRecommend(sim);
-  const gw = M.lastGame ? M.lastGame.gameWinner : 0;
-  p.innerHTML = `<div class="ph"><b>게임 ${gw === 0 ? '획득!' : '내줌'}</b> <span>${sim.games[0]} - ${sim.games[1]}</span>${(sim.gameNo % 2 === 1) ? '<small>체인지오버</small>' : ''}</div>
-    ${T.found ? `<div class="found">🔍 약점 발견: 상대의 <b>${STAT_NAME[T.found]}</b>가 약하다</div>` : ''}
-    <div class="coachrec">${portrait('coach', 'focus', 'pt xs')}<span>${esc(M.rec.line)}</span></div>
-    <div class="tempo">${tempoButtons(ch.tempo)}</div>
-    ${M.detail ? `<div class="pdetail"><button class="btn sm" data-a="coachrec">코치 추천대로 맞추기</button>
-      ${CHOICE_DEFS.filter(def => def.key !== 'tempo').map(def => `<div class="crow"><span>${def.name}</span><div>${def.opts.filter(([v]) => !(def.key === 'shot' && LOCKED_SHOT_OPTS.includes(v) && !S.unlocks.includes(v))).map(([v, n]) => {
-        const dis = def.key === 'attack' && v === 'weak' && !T.found;
-        return `<button class="chip sm ${ch[def.key] === v ? 'on' : ''}" ${dis ? 'disabled' : ''} data-a="choice" data-k="${def.key}" data-v="${v}">${n}</button>`;
-      }).join('')}</div></div>`).join('')}</div>` : ''}
-    <div class="pa"><button class="chip sm ${M.detail ? 'on' : ''}" data-a="paneldetail">세부 작전</button><button class="chip sm ${M.auto ? 'on' : ''}" data-a="autopanel">자동 진행</button><button class="btn primary" data-a="nextgame">다음 게임 ▶</button></div>`;
-  hydratePortraits();
+// 상대 성향에 맞는 코치 조언. tempo는 추천하는 작전
+function coachRecommend(archId) {
+  return {
+    moon: { line: '문발리를 쓰는 팀이에요. 높은 공에 물러서지 말고 먼저 끝내요.', tempo: 'attack' },
+    slice: { line: '슬라이스가 낮게 깔려요. 침착하게 버티면 기회가 와요.', tempo: 'safe' },
+    power: { line: '강타형이에요. 맞불 놓지 말고 평소대로 낮게 깔아요.', tempo: 'normal' },
+    net: { line: '전위가 세요. 평소대로 치되 로브로 넘겨 봐요.', tempo: 'normal' },
+    wall: { line: '수비형이에요. 기다리면 끝이 없어요. 먼저 공격해요.', tempo: 'attack' },
+  }[archId] || { line: '하던 대로 해요.', tempo: 'normal' };
 }
 function coachSays(sim) {
   const me = sim.P[0].rec;
-  if (me.lateErr >= 2) return `급하게 바꾸다 실수가 ${me.lateErr}번 나왔어요. 공이 오기 전에 미리 정해 둬요.`;
   const weak = Object.entries(me.counter).filter(([, v]) => v.tot >= 3).sort((a, b) => a[1].ok / a[1].tot - b[1].ok / b[1].tot)[0];
-  if (weak && weak[1].ok / weak[1].tot < 0.6) return `${STAT_NAME[weak[0]]}가 제일 약했어요 (${weak[1].ok}/${weak[1].tot}). 네트·서브 훈련에서 같이 잡아 봐요.`;
-  if (me.df >= 4) return '더블폴트가 많았어요. 서브·리턴 훈련부터 다시 해요.';
-  if (me.errors > me.winners * 3) return '범실이 많았어요. 침착하게 가 봐요.';
+  if (weak && weak[1].ok / weak[1].tot < 0.6) return `${STAT_NAME[weak[0]]}가 제일 약했어요 (${weak[1].ok}/${weak[1].tot}). 레슨에서 같이 잡아 봐요.`;
+  if (me.df >= 4) return '더블폴트가 많았어요. 서브 레슨부터 다시 해요.';
+  if (me.errors > me.winners * 3) return '범실이 많았어요. 다음엔 침착하게 가 봐요.';
   if (sim.winner === 0) return '좋았어요! 이 감각 기억해요.';
   return '상대가 한 수 위였어요. 지금은 쌓는 시기예요.';
 }

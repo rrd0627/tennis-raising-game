@@ -14,15 +14,15 @@ function run(ra, rb, n = 1500) {
 }
 for (const [a, b] of [[40, 40], [45, 40], [50, 40], [55, 40], [60, 40], [30, 20], [75, 65], [70, 50]]) run(a, b);
 
-// 플레이 방향을 고정했을 때와 주인공(A1)이 늦게 바꿨을 때 같은 실력끼리 승률
-function runTempo(name, tempo, lead = Infinity, r = 40, n = 1500) {
+// 경기 전 작전별 같은 실력끼리 승률. 어느 하나가 지나치게 높으면 안 된다.
+function runTempo(name, tempo, r = 40, n = 1500) {
   let wins = 0, errs = 0, shots = 0;
   for (let i = 0; i < n; i++) {
     const A = makeNpcTeam(rng, r, ['A1', 'A2']), B = makeNpcTeam(rng, r, ['B1', 'B2']);
     const sim = new MatchSim(A, B, { rng });
-    if (tempo) A.choices.tempo = tempo;
+    A.choices.tempo = tempo;
     while (!sim.over) {
-      sim.playGame(ev => (ev.kind === 'rally' && ev.next === 0 ? { lead } : undefined));
+      sim.playGame();
       sim.teams[1].choices = aiChoices(sim, 1, rng);
     }
     if (sim.winner === 0) wins++;
@@ -31,9 +31,7 @@ function runTempo(name, tempo, lead = Infinity, r = 40, n = 1500) {
   }
   console.log(`${name}: 승률 ${(wins / n * 100).toFixed(1)}% | 범실률 ${(errs / shots * 100).toFixed(1)}%`);
 }
-console.log('--- 플레이 방향 고정 (40 vs 40, 상대는 점수에 따라 바꿈)');
+console.log('--- 경기 전 작전 (40 vs 40, 상대는 점수에 따라 바꿈)');
 runTempo('공격적으로', 'attack');
 runTempo('평소대로', 'normal');
 runTempo('침착하게', 'safe');
-console.log('--- 늦게 바꾼 경우 (주인공이 매번 치기 직전에 변경, 평소대로)');
-for (const lead of [0.6, 0.45, 0.3, 0.15, 0]) runTempo(`${lead}초 전`, 'normal', lead);

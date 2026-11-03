@@ -14,8 +14,8 @@ export function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 밸런스 상수 (tools/balance.js 로 조정)
 export const TUNE = {
-  errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72, lateErr: 0.25, lateWindow: 0.6,
-  // 플레이 방향. err·win: 범실·위너 배율, q: 샷 품질, serve: 퍼스트 서브 성공률. 범실이 위너보다 많아 win을 크게 잡는다
+  errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72,
+  // 작전. err·win: 범실·위너 배율, q: 샷 품질, serve: 퍼스트 서브 성공률. 범실이 위너보다 많아 win을 크게 잡는다
   tempo: { safe: { err: 0.92, win: 0.8, q: -8, serve: 0.03 }, normal: { err: 1, win: 1, q: 0, serve: 0 }, attack: { err: 1.12, win: 1.4, q: 8, serve: -0.03 } },
 };
 const avg = (...xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -44,8 +44,29 @@ export const CHOICE_DEFS = [
 ];
 export const DEFAULT_CHOICES = { attack: 'none', formation: 'diag', shot: 'none', tempo: 'normal', mental: 'keep' };
 export const LOCKED_SHOT_OPTS = ['serve_volley', 'lob_net', 'deep_slice'];
-// 경기 중 언제든 고르는 플레이 방향. 템포를 바꾸며, 내가 치기 직전에 바꾸면 범실이 는다.
+// 경기 전에 고르는 오늘의 작전. 경기가 시작되면 입력은 없다.
 export const TEMPO_OPTS = [['attack', '공격적으로'], ['normal', '평소대로'], ['safe', '침착하게']];
+
+// 샷 종류와 코스에 맞는 낙하 지점과 받는 지점. 연출용이고 승패에는 영향을 주지 않는다.
+function landingOf(st, dir, rPos, ra, rz, n, u1, u2) {
+  const lob = st === 'topspin_lob' || st === 'def_lob' || st === 'moon_volley';
+  const short = st === 'dropshot' || st === 'drop_volley';
+  const low = HEIGHT[st] === 'low';
+  const side = Math.sign(ra[0]) || 1;
+  // 좌우: 코스에 따라
+  let x = ra[0] + n * 0.9;
+  if (dir === 'center') x = side * (0.5 + Math.abs(n) * 0.5);
+  else if (dir === 'dtl') x = side * (4.2 + u1 * 0.8);
+  else if (dir === 'angle') x = side * (4.6 + u1 * 0.6);
+  x = clamp(x, -5.2, 5.2);
+  // 앞뒤: 샷 종류에 따라
+  if (lob) return { bounce: [x, rz * (9.6 + u2 * 1.6)], contact: [clamp(x * 1.05, -6, 6), rz * (11.6 + u1 * 1.0)] };
+  if (short) return { bounce: [x * 0.8, rz * (1.8 + Math.abs(n) * 0.6)], contact: [x * 0.85, rz * (3.2 + Math.abs(n) * 0.7)] };
+  if (rPos === 'net') return { bounce: null, contact: [clamp(x * 0.7, -4.8, 4.8), rz * (2.8 + u1 * 1.2)] };
+  if (dir === 'angle') return { bounce: [x, rz * (4.4 + u2 * 1.6)], contact: [clamp(x * 1.3, -6.5, 6.5), rz * (7.2 + u1 * 1.4)] };
+  if (low) return { bounce: [x, rz * (7.6 + u2 * 2.0)], contact: [clamp(x * 1.08, -6, 6), rz * (10.2 + u1 * 0.9)] };
+  return { bounce: [x, rz * (8.2 + u2 * 2.4)], contact: [clamp(x * 1.1, -6.2, 6.2), rz * (11.2 + u1 * 1.2)] };
+}
 
 // ── 선수 만들기 ───────────────────────────────────────────
 export function makeStats(rng, rating, bias = {}, spread = 6) {
@@ -68,7 +89,7 @@ export class MatchSim {
     [teamA, teamB].forEach((t, ti) => t.players.forEach((p, k) => {
       this.P.push({
         ...p, team: ti, slot: k, side: k, gauge: clamp(40 + (p.conf ?? 50) * 0.4, 20, 85), F: opts.startFatigue?.[ti] ?? 0, pos: 'base',
-        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, poachTry: 0, poachWin: 0, assists: 0, late: 0, lateErr: 0, counter: {}, shots: {} },
+        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, poachTry: 0, poachWin: 0, assists: 0, counter: {}, shots: {} },
       });
     }));
     teamA.choices = { ...DEFAULT_CHOICES, ...(teamA.choices || {}) };
@@ -108,18 +129,8 @@ export class MatchSim {
     }
   }
 
-  // 게임 하나 진행 → 포인트 로그 배열. inputFn(ev)가 있으면 rally 때 다음 타자의 입력을 돌려준다
-  playGame(inputFn) {
-    const it = this.gameSteps();
-    let r = it.next();
-    while (!r.done) r = it.next(inputFn ? inputFn(r.value) : undefined);
-    return r.value;
-  }
-
-  // 게임을 샷 단위로 진행한다. 화면은 공이 날아가는 동안 next()를 미뤄 그사이 바뀐 선택을 반영한다.
-  // 내보내는 값: pointStart(ctx) / rally(shots, next=다음 타자 index, contactH) → next({lead}) / pointEnd(pt, last)
-  // lead: 플레이 방향을 마지막으로 바꾼 뒤 칠 때까지 지난 경기 시간(초)
-  *gameSteps() {
+  // 게임 하나 진행 → 포인트 로그 배열
+  playGame() {
     if (this.over) return null;
     this.applyGameStartChoices();
     const tb = this.games[0] === 6 && this.games[1] === 6;
@@ -147,8 +158,7 @@ export class MatchSim {
       if (deciding) receiver = recvs.reduce((a, b) => (a.stats.return >= b.stats.return ? a : b));
       // 상황 판단
       const ctx = this.situation(st, tb, sTeam);
-      yield { kind: 'pointStart', ctx };
-      const pt = yield* this.pointSteps(server, receiver, court, ctx);
+      const pt = this.playPoint(server, receiver, court, ctx);
       const w = pt.winner;
       st.p[w]++;
       streak[w]++; streak[1 - w] = 0;
@@ -158,9 +168,8 @@ export class MatchSim {
       pt.games = [...this.games];
       points.push(pt);
       // 게임 종료?
-      const ended = tb ? (st.p[0] >= 7 || st.p[1] >= 7) && Math.abs(st.p[0] - st.p[1]) >= 2 : st.p[0] === 4 || st.p[1] === 4;
-      yield { kind: 'pointEnd', pt, last: ended };
-      if (ended) break;
+      if (!tb && (st.p[0] === 4 || st.p[1] === 4)) break;
+      if (tb && (st.p[0] >= 7 || st.p[1] >= 7) && Math.abs(st.p[0] - st.p[1]) >= 2) break;
     }
     const gw = st.p[0] > st.p[1] ? 0 : 1;
     this.games[gw]++;
@@ -220,7 +229,7 @@ export class MatchSim {
   }
 
   // ── 포인트 ─────────────────────────────────────────────
-  *pointSteps(server, receiver, court, ctx) {
+  playPoint(server, receiver, court, ctx) {
     const rng = this.rng;
     const sT = this.teams[server.team], rT = this.teams[receiver.team];
     const sMate = this.mate(server), rMate = this.mate(receiver);
@@ -288,7 +297,6 @@ export class MatchSim {
     let H = receiver, inc = { D, height: 'mid', type, from: server, forceBh: false };
     let lastShooter = server;
     for (let k = 0; k < 40; k++) {
-      const input = yield { kind: 'rally', shots, next: this.P.indexOf(H), contactH: inc.height === 'high' ? 1.6 : H.pos === 'net' ? 1.2 : 0.9 };
       const T = this.teams[H.team];
       const choice = this.chooseShot(H, inc);
       const { type: st, dir } = choice;
@@ -298,10 +306,7 @@ export class MatchSim {
       let Q = TUNE.statW * S + (1 - TUNE.statW) * Sc + gauss(rng) * TUNE.noise + M(H) * 100 + combo - fat(H) * 0.8 - inc.D * TUNE.qD;
       Q += tempoOf(T).q;
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
-      // 칠 때가 다 돼서 바꾸면 범실이 는다 (늦을수록, 집중력이 낮을수록)
-      const late = input ? clamp(1 - input.lead / TUNE.lateWindow, 0, 1) : 0;
-      if (late > 0) H.rec.late++;
-      let err =(TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + late * TUNE.lateErr * (1.3 - H.stats.focus / 100)) * tempoOf(T).err;
+      let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0)) * tempoOf(T).err;
       err = clamp(err, 0.02, 0.65);
       tire(H);
       const posNow = this.snapshot();
@@ -316,8 +321,7 @@ export class MatchSim {
         const zs2 = this.zSign(H.team);
         const to = isNet ? [from[0] * 0.6, zs2 * 0.3] : [clamp(from[0] * -1.1 + gauss(rng) * 2, -7, 7), -zs2 * (12.8 + rng() * 1.5)];
         H.rec.errors++; rec(H, st, 'err');
-        if (late > 0) H.rec.lateErr++;
-        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, late: late > 0 });
+        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow });
         H.gauge -= 6 * (1 - H.stats.composure / 160);
         const m = this.mate(H); m.gauge -= 2 * (1 - m.stats.composure / 150);
         return this.finish(shots, 1 - H.team, 'err', H, ctx);
@@ -392,10 +396,9 @@ export class MatchSim {
       }
       // 계속
       const ra = this.anchor(R);
-      let contact = [clamp(ra[0] + gauss(rng) * 1.2, -5.3, 5.3), ra[1] + (R.pos === 'base' ? rz * rng() * 0.8 : 0)];
-      let bounce = null;
-      if (R.pos === 'base' || lob) bounce = [contact[0] * 0.8, rz * (lob ? 9.5 : 7 + rng() * 2)];
-      if (lob && R.pos === 'net') { contact = [contact[0], rz * 10.8]; R.pos = 'base'; }
+      const n1 = gauss(rng), u1 = R.pos === 'base' ? rng() : 0.5, u2 = R.pos === 'base' && !lob ? rng() : 0.5;
+      const { contact, bounce } = landingOf(st, dir, R.pos, ra, rz, n1, u1, u2);
+      if (lob && R.pos === 'net') R.pos = 'base';
       shots.push({ h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow });
       // 이동
       if (st === 'chip_return' || (T.choices.shot === 'dash' && H.pos === 'base' && !lob && rng() < 0.45)) H.pos = 'net';
@@ -437,7 +440,7 @@ export class MatchSim {
     if (endType === 'center') return `${nm}의 ${SHOT_NAME[last.type] || ''} — 센터 혼선!`;
     if (endType === 'poach') return `${nm} 포치 성공!`;
     if (endType === 'win') return `${nm}의 ${DIR_NAME[last.dir] ? DIR_NAME[last.dir] + ' ' : ''}${SHOT_NAME[last.type] || ''} 위너!`;
-    return `${nm} ${SHOT_NAME[last.type] || ''} ${last.res === 'net' ? '네트' : '아웃'}${last.late ? ' — 급하게 바꾼 샷!' : ''}`;
+    return `${nm} ${SHOT_NAME[last.type] || ''} ${last.res === 'net' ? '네트' : '아웃'}`;
   }
 
   statFor(H, st, inc) {

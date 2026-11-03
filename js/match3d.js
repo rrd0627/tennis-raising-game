@@ -12,6 +12,15 @@ const SURFACE = {
   clay: { court: '#c8693a', out: '#b85e33', line: '#f5efe6', grain: 'rgba(0,0,0,0.05)' },
 };
 
+const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, NET_CLEAR = 1.08;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// 공이 오기 직전의 준비 자세
+function prepFor(type) {
+  if (!type) return 'ready';
+  if (type === 'smash') return 'smash';
+  if (/volley/.test(type)) return 'volley';
+  return 'ready';
+}
 function poseFor(type, side) {
   if (type === 'serve' || type === 'serve2') return 'serve';
   if (type === 'smash') return 'smash';
@@ -33,8 +42,6 @@ export class MatchView {
     this.fx = [];
     this.alive = true;
     this.slow = 1;
-    this.gameTime = 0; // 재생 속도를 반영한 경기 시간(초). 늦은 변경 판정에 쓴다
-    this.eta = 0; this.etaDur = 1; // 지금 날아가는 공이 도착할 시각과 비행 시간
     const w = container.clientWidth || 360, h = container.clientHeight || 400;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -194,7 +201,7 @@ export class MatchView {
       const shadow = this.blob(0.38, 0.26);
       const emote = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
       emote.scale.set(0.7, 0.7, 1); emote.visible = false; this.scene.add(emote);
-      this.players.push({ sp, tex, shadow, emote, x: 0, z: i < 2 ? 11 : -11, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      this.players.push({ sp, tex, shadow, emote, x: 0, z: i < 2 ? 11 : -11, tx: 0, tz: i < 2 ? 11 : -11, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.emoteTex = {};
     for (const k of ['sweat', 'fire', 'cloud', 'heart', 'bang']) this.emoteTex[k] = this.canvasTex(emoteCanvas(k));
@@ -207,14 +214,15 @@ export class MatchView {
 
   placeAll() {
     for (const p of this.players) {
-      p.sp.position.set(p.x, 0, p.z);
+      // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
+      const y = Math.abs(Math.sin(p.stride)) * 0.14 + p.hop;
+      p.sp.position.set(p.x, y, p.z);
+      p.sp.material.rotation = p.lean + p.kick;
       p.shadow.position.set(p.x, 0.012, p.z);
-      p.emote.position.set(p.x, 2.35, p.z);
+      p.emote.position.set(p.x, 2.35 + y, p.z);
     }
     this.myRing.position.set(this.players[0].x, 0.014, this.players[0].z);
   }
-
-  setRingDanger(on) { this.myRing.material.color.set(on ? 0xff3b5c : 0xffe14d); }
 
   setPose(i, pose, ms = 0) {
     const p = this.players[i];
@@ -228,23 +236,44 @@ export class MatchView {
     p.emoteUntil = performance.now() + ms;
   }
 
-  moveTo(i, x, z, dur) {
+  // 선수는 목표 지점으로 뛰어간다. 시간 안에 닿아야 하면 그만큼 빠르게 뛴다.
+  runTo(i, x, z, within = 0) {
     const p = this.players[i];
-    const fx = p.x, fz = p.z;
-    this.tweens.push({ t: 0, dur: Math.max(0.05, dur), step: k => { p.x = lerp(fx, x, ease(k)); p.z = lerp(fz, z, ease(k)); } });
+    p.tx = x; p.tz = z;
+    const d = Math.hypot(x - p.x, z - p.z);
+    p.speed = within > 0 ? clamp(d / within, RUN_SPEED * 0.6, MAX_RUN_SPEED) : RUN_SPEED;
   }
+  // 상대가 치는 순간의 작은 스텝
+  splitStep(i) { this.players[i].hop = 0.16; }
 
   wait(sec) { return new Promise(res => this.tweens.push({ t: 0, dur: sec, step: () => { }, done: res })); }
 
-  // 공 비행: from/to = [x,z]
-  flyBall(from, to, bounce, type, h0, h1) {
-    const sp = (SPEED[type] || 16);
+  // 샷 하나의 비행 시간. 바운드 뒤에는 공이 느려진다.
+  flightTime(from, to, bounce, type) {
+    const sp = SPEED[type] || 16;
     const d1 = bounce ? Math.hypot(bounce[0] - from[0], bounce[1] - from[1]) : Math.hypot(to[0] - from[0], to[1] - from[1]);
     const d2 = bounce ? Math.hypot(to[0] - bounce[0], to[1] - bounce[1]) : 0;
-    const apex = APEX[type] ?? 1.9;
-    const dur = Math.max(0.28, (d1 + d2) / sp) * 0.95;
-    const k1 = bounce ? d1 / (d1 + d2) : 1;
-    this.eta = this.gameTime + dur; this.etaDur = dur;
+    return Math.max(0.28, d1 / sp + d2 / (sp * 0.62));
+  }
+
+  // 공 비행: from/to = [x,z]. 네트를 넘는 포물선 + 바운드 뒤 다시 튀어 오름.
+  flyBall(from, to, bounce, type, h0, h1, overNet = true) {
+    const sp = SPEED[type] || 16;
+    const end = bounce || to;
+    const d1 = Math.hypot(end[0] - from[0], end[1] - from[1]);
+    const d2 = bounce ? Math.hypot(to[0] - bounce[0], to[1] - bounce[1]) : 0;
+    const t1 = d1 / sp, t2 = d2 / (sp * 0.62);
+    const dur = this.flightTime(from, to, bounce, type);
+    const k1 = bounce ? t1 / (t1 + t2) : 1;
+    const yEnd = bounce ? 0 : h1;
+    // 네트 위치에서 테이프보다 높게 지나가도록 곡선 높이를 정한다
+    let apex = (APEX[type] ?? 1.5) * (bounce ? 1 : 0.5);
+    const uNet = from[1] * end[1] < 0 ? Math.abs(from[1]) / (Math.abs(from[1]) + Math.abs(end[1])) : -1;
+    if (overNet && uNet > 0) {
+      const need = NET_CLEAR - lerp(h0, yEnd, uNet);
+      apex = Math.max(apex, need / (4 * uNet * (1 - uNet)));
+    }
+    const rise = bounce ? Math.max(0.35, Math.min(1.8, apex * 0.5 + 0.35)) : 0;
     this.ball.visible = true; this.ballShadow.visible = true;
     this.trailPts = [];
     return new Promise(res => {
@@ -255,15 +284,13 @@ export class MatchView {
           let x, z, y;
           if (k <= k1) {
             const u = k / k1;
-            const end = bounce || to;
             x = lerp(from[0], end[0], u); z = lerp(from[1], end[1], u);
-            const yEnd = bounce ? 0 : h1;
-            y = lerp(h0, yEnd, u) + 4 * apex * u * (1 - u) * (bounce ? 1 : 0.6);
+            y = lerp(h0, yEnd, u) + 4 * apex * u * (1 - u);
           } else {
             const u = (k - k1) / (1 - k1);
             if (!bounced) { bounced = true; this.mark(bounce); }
             x = lerp(bounce[0], to[0], u); z = lerp(bounce[1], to[1], u);
-            y = lerp(0, h1, u) + 4 * Math.min(1.6, apex * 0.35 + 0.6) * u * (1 - u);
+            y = lerp(0, h1, u) + 4 * rise * u * (1 - u);
           }
           this.ball.position.set(x, Math.max(0.11, y), z);
           this.ballShadow.position.set(x, 0.013, z);
@@ -287,34 +314,69 @@ export class MatchView {
 
   setCamera(mode) { this.camMode = mode; }
 
-  // 포인트 시작 위치로 선수 배치
+  // 포인트 시작 위치로 선수들이 걸어간다. 첫 포인트만 바로 세운다.
   async beginPoint(s0) {
     const start = s0.pos;
-    for (let i = 0; i < 4; i++) { this.players[i].x = start[i][0]; this.players[i].z = start[i][1]; this.setPose(i, 'ready'); this.showEmote(i, null); }
-    this.players[s0.h].x = s0.from[0]; this.players[s0.h].z = s0.from[1];
+    const first = !this.started;
+    this.started = true;
+    for (let i = 0; i < 4; i++) {
+      const [x, z] = i === s0.h ? s0.from : start[i];
+      const p = this.players[i];
+      this.setPose(i, 'ready'); this.showEmote(i, null);
+      p.stride = 0; p.hop = 0; p.kick = 0;
+      if (first) { p.x = p.tx = x; p.z = p.tz = z; } else this.runTo(i, x, z, 0.55);
+    }
     this.placeAll();
-    this.ball.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
-    await this.wait(0.25);
+    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
+    await this.wait(first ? 0.25 : 0.6);
   }
 
-  // 샷 하나 재생. next = 다음 타자 { h, type } 또는 { h, contactH } (타구 전이라 샷을 아직 모를 때)
+  // 서브: 공을 띄우고 내려칠 때 친다
+  async tossBall(s) {
+    const [x, z] = s.from;
+    this.setPose(s.h, 'serve');
+    this.ball.visible = true; this.ballShadow.visible = true;
+    await new Promise(res => this.tweens.push({
+      t: 0, dur: 0.42, step: k => {
+        const y = 1.1 + 2.0 * Math.sin(k * Math.PI * 0.8);
+        this.ball.position.set(x + 0.15, y, z);
+        this.ballShadow.position.set(x + 0.15, 0.013, z);
+      }, done: res,
+    }));
+  }
+
+  // 샷 하나 재생. next = 다음 타자의 샷 (다음 샷을 알아야 그 선수가 받으러 뛰어간다)
   async playShot(s, next) {
+    const isServe = s.type === 'serve' || s.type === 'serve2';
     const side = (s.h < 2 ? 1 : -1) * (s.to[0] - s.from[0]);
-    this.setPose(s.h, poseFor(s.type, side), 420);
-    // 다른 선수 위치 이동
+    if (isServe) await this.tossBall(s);
+    // 스윙: 타구 순간 몸을 돌리고 잠깐 뒤 준비 자세로
+    const hitter = this.players[s.h];
+    this.setPose(s.h, poseFor(s.type, side), 380);
+    hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22);
+    const dur = this.flightTime(s.from, s.to, s.bounce, s.type);
+    // 친 사람은 제자리로 돌아가고, 받을 사람은 공이 올 곳으로 뛰어간다. 나머지는 공 쪽으로 조금 움직인다.
     for (let j = 0; j < 4; j++) {
-      if (j === s.h) continue;
-      let tx = s.pos[j][0], tz = s.pos[j][1];
-      if (next && next.h === j) { tx = s.to[0]; tz = s.to[1]; }
-      this.moveTo(j, tx, tz, 0.55 / this.speed);
+      const [ax, az] = s.pos[j];
+      if (next && next.h === j) this.runTo(j, s.to[0], s.to[1], Math.max(0.25, dur - 0.05));
+      else if (j === s.h) this.runTo(j, lerp(s.from[0], ax, 0.75), lerp(s.from[1], az, 0.75));
+      else this.runTo(j, ax + (s.to[0] - ax) * 0.18, az);
+      // 상대편은 타구 순간 스텝을 밟는다
+      if ((j < 2) !== (s.h < 2)) this.splitStep(j);
     }
-    if (s.victim !== undefined) { const v = s.victim; this.moveTo(v, lerp(this.players[v].x, s.bounce ? s.bounce[0] : s.to[0], 0.55), this.players[v].z, 0.5); }
-    const h0 = s.type === 'serve' || s.type === 'serve2' ? 2.5 : s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.3 : 0.95;
-    const h1 = s.res === 'net' ? 0.5 : (next ? (next.contactH ?? (/volley/.test(next.type) ? 1.2 : next.type === 'smash' ? 2.4 : 0.9)) : 0.0);
+    if (s.victim !== undefined) this.runTo(s.victim, lerp(this.players[s.victim].x, s.bounce ? s.bounce[0] : s.to[0], 0.75), this.players[s.victim].z, 0.6);
+    const h0 = isServe ? 2.6 : s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.25 : 0.9;
+    const h1 = s.res === 'net' ? 0.5 : next ? (/volley/.test(next.type) ? 1.15 : next.type === 'smash' ? 2.4 : 0.85) : 0.0;
+    // 받을 선수는 공이 닿기 직전에 준비 자세를 잡는다
+    if (next && next.h !== undefined && next.h !== s.h) {
+      const pv = this.players[next.h];
+      const lead = Math.max(0, dur - 0.22);
+      this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { this.setPose(next.h, prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12); } });
+    }
     if (s.res === 'net') {
       const netPt = [lerp(s.from[0], s.to[0], 0.9), 0.15 * Math.sign(s.from[1])];
-      await this.flyBall(s.from, netPt, null, s.type, h0, 0.6);
-      await this.flyBall(netPt, [netPt[0], netPt[1] + 0.6 * Math.sign(s.from[1])], null, 'dropshot', 0.6, 0.1);
+      await this.flyBall(s.from, netPt, null, s.type, h0, 0.6, false);
+      await this.flyBall(netPt, [netPt[0], netPt[1] + 0.6 * Math.sign(s.from[1])], null, 'dropshot', 0.6, 0.1, false);
     } else {
       await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1);
     }
@@ -357,7 +419,8 @@ export class MatchView {
     this.setCamera('side');
     this.slow = 0.45;
     for (let i = 0; i < 4; i++) this.setPose(i, 'ready');
-    this.players[s.h].x = s.from[0]; this.players[s.h].z = s.from[1]; this.placeAll();
+    const rp = this.players[s.h];
+    rp.x = rp.tx = s.from[0]; rp.z = rp.tz = s.from[1]; this.placeAll();
     this.setPose(s.h, poseFor(s.type, 1), 800);
     const h0 = s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.3 : s.type.startsWith('serve') ? 2.5 : 0.95;
     await this.flyBall(s.from, s.to, s.bounce, s.type, h0, 0.1);
@@ -369,7 +432,6 @@ export class MatchView {
   tick() {
     const dt = Math.min(0.05, this.clock.getDelta());
     const now = performance.now();
-    this.gameTime += dt * this.speed * this.slow;
     for (const tw of [...this.tweens]) {
       tw.t += dt * this.speed * (tw.slowable ? this.slow : 1);
       const k = Math.min(1, tw.t / tw.dur);
@@ -377,8 +439,22 @@ export class MatchView {
       if (k >= 1) { this.tweens.splice(this.tweens.indexOf(tw), 1); tw.done && tw.done(); }
     }
     if (this.players) {
+      const pdt = dt * this.speed * (this.slow < 1 ? this.slow : 1);
       for (let i = 0; i < 4; i++) {
         const p = this.players[i];
+        // 달리기: 목표까지 일정한 속도로, 도착하면 멈춘다
+        const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz), step = p.speed * pdt;
+        if (d > 0.02) {
+          const m = Math.min(1, step / d);
+          p.x += dx * m; p.z += dz * m;
+          p.stride += step * 2.6;
+          p.lean += ((i < 2 ? -1 : 1) * clamp(dx / Math.max(d, 0.01), -1, 1) * 0.14 - p.lean) * Math.min(1, pdt * 10);
+        } else {
+          p.stride = 0;
+          p.lean += (0 - p.lean) * Math.min(1, pdt * 10);
+        }
+        p.hop = Math.max(0, p.hop - pdt * 0.9);
+        p.kick *= Math.max(0, 1 - pdt * 7);
         if (p.poseUntil && now > p.poseUntil) { p.poseUntil = 0; this.setPose(i, 'ready'); }
         if (p.emoteUntil && now > p.emoteUntil) { p.emoteUntil = 0; p.emote.visible = false; }
       }
@@ -394,7 +470,6 @@ export class MatchView {
     this.curLook.lerp(look, 0.12);
     this.camera.lookAt(this.curLook);
     this.renderer.render(this.scene, this.camera);
-    this.onFrame && this.onFrame();
   }
 
   dispose() {
