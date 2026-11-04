@@ -137,10 +137,19 @@ export const STATE_LINES = {
   injury: '{name}… 당분간은 쉬어야겠다.',
   entered: '이번 주는 {name}! 벌써 긴장된다.',
   overtime: '이번 주는 코트 근처에도 못 가겠네.',
+  stressed: '머리가 복잡하다. 뭔가 좀 풀어야겠다.',
   slump: '요즘 공이 안 맞아. 뭔가 잘못됐나.',
   open: '이번에 {name} 열린대. 나가 볼까?',
   tired: '몸이 천근만근이다.',
   good: '오늘은 몸이 가볍다!',
+};
+// 아직 못 고르는 버튼을 눌렀을 때의 혼잣말
+export const LOCK_LINES = {
+  practice: '혼자 뭘 연습해야 할지 아직 모르겠다.',
+  club: '클럽 게임은 아직 좀 무섭다. 조금 더 배우고 나서.',
+  injured: '지금은 몸부터 챙겨야 한다.',
+  noTour: '다음 대회는 {weeks}주 뒤 {name}.',
+  noMoreTour: '올해 남은 대회는 없다.',
 };
 export const HOME_LINES = [
   '이번엔 뭐 하지?',
