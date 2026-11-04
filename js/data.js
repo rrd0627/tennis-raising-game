@@ -91,7 +91,42 @@ export const GOALS = [
   { id: 'champion', by: 156, text: '3년차 말까지 국화부 대회 우승' },
 ];
 
-// 인트로 컷 (임시 그림. 컷 그림만 나중에 바꾼다)
+// 레슨 첫날 코치와의 대화. 고른 답에 따라 시작 능력치와 관계가 달라진다.
+// stats: 능력치 보정, aff: 파트너 친밀도, reply: 코치의 반응. job은 야근 장면과 마감 이벤트 글도 바꾼다.
+export const PROFILE = [
+  {
+    key: 'job', ask: '회사 다니신다고요? 무슨 일 하세요?', options: [
+      { id: 'sales', name: '영업팀', hint: '말발·승부욕', stats: { comm: 8, drive: 6, stamina: 3 }, work: 5, stress: 5, reply: '영업이면 파트너 구하는 건 걱정 없겠네요.', overtime: '거래처 미팅이 늦게 끝났다. 라켓 가방을 멘 채 명함을 건넸다.', deadline: '팀장: "이번 주 실적 마감이야. 다들 남아."' },
+      { id: 'dev', name: '개발팀', hint: '분석·집중력', stats: { analysis: 8, shot_sel: 6, focus: 5, stamina: -3 }, reply: '개발자시구나. 머리는 잘 쓰시겠는데 체력이 걱정이네요.', overtime: '배포가 밀렸다. 새벽 코트 대신 새벽 서버를 본다.', deadline: '팀장: "이번 주 배포야. 다들 남아 줘."' },
+      { id: 'design', name: '디자인팀', hint: '감각·코스', stats: { dropshot: 7, drop_volley: 6, depth: 5, angle: 4 }, reply: '디자인 하시는 분들이 코스 감각이 좋더라고요.', overtime: '"로고 조금만 더 크게요." 수정이 열두 번째다.', deadline: '팀장: "시안 내일 아침까지래. 미안."' },
+      { id: 'finance', name: '재무팀', hint: '평정심·꼼꼼함', stats: { composure: 8, positioning: 5, focus: 4, clutch: 3 }, reply: '숫자 다루는 분들은 실수를 싫어하죠. 테니스는 실수의 스포츠예요.', overtime: '결산 숫자가 안 맞는다. 3원이 어디로 갔을까.', deadline: '팀장: "이번 주 결산이야. 다들 남아."' },
+      { id: 'field', name: '현장·물류팀', hint: '체력·파워', stats: { stamina: 8, power: 7, speed: 3 }, reply: '현장에서 일하시면 체력은 제가 걱정 안 해도 되겠네요.', overtime: '물량이 터졌다. 오늘 운동은 이걸로 됐다.', deadline: '팀장: "이번 주 물량 터졌어. 다들 남아."' },
+      { id: 'hr', name: '인사팀', hint: '소통·회복력', stats: { comm: 6, resilience: 6, cover: 4, composure: 3 }, reply: '사람 상대하는 일이면 복식 잘하시겠는데요?', overtime: '채용 면접이 줄줄이 이어졌다. 웃는 얼굴이 굳었다.', deadline: '팀장: "이번 주 채용 마감이야. 다들 남아."' },
+    ],
+  },
+  {
+    key: 'past', ask: '운동은 좀 해 보셨어요?', options: [
+      { id: 'none', name: '숨쉬기 운동뿐이에요', hint: '나쁜 버릇 없음', stats: { resilience: 5, focus: 3 }, confidence: -5, reply: '괜찮아요. 오히려 나쁜 버릇이 없어서 좋아요.' },
+      { id: 'sport', name: '학창 시절 운동부요', hint: '스피드·첫발', stats: { stamina: 7, speed: 6, first_step: 5, power: 4 }, reply: '오, 몸은 기억하고 있을 거예요.' },
+      { id: 'badminton', name: '배드민턴 동호회요', hint: '스매시·발리', stats: { smash: 8, fh_volley: 5, first_step: 5, speed: 4 }, reply: '손목 쓰는 버릇만 고치면 되겠네요.' },
+      { id: 'tabletennis', name: '탁구장 단골이에요', hint: '슬라이스·반응', stats: { fh_slice: 6, bh_slice: 6, first_step: 5, c_slice: 5 }, reply: '회전은 이미 아시겠네요. 공이 좀 커졌다고 생각하세요.' },
+      { id: 'yoga', name: '요가·필라테스요', hint: '유연성·평정심', stats: { flex: 12, composure: 5, focus: 5 }, reply: '유연하면 잘 안 다쳐요. 큰 장점이에요.' },
+      { id: 'running', name: '주말마다 달려요', hint: '지구력', stats: { stamina: 12, resilience: 6, speed: 3 }, reply: '테니스는 뛰는 게 반이에요. 자신 있으시겠네요.' },
+    ],
+  },
+  {
+    key: 'why', ask: '그런데 테니스는 왜 시작하셨어요?', options: [
+      { id: 'friend', name: '친구가 같이 하자고 해서요', hint: '김하나와 친함', aff: { hana: 15 }, reply: '아, 김하나 씨 친구분이시구나! 같이 크면 좋죠.' },
+      { id: 'rival', name: '회사 동기한테 지기 싫어서요', hint: '승부욕·이수민과 친함', aff: { sumin: 15 }, stats: { drive: 8 }, reply: '이수민 씨요? 그 마음이면 금방 늘어요.' },
+      { id: 'stress', name: '스트레스 풀고 싶어서요', hint: '스트레스 낮음', stats: { composure: 3 }, stress: -10, reply: '공 세게 치면 확실히 풀려요. 약속해요.' },
+      { id: 'health', name: '건강검진 결과가 좀…', hint: '체력·유연성', stats: { stamina: 4, flex: 4 }, reply: '…오늘은 무리하지 말죠.' },
+      { id: 'drama', name: '드라마 보고 멋있어서요', hint: '자신감', stats: { fh_drive: 4, smash: 3 }, confidence: 12, reply: '다들 그렇게 시작해요. 괜찮아요.' },
+      { id: 'clothes', name: '테니스복이 예뻐서요', hint: '자신감·클럽 명성', confidence: 5, club: 5, reply: '솔직해서 좋네요. 그런 분들이 제일 오래 쳐요.' },
+    ],
+  },
+];
+
+// 인트로 컷 (임시 그림. 컷 그림만 나중에 바꾼다). 마지막 컷에서 코치와의 대화로 이어진다.
 export const INTRO_SCENES = [
   { icon: '⏰', bg: '#2c3550', text: '오전 6시 50분. 오늘도 알람이 울린다.' },
   { icon: '🚇', bg: '#46536b', text: '출근 지하철. 어제랑 같은 칸, 같은 자리.' },
@@ -99,6 +134,7 @@ export const INTRO_SCENES = [
   { icon: '🌃', bg: '#22384f', text: '퇴근길. 어디선가 톡, 톡, 공 소리가 들린다.' },
   { icon: '🎾', bg: '#2f8a5b', text: '조명 켜진 코트. 나도… 저거 해 보고 싶다.' },
   { icon: '📱', bg: '#c9772e', text: '다음 날 점심시간. 테니스 레슨을 등록했다.' },
+  { icon: '🌤️', bg: '#3a9a6a', text: '토요일 아침. 빌린 라켓을 들고 코트에 처음 섰다.' },
 ];
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────

@@ -1,7 +1,7 @@
 // 화면 — 타이틀, 인트로, 주간 행동, 결과, 메신저, 대회·랭킹, 능력치, 대회/경기, 엔딩
 import * as G from './game.js';
 import {
-  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, LESSONS, BIG_STATS, INTRO_SCENES, DAY_NAMES, PARTNERS, PARTNER,
+  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME } from './sim.js';
@@ -10,7 +10,7 @@ import { portraitURL, PLAYER_LOOK, oppLook } from './art.js';
 
 const app = document.getElementById('app');
 let S = null;
-const V = { screen: 'title', tab: null, thread: null, sheet: null, bg: 'none', scene: 0, detail: false };
+const V = { screen: 'title', tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null };
 let M = null; // 경기 진행 상태
 let introTimer = null;
 
@@ -45,6 +45,7 @@ export function start() {
   V.screen = 'title';
   render();
   app.addEventListener('click', onClick);
+  app.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pname') app.querySelector('[data-a=profileName]')?.click(); });
 }
 
 function render() {
@@ -55,18 +56,16 @@ function render() {
 }
 
 // ── 타이틀 ────────────────────────────────────────────────
-const BGS = [['none', '평범한 직장인', '균형'], ['sport', '학창시절 운동부', '스태미나·스피드'], ['badminton', '배드민턴 경험자', '스매시·발리'], ['study', '공부 체질', '분석·샷 선택']];
 const SCREENS = {
   title: () => `
-    <div class="screen title">
+    <div class="screen title" data-a="titleStart">
       <div class="logo"><div class="ball">🎾</div><h1>테니스 선수<br>키우기</h1><p>개나리에서 국화까지, 직장인 3년 육성기</p></div>
       ${portrait('me', 'smile', 'title-pt')}
-      ${S && !S.ending ? `<button class="btn primary big" data-a="continue">이어하기 · ${esc(S.name)} (${weekInfo(Math.min(S.week, 156)).label})</button>` : ''}
-      <button class="btn ${S && !S.ending ? '' : 'primary'} big" data-a="new">새 게임</button>
-      <p class="tiny">임시 그림으로 표시 중입니다.</p>
+      <p class="tapstart">${S && !S.ending ? '화면을 눌러 이어 하기' : '화면을 눌러 시작'}</p>
+      ${S && !S.ending ? `<p class="tiny">${esc(S.name)} · ${weekInfo(Math.min(S.week, 156)).label}</p>` : ''}
     </div>`,
 
-  intro: () => {
+    intro: () => {
     const s = INTRO_SCENES[V.scene];
     return `<div class="screen intro" data-a="introNext" style="--bg:${s.bg}">
       <button class="introskip" data-a="introSkip">건너뛰기 ›</button>
@@ -75,18 +74,28 @@ const SCREENS = {
     </div>`;
   },
 
-  namein: () => `
-    <div class="screen title">
-      ${portrait('me', 'smile', 'title-pt')}
-      <div class="card newgame">
-        <label>이름 <input id="pname" maxlength="8" placeholder="주인공 이름" value=""></label>
-        <div class="lbl">학창 시절</div>
-        <div class="chips">${BGS.map(([id, n, d]) => `<button class="chip ${V.bg === id ? 'on' : ''}" data-a="bg" data-id="${id}">${n}<small>${d}</small></button>`).join('')}</div>
-        <button class="btn primary big" data-a="start">레슨 첫날 ▶</button>
-      </div>
-    </div>`,
+  // 레슨 첫날 코치와의 대화: 이름 → 직장 → 운동 경험 → 시작한 이유
+  profile: () => {
+    const P = V.profile, q = PROFILE[P.step - 1];
+    let line, body;
+    if (P.step === 0) {
+      line = '안녕하세요! 오늘부터 같이 할 코치예요. 성함이 어떻게 되세요?';
+      body = `<div class="nameline"><input id="pname" maxlength="8" placeholder="이름" value="" autocomplete="off"><button class="btn primary" data-a="profileName">이에요</button></div>`;
+    } else if (q) {
+      line = `${P.reply} ${q.ask}`;
+      body = `<div class="opts">${q.options.map(o => `<button class="opt" data-a="profileOpt" data-id="${o.id}"><b>${o.name}</b><small>${o.hint}</small></button>`).join('')}</div>`;
+    } else {
+      line = `${P.reply} 좋아요, ${P.name} 님. 오늘은 포핸드부터 해 봐요!`;
+      body = `<button class="btn primary big" data-a="profileDone">네, 잘 부탁드려요!</button>`;
+    }
+    return `<div class="screen talk">
+      ${portrait('coach', 'smile', 'title-pt')}
+      <div class="talkline">${esc(line)}</div>
+      ${body}
+    </div>`;
+  },
 
-  week: () => {
+    week: () => {
     const wi = weekInfo(S.week);
     const big = G.bigValues(S.stats), goal = G.currentGoal(S), tw = G.tournamentThisWeek(S);
     const alerts = [];
@@ -212,7 +221,10 @@ const SCREENS = {
       body = PARTNERS.filter(p => S.partners[p.id].known).map(p => { const ps = S.partners[p.id]; return `<div class="card prow">${portrait(p.id, 'smile', 'pt sm')}<div><b>${p.name}</b> <small>${p.arch} · ${p.style} · ${ps.div}</small>${statBar('실력', ps.level)}${statBar('친밀도', ps.aff)}${statBar('콤비', ps.combo)}</div></div>`; }).join('') + `<p class="hint">훈련을 계속하다 보면 새 파트너를 만날 수 있습니다.</p>`;
     }
     return `<div class="screen stats"><header class="topbar"><button class="back" data-a="go" data-s="week">‹</button><div class="wk">능력치</div><div class="sub">종합 ${G.overall(S.stats).toFixed(1)}</div></header>
-      <div class="tabs scroll">${tabs.map(([id, n]) => `<button class="${tab === id ? 'on' : ''}" data-a="tab" data-id="${id}">${n}</button>`).join('')}</div>${body}</div>`;
+      <div class="tabs scroll">${tabs.map(([id, n]) => `<button class="${tab === id ? 'on' : ''}" data-a="tab" data-id="${id}">${n}</button>`).join('')}</div>${body}
+      <button class="restartlink" data-a="restartAsk">처음부터 다시 시작</button>
+      ${V.sheet === 'restart' ? `<div class="overlay ev"><div class="sheet event"><h3>처음부터 다시 할까요?</h3><p>지금까지의 기록이 모두 사라지고 되돌릴 수 없어요.</p><div class="choices"><button class="btn" data-a="cancelsheet">계속 할게요</button><button class="btn danger" data-a="restart">처음부터 다시</button></div></div></div>` : ''}
+    </div>`;
   },
 
   tourIntro: () => {
@@ -393,7 +405,7 @@ function eventHTML(ev) {
 // ── 인트로 ────────────────────────────────────────────────
 function showScene(i) {
   clearTimeout(introTimer);
-  if (i >= INTRO_SCENES.length) { V.screen = 'namein'; render(); return; }
+  if (i >= INTRO_SCENES.length) { V.profile = { step: 0 }; V.screen = 'profile'; render(); return; }
   V.scene = i; V.screen = 'intro';
   render();
   introTimer = setTimeout(() => showScene(i + 1), 3800);
@@ -416,13 +428,21 @@ async function onClick(e) {
   if (stop && t.dataset.a.startsWith('close')) return;
   const a = t.dataset.a, d = t.dataset;
   switch (a) {
-    case 'new': showScene(0); return;
+    case 'titleStart':
+      if (S && !S.ending) { V.screen = S.tournament ? (S.tournament.finished ? 'tourResult' : 'between') : S.phase === 'result' ? 'result' : 'week'; break; }
+      showScene(0); return;
     case 'introNext': showScene(V.scene + 1); return;
     case 'introSkip': showScene(INTRO_SCENES.length); return;
-    case 'bg': V.bg = d.id; app.querySelectorAll('.newgame .chip').forEach(c => c.classList.toggle('on', c.dataset.id === d.id)); return;
-    case 'start': { const n = (document.getElementById('pname').value || '').trim() || '나'; S = G.newGame(n, V.bg); G.save(S); V.screen = 'week'; break; }
-    case 'continue': V.screen = S.ending ? 'ending' : S.tournament ? (S.tournament.finished ? 'tourResult' : 'between') : S.phase === 'result' ? 'result' : 'week'; break;
-    case 'restart': G.clearSave(); S = null; V.screen = 'title'; break;
+    case 'profileName': V.profile = { step: 1, name: (document.getElementById('pname').value || '').trim() || '나', answers: {} }; V.profile.reply = `${V.profile.name} 님, 반가워요.`; break;
+    case 'profileOpt': {
+      const P = V.profile, q = PROFILE[P.step - 1];
+      P.answers[q.key] = d.id; P.reply = q.options.find(o => o.id === d.id).reply; P.step++;
+      break;
+    }
+    case 'profileDone': S = G.newGame(V.profile.name, V.profile.answers); G.save(S); V.profile = null; V.screen = 'week'; break;
+    case 'restartAsk': V.sheet = 'restart'; break;
+    case 'cancelsheet': V.sheet = null; break;
+    case 'restart': G.clearSave(); S = null; V.sheet = null; V.screen = 'title'; break;
     case 'go': V.screen = d.s; V.tab = null; V.thread = null; V.sheet = null; break;
     case 'tab': V.tab = d.id; break;
     case 'act': {

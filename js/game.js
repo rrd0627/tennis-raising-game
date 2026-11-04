@@ -1,6 +1,6 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
 import { SCENES, MILESTONES, STORIES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
@@ -25,7 +25,8 @@ export function rngOf(state) {
 function hashStr(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 // ── 새 게임 ───────────────────────────────────────────────
-export function newGame(name, background = 'none') {
+// profile: 코치와의 첫 대화에서 고른 답 { job, past, why }
+export function newGame(name, profile = {}) {
   const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
   const state = {
     v: 3, seed, rs: seed, name: name || '나', week: 1,
@@ -41,9 +42,16 @@ export function newGame(name, background = 'none') {
     pendingEvents: [], weekLog: null, ending: null, yips: 0,
   };
   const rng = rngOf(state);
-  const bg = { none: {}, sport: { stamina: 8, speed: 6, power: 5, first_step: 5 }, badminton: { smash: 8, fh_volley: 5, first_step: 6, speed: 4 }, study: { analysis: 8, shot_sel: 6, focus: 6, composure: 4 } }[background] || {};
-  for (const id of ALL_STATS) state.stats[id] = clamp(Math.round(14 + rng() * 10 + (bg[id] || 0)), 5, 40);
+  for (const id of ALL_STATS) state.stats[id] = Math.round(14 + rng() * 10);
   for (const p of PARTNERS) state.partners[p.id] = { aff: p.aff, combo: 0, level: p.level, known: !!p.known, div: p.div, declines: 0, wins: 0, nationalWins: 0 };
+  for (const q of PROFILE) {
+    const o = q.options.find(x => x.id === profile[q.key]);
+    if (!o) continue;
+    state[q.key] = o.id;
+    for (const [id, v] of Object.entries(o.stats || {})) state.stats[id] = clamp(state.stats[id] + v, 5, 45);
+    for (const [pid, v] of Object.entries(o.aff || {})) state.partners[pid].aff += v;
+    state.stress += o.stress || 0; state.confidence += o.confidence || 0; state.work += o.work || 0; state.club += o.club || 0;
+  }
   state.calendar = buildCalendar(rng, 3);
   for (const div of ['개나리', '국화']) {
     state.npc[div] = {};
@@ -209,6 +217,8 @@ function sceneTier(id, topic, big) {
   return key ? tierOf(big[key]) : tierOf(big.tactics);
 }
 function pickScene(state, id, topic, face, big, rng) {
+  const job = jobOf(state);
+  if (id === 'overtime' && job && rng() < 0.6) return { who: 'me', text: job.overtime };
   const groupTopic = topic && LESSONS[topic]?.counter ? 'counter' : topic;
   const tier = sceneTier(id, topic, big);
   const fixed = SCENES.find(x => x.week === state.week && x.act === id);
@@ -224,6 +234,7 @@ function pickScene(state, id, topic, face, big, rng) {
   const pName = face ? PARTNER[face].name : '';
   return { who: sc.who === 'partner' ? face : sc.who, text: sc.text.replaceAll('{p}', pName).replaceAll('{topic}', topic ? LESSONS[topic].name.replace(' 대처', '') : '') };
 }
+function jobOf(state) { return PROFILE[0].options.find(o => o.id === state.job); }
 function checkMilestone(state, big, topic) {
   const m = MILESTONES.find(x => !state.miles.includes(x.id) && (!x.topic || x.topic === topic) && x.when(state, big));
   if (!m) return null;
@@ -425,7 +436,7 @@ function rollEvents(state, rng) {
 export function eventView(state, ev) {
   const P = PARTNER;
   switch (ev.id) {
-    case 'deadline': return { who: 'boss', title: '프로젝트 마감', text: '팀장: "이번 주는 다들 남아 줘야겠어."', choices: [['accept', '남는다 (이번 턴은 야근만, 평판 +8)'], ['refuse', '빠진다 (평판 -8)']] };
+    case 'deadline': return { who: 'boss', title: '프로젝트 마감', text: jobOf(state)?.deadline || '팀장: "이번 주는 다들 남아 줘야겠어."', choices: [['accept', '남는다 (이번 턴은 야근만, 평판 +8)'], ['refuse', '빠진다 (평판 -8)']] };
     case 'dinner': return { who: 'boss', title: '회식 공지', text: '이번 주 회식이 잡혔다.', choices: [['accept', '참석한다 (평판 +3, 피로 +5)'], ['refuse', '빠진다 (평판 -3)']] };
     case 'boss': return { who: 'boss', title: '팀장님도 테니스를?', text: '팀장: "자네 테니스 친다며? 나도 주말에 좀 쳐."', choices: [['accept', '같이 랠리 하자고 한다 (평판 +6, 클럽 명성 +2)'], ['refuse', '정중히 넘긴다']] };
     case 'string': return { who: 'system', title: '스트링이 끊어졌다!', text: '대회를 앞두고 연습하다 스트링이 끊어졌다.', choices: [['accept', '바로 교체한다 (스트레스 +3)'], ['refuse', '예비 라켓으로 나간다 (대회 컨디션 -1)']] };

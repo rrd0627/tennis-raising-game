@@ -78,9 +78,21 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .dots { position: absolute; bottom: calc(32px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; }
 .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.35); }
 .dots i.on { background: #fff; }
-.newgame { width: 100%; text-align: left; }
-.newgame label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; }
-.newgame input { font: inherit; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); }
+.title { cursor: pointer; }
+.tapstart { margin: 8px 0 0; font-family: var(--f-display); font-size: 20px; color: var(--turf-deep); animation: tappulse 1.6s ease-in-out infinite; }
+@keyframes tappulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .tapstart { animation: none; } }
+/* 코치와의 첫 대화. 인트로 마지막 컷과 같은 배경에서 이어진다 */
+.talk { background: #3a9a6a; align-items: center; justify-content: center; }
+.talk .title-pt { background: #fff; }
+.talkline { background: var(--card); border-radius: 18px; padding: 16px 18px; font-size: 17px; line-height: 1.55; word-break: keep-all; width: 100%; text-align: center; animation: scenein .35s ease-out; }
+.nameline { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; }
+.nameline input { font: inherit; font-size: 17px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--card); color: var(--ink); min-width: 0; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.opt { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; background: var(--card); border-radius: 12px; padding: 12px; word-break: keep-all; animation: scenein .35s ease-out; }
+.opt small { font-size: 11px; color: var(--turf-deep); font-weight: 600; }
+.restartlink { align-self: center; margin-top: 12px; color: var(--muted); font-size: 12px; text-decoration: underline; padding: 8px; }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .lbl { font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
 
 /* 상단 바 */

@@ -2,7 +2,7 @@
 // node tools/season.js [횟수]  첫 회차만 곡선을 자세히 찍고, 나머지는 요약한다.
 import * as G from '../js/game.js';
 import { MatchSim, quickMatch, aiChoices } from '../js/sim.js';
-import { PARTNERS, BIG_STATS, weekInfo } from '../js/data.js';
+import { PARTNERS, BIG_STATS, PROFILE } from '../js/data.js';
 
 const RUNS = +process.argv[2] || 30;
 const NATIONAL_GAP = 6, LOCAL_GAP = 10; // 출전 간격(주). 두 달에 한 번쯤을 적정선으로 본다
@@ -18,8 +18,10 @@ function chooseLesson(s) {
   return [G.coachTopic(s), ...s.lessons].reduce((a, b) => (score(b) > score(a) ? b : a));
 }
 
+const pick = xs => xs[Math.floor(Math.random() * xs.length)];
+const randomProfile = () => Object.fromEntries(PROFILE.map(q => [q.key, pick(q.options).id]));
 function play(detail) {
-  const s = G.newGame('테스트');
+  const s = G.newGame('테스트', randomProfile());
   let matches = 0, watched = 0, wins = 0, last = -99, turn = 0;
   const out = [];
   while (!s.ending) {
@@ -63,7 +65,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length };
 }
 
 const rs = [];
@@ -77,5 +79,6 @@ console.log(`국화 승급 주: ${prom.length ? range(prom) : '없음'} | 승급
 console.log(`대회: ${range(rs.map(r => r.tours))} | 경기: ${range(rs.map(r => r.matches))} | 중계 경기: ${range(rs.map(r => r.watched))} | 승률 ${(rs.reduce((a, r) => a + r.wins, 0) / rs.reduce((a, r) => a + r.matches, 0) * 100).toFixed(0)}%`);
 console.log(`최종 종합: ${range(rs.map(r => Math.round(r.overall)))} | 부상: ${range(rs.map(r => r.injuries))} | 달성 목표: ${range(rs.map(r => r.goals))} | 이야기 ${med(rs.map(r => r.stories))} 이정표 ${med(rs.map(r => r.miles))}`);
 console.log(`엔딩: ${count('ending')}`);
+for (const q of PROFILE) console.log(`${q.key} 승급 주 중앙값: ` + q.options.map(o => { const w = rs.filter(r => r[q.key] === o.id && r.promoted).map(r => r.promoted); return `${o.id} ${w.length ? med(w) : '-'}`; }).join(', '));
 const min = med(rs.map(r => r.watched)) * 3 + med(rs.map(r => r.turns)) * 0.5 + 60;
 console.log(`예상 1회차: ${(min / 60).toFixed(1)}시간 (중계 경기 3분, 턴 30초, 이벤트·메뉴 60분 가정)`);
