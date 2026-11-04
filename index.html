@@ -6,11 +6,30 @@
 <title>테니스 선수 키우기</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;600;700;800&display=swap">
-<link rel="stylesheet" href="css/style.css">
-<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
 <div id="app"></div>
-<script type="module" src="js/main.js"></script>
+<script>
+// GitHub Pages는 파일을 10분쯤 캐시한다. 빌드 번호를 붙여 올린 즉시 새 코드를 받게 한다.
+(async () => {
+  let q = '';
+  try {
+    const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) q = '?v=' + (await r.text()).trim();
+  } catch { /* 번호를 못 받으면 그냥 연다 */ }
+  const base = new URL('.', location.href).href;
+  const imports = { three: base + 'vendor/three.module.min.js' };
+  for (const f of ['art', 'data', 'game', 'main', 'match3d', 'scenes', 'sim', 'ui']) imports[base + 'js/' + f + '.js'] = base + 'js/' + f + '.js' + q;
+  const map = document.createElement('script');
+  map.type = 'importmap'; map.textContent = JSON.stringify({ imports });
+  document.head.append(map);
+  const css = document.createElement('link');
+  css.rel = 'stylesheet'; css.href = 'css/style.css' + q;
+  document.head.append(css);
+  const main = document.createElement('script');
+  main.type = 'module'; main.src = 'js/main.js' + q;
+  document.body.append(main);
+})();
+</script>
 </body>
 </html>

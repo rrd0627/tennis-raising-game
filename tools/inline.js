@@ -23,4 +23,5 @@ ${js}
 </html>
 `;
 writeFileSync('play.html', html);
+writeFileSync('version.txt', String(Date.now())); // index.html이 이 번호로 캐시를 건너뛴다
 console.log(`play.html ${(html.length / 1024).toFixed(0)}KB`);

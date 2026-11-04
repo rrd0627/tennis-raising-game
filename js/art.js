@@ -187,6 +187,13 @@ export async function sdFrames(charId, look, facing) {
   return out;
 }
 
+// 주간 화면의 전신 캐릭터. 실제 아트가 들어오면 여기서 바꾼다.
+const heroCache = new Map();
+export function heroURL(look, pose = 'ready') {
+  if (!heroCache.has(pose)) heroCache.set(pose, chibiCanvas(look, 'front', pose, 512).toDataURL());
+  return heroCache.get(pose);
+}
+
 // 머리 위 이모티콘
 export function emoteCanvas(kind) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
