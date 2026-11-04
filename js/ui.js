@@ -128,7 +128,7 @@ const SCREENS = {
         ${statRow(pv ? Object.fromEntries(pv.gains) : {}, true)}
         ${moves}
       </div>
-      ${V.sheet === 'partner' ? pickerHTML() : V.sheet === 'lesson' ? lessonHTML() : ''}
+      ${V.sheet === 'partner' ? pickerHTML() : V.sheet === 'lesson' ? lessonHTML() : V.sheet === 'settings' || V.sheet === 'restart' ? settingsHTML() : ''}
       ${S.pendingEvents.length ? eventHTML(S.pendingEvents[0]) : ''}
     </div>`;
   },
@@ -141,7 +141,7 @@ const SCREENS = {
     return `
     <div class="screen home" data-a="endweek">
       ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week))}
-      ${hudHTML()}
+      ${hudHTML(false)}
       <div class="hero">
         ${heroHTML(pose)}
         <div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>
@@ -233,8 +233,6 @@ const SCREENS = {
     }
     return `<div class="screen stats"><header class="topbar"><button class="back" data-a="go" data-s="week">‹</button><div class="wk">능력치</div><div class="sub">종합 ${G.overall(S.stats).toFixed(1)}</div></header>
       <div class="tabs scroll">${tabs.map(([id, n]) => `<button class="${tab === id ? 'on' : ''}" data-a="tab" data-id="${id}">${n}</button>`).join('')}</div>${body}
-      <button class="restartlink" data-a="restartAsk">처음부터 다시 시작</button>
-      ${V.sheet === 'restart' ? `<div class="overlay ev"><div class="sheet event"><h3>처음부터 다시 할까요?</h3><p>지금까지의 기록이 모두 사라지고 되돌릴 수 없어요.</p><div class="choices"><button class="btn" data-a="cancelsheet">계속 할게요</button><button class="btn danger" data-a="restart">처음부터 다시</button></div></div></div>` : ''}
     </div>`;
   },
 
@@ -347,13 +345,14 @@ function actTitle(id, topic) {
   return `${a.icon} ${a.name}`;
 }
 // 위쪽: 목표까지 남은 턴, 목표, 체력, 기분
-function hudHTML() {
+function hudHTML(gear = true) {
   const wi = weekInfo(S.week), goal = G.currentGoal(S);
   const left = Math.max(1, Math.floor(((goal ? goal.by : G.TOTAL_WEEKS) - S.week) / 2) + 1);
   const nextT = Object.entries(S.entries).map(([tid]) => G.tour(S, tid)).filter(t => t.week > S.week).sort((a, b) => a.week - b.week)[0];
   const [arrow, word] = MOOD[S.condition + 2];
   return `<div class="uhud">
     <div class="hudtop"><span class="yr">${wi.label}</span><span class="badge div-${S.division}">${S.division === '국화' ? '🌼' : '🌱'} ${S.division}</span>${nextT ? `<span class="yr">📅 ${nextT.week - S.week}주 뒤 ${esc(nextT.name)}</span>` : ''}</div>
+    ${gear ? `<button class="gearbtn" data-a="settings" aria-label="설정">⚙️</button>` : ''}
     <div class="hudmain">
       <div class="ucal ${left <= 3 ? 'urgent' : ''}"><b>${left}</b><small>턴 남음</small></div>
       <div class="hudr">
@@ -380,6 +379,11 @@ function gameButton(id) {
   const hurt = S.injury && a.tennis, off = locked || hurt, on = V.pick === id;
   const face = !off && S.faces[id];
   return `<button class="gbtn g-${id} ${on ? 'on' : ''} ${off ? 'off' : ''} ${open && !hurt ? 'hot' : ''}" data-a="${off ? 'nope' : 'act'}" data-id="${id}"><span class="gi">${a.icon}</span>${locked && !isTour ? '<span class="lock">🔒</span>' : ''}${face ? portrait(face, 'smile', 'pt xs') : ''}<b>${on ? (isTour ? '연락 ▶' : '이걸로 ▶') : a.name}</b></button>`;
+}
+// 설정. 지우기 전에 한 번 더 묻는다
+function settingsHTML() {
+  if (V.sheet === 'restart') return `<div class="overlay ev"><div class="sheet event"><h3>맨 처음부터 할까요?</h3><p>지금까지의 기록이 모두 사라지고 되돌릴 수 없어요.</p><div class="choices"><button class="btn" data-a="cancelsheet">계속 할게요</button><button class="btn danger" data-a="restart">처음부터 하기</button></div></div></div>`;
+  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1"><h3>설정</h3><button class="btn danger" data-a="restartAsk">맨 처음부터 하기</button><p class="hint">타이틀 화면으로 돌아가 이름을 정하는 것부터 다시 시작합니다.</p><button class="btn" data-a="cancelsheet">닫기</button></div></div>`;
 }
 // 못 고르는 버튼을 눌렀을 때 하는 혼잣말
 function nopeLine(id) {
@@ -519,9 +523,10 @@ async function onClick(e) {
       break;
     }
     case 'profileDone': S = G.newGame(V.profile.name, V.profile.answers); V.profile = null; doAction('lesson'); break;
+    case 'settings': if (S.pendingEvents.length) return; V.pick = null; V.note = null; V.sheet = 'settings'; break;
     case 'restartAsk': V.sheet = 'restart'; break;
     case 'cancelsheet': V.sheet = null; break;
-    case 'restart': G.clearSave(); S = null; V.sheet = null; V.screen = 'title'; break;
+    case 'restart': G.clearSave(); S = null; V.sheet = null; V.pick = null; V.note = null; V.screen = 'title'; break;
     case 'go': V.screen = d.s; V.tab = null; V.thread = null; V.sheet = null; break;
     case 'tab': V.tab = d.id; break;
     case 'act':

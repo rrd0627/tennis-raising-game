@@ -90,7 +90,6 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .nameline input { font: inherit; font-size: 17px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--card); color: var(--ink); min-width: 0; }
 .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
 .opt { background: var(--card); border-radius: 12px; padding: 14px 10px; font-weight: 700; text-align: center; word-break: keep-all; animation: scenein .35s ease-out; }
-.restartlink { align-self: center; margin-top: 12px; color: var(--muted); font-size: 12px; text-decoration: underline; padding: 8px; }
 .btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
 .lbl { font-weight: 700; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
 
@@ -120,7 +119,8 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 
 /* 위: 남은 턴 달력, 목표, 체력, 기분 */
 .uhud { position: relative; z-index: 4; flex: none; display: flex; flex-direction: column; gap: 4px; padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 0; }
-.hudtop { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.hudtop { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-right: 34px; min-height: 22px; }
+.gearbtn { position: absolute; right: 10px; top: calc(5px + env(safe-area-inset-top, 0px)); width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 255, 255, .94); font-size: 14px; line-height: 1; box-shadow: 0 2px 5px rgba(0, 0, 0, .25); }
 .yr { background: rgba(30, 40, 62, .78); color: #fff; border-radius: 99px; font-size: 11px; font-weight: 700; padding: 2px 9px; white-space: nowrap; }
 .hudtop .badge { font-size: 11px; padding: 2px 8px; }
 .hudmain { display: flex; align-items: stretch; gap: 8px; }
@@ -373,3 +373,4 @@ table.rep td:first-child { text-align: left; color: var(--muted); }
 
 .toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: rgba(31, 43, 36, .94); color: #fff; padding: 10px 16px; border-radius: 12px; z-index: 50; font-size: 13px; line-height: 1.5; max-width: min(440px, calc(100% - 32px)); transition: opacity .4s; }
 .toast.out { opacity: 0; }
+#newver { position: fixed; left: 50%; top: calc(36px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 60; white-space: nowrap; background: var(--pink); color: #fff; font-weight: 800; font-size: 13px; padding: 9px 16px; border-radius: 99px; box-shadow: 0 3px 12px rgba(0, 0, 0, .35); }

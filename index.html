@@ -29,6 +29,21 @@
   const main = document.createElement('script');
   main.type = 'module'; main.src = 'js/main.js' + q;
   document.body.append(main);
+  // 열어 둔 탭은 저절로 바뀌지 않으니 새 버전이 나오면 알려 준다. 저장은 브라우저에 남아 있다.
+  if (!q) return;
+  const check = async () => {
+    if (document.getElementById('newver')) return;
+    try {
+      const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok || '?v=' + (await r.text()).trim() === q) return;
+      const b = document.createElement('button');
+      b.id = 'newver'; b.textContent = '새 버전이 나왔어요. 눌러서 새로고침';
+      b.onclick = () => location.reload();
+      document.body.append(b);
+    } catch { /* 오프라인이면 넘어간다 */ }
+  };
+  setInterval(check, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
 })();
 </script>
 </body>
