@@ -83,7 +83,7 @@ const SCREENS = {
       body = `<div class="nameline"><input id="pname" maxlength="8" placeholder="이름" value="" autocomplete="off"><button class="btn primary" data-a="profileName">이에요</button></div>`;
     } else if (q) {
       line = `${P.reply} ${q.ask}`;
-      body = `<div class="opts">${q.options.map(o => `<button class="opt" data-a="profileOpt" data-id="${o.id}"><b>${o.name}</b><small>${o.hint}</small></button>`).join('')}</div>`;
+      body = `<div class="opts">${q.options.map(o => `<button class="opt" data-a="profileOpt" data-id="${o.id}">${o.name}</button>`).join('')}</div>`;
     } else {
       line = `${P.reply} 좋아요, ${P.name} 님. 오늘은 포핸드부터 해 봐요!`;
       body = `<button class="btn primary big" data-a="profileDone">네, 잘 부탁드려요!</button>`;
