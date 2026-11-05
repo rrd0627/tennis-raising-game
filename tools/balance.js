@@ -36,5 +36,21 @@ function runPlan(name, plan, r = 40, n = 1500, oppArch) {
 }
 console.log('--- 경기 전 작전 (40 vs 40, 상대는 점수에 따라 바꿈)');
 for (const p of PLAN_OPTS) runPlan(p.name, p.id);
+console.log('--- 기술 (40 vs 40, 평소대로 사선진)');
+function runSkill(name, skills, n = 1500) {
+  let wins = 0;
+  for (let i = 0; i < n; i++) {
+    const A = makeNpcTeam(rng, 40, ['A1', 'A2']), B = makeNpcTeam(rng, 40, ['B1', 'B2']);
+    A.players[0].skills = skills;
+    const sim = new MatchSim(A, B, { rng });
+    quickMatch(sim, () => { sim.teams[1].choices = aiChoices(sim, 1, rng); });
+    if (sim.winner === 0) wins++;
+  }
+  console.log(`${name}: 승률 ${(wins / n * 100).toFixed(1)}%`);
+}
+runSkill('기술 없음', {});
+for (const [k, n] of [['drop', '드롭'], ['smash', '스매시'], ['swing', '스윙발리'], ['read', '예측 수비']]) { runSkill(`${n} ○`, { [k]: 1 }); runSkill(`${n} ◎`, { [k]: 2 }); }
+runSkill('전부 ○', { drop: 1, smash: 1, swing: 1, read: 1 });
+runSkill('전부 ◎', { drop: 2, smash: 2, swing: 2, read: 2 });
 console.log('--- 강타형 상대 (40 vs 40)');
 for (const p of PLAN_OPTS) runPlan(p.name, p.id, 40, 1500, 'power');

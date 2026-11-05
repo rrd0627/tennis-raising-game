@@ -398,7 +398,7 @@ export class MatchView {
       if (!this.alive) return;
       const s = shots[i];
       const decisive = i === lastIdx && pt.big && ['win', 'ace', 'poach', 'center'].includes(s.res);
-      if (decisive && hooks.onCutin) { this.slow = 0.35; await hooks.onCutin(s, pt); }
+      if ((decisive || s.skill) && hooks.onCutin) { this.slow = 0.35; await hooks.onCutin(s, pt); }
       await this.playShot(s, shots[i + 1]);
     }
     // 결과 포즈

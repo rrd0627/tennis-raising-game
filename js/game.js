@@ -1,14 +1,14 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, SKILLS, SKILL_PRICE, EXP_OF, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
-import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES } from './scenes.js';
+import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES, HINT_LINES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
 export const WEEKS_PER_TURN = 2;
-export const GROWTH = 6.8; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
+export const GROWTH = 6.5; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
 // 확인 링크(?check)는 실제 저장을 건드리지 않도록 따로 저장한다
 const SAVE_KEY = typeof location !== 'undefined' && location.search.includes('check') ? 'tennis-raising-save-check' : 'tennis-raising-save-v3';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -41,7 +41,7 @@ export function newGame(name, profile = {}) {
     goalIdx: 0, goalsDone: [],
     injuries: 0, highStressWeeks: 0, flags: {}, unlocks: [], secretsGot: [], choices: null,
     pendingEvents: [], weekLog: null, ending: null, conds: {},
-    fam: { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } }, growBig: {}, exp: 0, fame: 0, prizes: [],
+    fam: { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } }, growBig: {}, exp: 0, fame: 0, prizes: [], skills: {}, hints: {}, hintAt: {},
   };
   const rng = rngOf(state);
   for (const id of ALL_STATS) state.stats[id] = Math.round(14 + rng() * 10);
@@ -83,6 +83,7 @@ function migrate(s) {
   s.faces = Object.fromEntries(TRAIN_SPOTS.map(id => { const f = s.faces?.[id]; return [id, Array.isArray(f) ? f : f ? [f] : []]; }));
   s.conds = s.conds || {};
   s.fam = s.fam || { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } };
+  s.skills = s.skills || {}; s.hints = s.hints || {}; s.hintAt = s.hintAt || {};
   s.growBig = s.growBig || {}; s.exp = s.exp || 0; s.fame = s.fame || 0; s.prizes = s.prizes || [];
   for (const t of s.calendar || []) if (!t.surface) t.surface = ['hard', 'turf', 'clay'][hashStr(t.id) % 3];
   if (s.yips > 0 && !s.conds.yips) s.conds.yips = 3;
@@ -140,6 +141,44 @@ function rollFaces(state, rng) {
     const at = spots.find(id => (x -= p.spots[id]) < 0) || spots[0];
     state.faces[at].push(p.id);
   }
+  rollHints(state, rng, open);
+}
+// ── 기술 ──────────────────────────────────────────────────
+// 자연스럽게 알게 되거나, 누군가 가르쳐 준다. 힌트가 있으면 경험으로 배운다.
+const HINT_MAX = 5;
+const hintable = (state, list) => list.filter(id => (state.hints[id] || 0) < HINT_MAX);
+export function skillLv(state, id) { return state.skills?.[id] || 0; }
+export function skillPrice(state, id) {
+  const lv = skillLv(state, id);
+  return lv >= 2 ? null : Math.round(SKILL_PRICE[lv] * (1 - Math.min(0.4, Math.max(0, (state.hints[id] || 0) - 1) * 0.1)));
+}
+export function canBuySkill(state, id) { const lv = skillLv(state, id); return lv < 2 && (state.hints[id] || 0) >= lv + 1 && state.exp >= skillPrice(state, id); }
+export function buySkill(state, id) { if (!canBuySkill(state, id)) return false; state.exp -= skillPrice(state, id); state.skills[id] = skillLv(state, id) + 1; return true; }
+export function skillsKnown(state) { return Object.keys(SKILLS).some(id => (state.hints[id] || 0) > 0); }
+// 이번 턴에 누가 뭔가 알려 줄 것 같은 칸. 첫 대회 뒤부터 나온다.
+function rollHints(state, rng, open) {
+  state.hintAt = {};
+  if (!state.results.length) return;
+  for (const id of open) {
+    for (const pid of state.faces[id] || []) {
+      const list = hintable(state, PARTNER[pid].teaches || []);
+      if (list.length && rng() < 0.08 + state.partners[pid].aff / 500) { state.hintAt[id] = { skill: list[Math.floor(rng() * list.length)], who: pid }; break; }
+    }
+  }
+  if (open.includes('lesson') && !state.hintAt.lesson && rng() < 0.1) {
+    const list = hintable(state, Object.keys(SKILLS));
+    if (list.length) state.hintAt.lesson = { skill: list[Math.floor(rng() * list.length)], who: 'coach' };
+  }
+}
+const NATURAL = { practice: ['drop'], club: ['read', 'swing', 'smash'], stroke: ['drop'], net: ['smash', 'swing'], mental: ['read'] };
+function naturalHint(state, id, topic, rng) {
+  if (!state.results.length || !ACT[id].tennis || rng() >= 0.05) return null;
+  const list = hintable(state, NATURAL[id] || NATURAL[topic] || []);
+  return list.length ? { skill: list[Math.floor(rng() * list.length)], who: 'me' } : null;
+}
+function hintLine(skill, who) {
+  const l = HINT_LINES[skill];
+  return who === 'me' ? l.self : l.teach.replaceAll('{p}', who === 'coach' ? '코치' : PARTNER[who].name);
 }
 // 호흡이 맞는 사람이 자기 특기 칸에 와 있으면 그 칸의 훈련이 크게 곱해진다
 export function hasBond(state, pid) { return state.partners[pid].aff >= BOND_AT; }
@@ -296,6 +335,13 @@ export function runWeek(state, id, topic) {
   const people = a.train ? [...(state.faces[id] || [])] : [], bonds = a.train && !fail ? bondsAt(state, id) : [];
   const lead = bonds[0] || people[0] || null;
   log.with = lead; log.people = people; log.bonds = bonds;
+  // 기술 힌트: 칸에 와 있는 사람이 알려 주거나, 치다 보니 자연스럽게 알게 된다
+  if (a.train && !fail) {
+    const h = (force.hint && { skill: force.hint, who: 'me' }) || state.hintAt?.[id] || naturalHint(state, id, topic, rng);
+    if (h) { state.hints[h.skill] = (state.hints[h.skill] || 0) + 1; log.hint = { ...h, line: hintLine(h.skill, h.who), first: state.hints[h.skill] === 1 }; }
+  }
+  // 경험: 대회 > 클럽 게임 > 레슨
+  if (!fail && EXP_OF[id]) { state.exp += EXP_OF[id]; log.exp = EXP_OF[id]; }
   const before = bigValues(state.stats), f0 = state.fatigue, s0 = state.stress;
   const K = actionK(state, id) * (fail ? 0.3 : feel === 'good' ? 1.15 : feel === 'bad' ? 0.85 : 1), plan = growthPlan(state, id, fx);
   for (const [sid, amt] of Object.entries(plan)) growStat(state, sid, amt, K, rng);
@@ -691,6 +737,7 @@ export function eventView(state, ev) {
     case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
     case 'goalMiss': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "이번 목표(${g.text})는 아쉬웠어요. 괜찮아요, 다음 목표로 가요."`, choices: [['ok', '다시 해 보자']] }; }
     case 'story': { const st = STORIES.find(x => x.id === ev.story); return { who: st.who, title: st.title, text: st.text + (st.note ? ` (${st.note})` : ''), choices: [['ok', st.ok]] }; }
+    case 'hint': return { who: 'me', title: `기술 힌트: ${SKILLS[ev.skill].name}`, text: `${hintLine(ev.skill, 'me')} (기술 버튼에서 경험으로 배울 수 있다)`, choices: [['ok', '다음에 또 해 봐야지']] };
     case 'callout': return { who: ev.pid, title: '번개 연락', text: `${P[ev.pid].name}: "오늘 한 게임 어때요? 한 자리 비어요." 몸이 좀 무겁긴 한데.`, choices: [['accept', '나간다'], ['refuse', '오늘은 못 나가요']] };
     case 'yipsOn': return { who: 'coach', title: '입스가 왔다', text: '코치: "서브 토스가 안 떨어지죠? 누구나 한 번은 와요. 서브 레슨으로 천천히 풀어요. 머리를 비우는 것도 좋아요."', choices: [['ok', '네…']] };
     case 'bond': { const st = PERSON_STORIES[ev.pid][ev.step], full = st.at >= BOND_AT; return { who: ev.pid, title: full ? '호흡이 맞기 시작했다' : '조금 가까워졌다', text: st.text + (full ? ' (같이 훈련하면 훨씬 잘 늘고, 같이 대회에 나가면 편하게 친다)' : ''), choices: [['ok', st.ok]] }; }
@@ -789,7 +836,7 @@ export function startTournament(state, tid) {
   const seed = teamSeed(state, t, e.partner);
   // 입문기: 1년차 상반기 상대는 약하게 시작해 26주에 걸쳐 원래 수준으로 오른다
   const ramp = state.division === '개나리' ? clamp((26 - state.week) / 26, 0, 1) * 11 : 0;
-  const mu = (state.division === '국화' ? 60 : 37) + (t.type === 'national' ? (state.division === '국화' ? 3 : 1) : -3) - ramp;
+  const mu = (state.division === '국화' ? 63 : 37) + (t.type === 'national' ? (state.division === '국화' ? 3 : 1) : -3) - ramp;
   const bye = seed !== null && seed <= 2;
   const mk = (rating) => {
     const club = CLUB_NAMES[Math.floor(rng() * CLUB_NAMES.length)];
@@ -836,7 +883,7 @@ export function buildTeams(state, tr) {
   const npc = makeNpcTeam(rng, opp.rating, opp.names, opp.arch);
   npc.players.forEach(p => { p.club = opp.club; });
   const cond = state.condition - (tr.spare ? 1 : 0);
-  const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond };
+  const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond, skills: { ...(state.skills || {}) } };
   applyEnv(state, tr, opp, me.stats);
   if (hasCond(state, 'yips')) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
   if (hasCond(state, 'sure')) me.conf = Math.min(100, me.conf + 6);
@@ -908,6 +955,11 @@ function finishTournament(state, tr, stage) {
   state.exp = (state.exp || 0) + exp; state.fame = (state.fame || 0) + fame;
   state.prizes.push({ name: prize, tname: tr.name, week: state.week, stage });
   tr.rewards = { exp, fame, prize };
+  // 대회에서 본 공이 기술의 힌트가 되기도 한다
+  if (tr.matchIdx >= 2 && rngP() < 0.25) {
+    const list = hintable(state, Object.keys(SKILLS));
+    if (list.length) { const sk = list[Math.floor(rngP() * list.length)]; state.hints[sk] = (state.hints[sk] || 0) + 1; state.pendingEvents.push({ id: 'hint', skill: sk }); }
+  }
   // 입상하면 같이 나가고 싶어 하는 사람이 생긴다
   if (['W', 'F', 'SF', 'QF'].includes(stage) && !(stage === 'W' && tr.type === 'national' && tr.div === '개나리')) {
     const next = state.calendar.find(t => t.week > state.week && t.week <= state.week + 12);

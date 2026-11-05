@@ -27,10 +27,17 @@ export const TUNE = {
     lob: { early: { q: -4, err: 1 }, late: { q: 3, err: 0.93 }, tire: 0.9 },
   },
   rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
+  // 기술. 배운 사람만 쓴다. 안 배우면 기존과 같아서 승률 표는 기술 없는 기준이다. 배열은 수준 0, 1, 2.
+  skill: {
+    use: { drop: [1, 2, 3], smash: [1, 1.5, 2], swing: [1, 4, 7] }, // 고르는 빈도
+    q: [0, 8, 14], win: [1, 1.5, 2], risk: [1, 0.6, 0.35],
+    readDef: [0, 4, 8], readSave: [0, 0.25, 0.4], // 예측 수비: 수비값, 위너가 될 공을 받아 낼 확률
+  },
   gritK: 0.06, // 2게임 이상 뒤질 때 끈질긴 작전에 붙는 힘. 회복탄력성과 스태미나에 비례
 };
 const avg = (...xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
 
+const SKILL_OF = { dropshot: 'drop', drop_volley: 'drop', smash: 'smash', swing_volley: 'swing' };
 export const SHOT_NAME = {
   serve: '서브', serve2: '세컨 서브', return: '리턴', chip_return: '칩 리턴',
   fh_drive: '포핸드', bh_drive: '백핸드', fh_slice: '포핸드 슬라이스', bh_slice: '백핸드 슬라이스',
@@ -111,7 +118,7 @@ export class MatchSim {
     [teamA, teamB].forEach((t, ti) => t.players.forEach((p, k) => {
       this.P.push({
         ...p, team: ti, slot: k, side: k, gauge: clamp(40 + (p.conf ?? 50) * 0.4, 20, 85), F: opts.startFatigue?.[ti] ?? 0, pos: 'base',
-        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, errEarly: 0, errLate: 0, poachTry: 0, poachWin: 0, assists: 0, counter: {}, shots: {} },
+        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, errEarly: 0, errLate: 0, skillUse: {}, poachTry: 0, poachWin: 0, assists: 0, counter: {}, shots: {} },
       });
     }));
     teamA.choices = { ...DEFAULT_CHOICES, ...(teamA.choices || {}) };
@@ -325,15 +332,16 @@ export class MatchSim {
       const T = this.teams[H.team];
       const choice = this.chooseShot(H, inc);
       const { type: st, dir } = choice;
+      const skillKey = SKILL_OF[st], skillLv = (skillKey && H.skills?.[skillKey]) || 0;
       const S = this.statFor(H, st, inc);
       const Sc = st === 'return' || st === 'chip_return' ? S : H.stats[COURSE_STAT[dir] || 'cross'];
       const combo = (T.combo || 0) * 0.08;
       let Q = TUNE.statW * S + (1 - TUNE.statW) * Sc + gauss(rng) * TUNE.noise + M(H) * 100 + combo - fat(H) * 0.8 - inc.D * TUNE.qD;
-      Q += tempoOf(T).q + planVal(T, 'q');
+      Q += tempoOf(T).q + planVal(T, 'q') + TUNE.skill.q[skillLv];
       // 뒤지고 있어도 끈질기게 버티는 힘
       if ((T.choices.plan === 'twoback' || T.choices.plan === 'lob') && this.games[1 - H.team] - this.games[H.team] >= 2) Q += Math.max(0, (H.stats.resilience + H.stats.stamina) / 2 - 25) * TUNE.gritK;
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
-      let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
+      let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) * TUNE.skill.risk[skillLv] + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
       err = clamp(err, 0.02, 0.65);
       tire(H);
       const posNow = this.snapshot();
@@ -355,6 +363,7 @@ export class MatchSim {
         return this.finish(shots, 1 - H.team, 'err', H, ctx);
       }
       rec(H, st, 'n');
+      if (skillLv) H.rec.skillUse[skillKey] = (H.rec.skillUse[skillKey] || 0) + 1;
       // 받는 사람
       let R = this.pickReceiver(H, st, dir);
       const Rteam = this.teams[R.team];
@@ -405,20 +414,25 @@ export class MatchSim {
       if (st === 'smash') Def *= 0.72;
       if (dir === 'dtl' && R.pos === 'net') Def -= 8;
       Def += this.gmod(R) * 50;
+      const readLv = R.skills?.read || 0;
+      Def += TUNE.skill.readDef[readLv];
       const lob = st === 'topspin_lob' || st === 'def_lob' || st === 'moon_volley';
       if (lob && R.pos === 'net') { Def = Def * 0.75 + this.mate(R).stats.cover * 0.25; }
-      let w = clamp((TUNE.winBase + (Q - Def) * TUNE.winSlope) * (WINNER_F[st] || 1), 0, 0.5) * tempoOf(T).win;
+      let w = clamp((TUNE.winBase + (Q - Def) * TUNE.winSlope) * (WINNER_F[st] || 1), 0, 0.5) * tempoOf(T).win * TUNE.skill.win[skillLv];
       if (st === 'def_lob') w = Math.min(w, 0.04);
       const Ri = this.P.indexOf(R);
       const rz = this.zSign(R.team);
-      if (rng() < w) {
+      let hit = rng() < w, saved = false;
+      // 예측 수비: 위너가 될 공을 미리 움직여 받아 낸다
+      if (hit && readLv && rng() < TUNE.skill.readSave[readLv]) { hit = false; saved = true; R.rec.skillUse.read = (R.rec.skillUse.read || 0) + 1; }
+      if (hit) {
         H.rec.winners++; rec(H, st, 'win');
         this.assist(H, lastByTeam);
         H.gauge += 4;
         const ra = this.anchor(R);
         const land = lob ? [ra[0] * 0.6, rz * 10.5] : st === 'dropshot' || st === 'drop_volley' ? [ra[0] * 0.5, rz * 2.2] : [clamp(ra[0] + (rng() < 0.5 ? 3 : -3), -5, 5), rz * (5 + rng() * 4)];
         const out = [land[0] * 1.15, rz * 13.5];
-        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri });
+        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, skill: skillLv ? skillKey : undefined });
         if (counter) recCounter(R, counter, false);
         return this.finish(shots, H.team, 'win', H, ctx);
       }
@@ -427,13 +441,13 @@ export class MatchSim {
       const n1 = gauss(rng), u1 = R.pos === 'base' ? rng() : 0.5, u2 = R.pos === 'base' && !lob ? rng() : 0.5;
       const { contact, bounce } = landingOf(st, dir, R.pos, ra, rz, n1, u1, u2);
       if (lob && R.pos === 'net') R.pos = 'base';
-      shots.push({ h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow });
+      shots.push({ h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined });
       // 이동
       if (st === 'chip_return' || (T.choices.shot === 'dash' && H.pos === 'base' && !lob && rng() < 0.45)) H.pos = 'net';
       if (st === 'topspin_lob' && T.choices.shot === 'lob_net') { H.pos = 'net'; this.mate(H).pos = 'net'; }
       lastByTeam[H.team] = H; lastShooter = H;
       inc = {
-        D: clamp(Q - Def * TUNE.dCarry + 10, 0, 95), height: HEIGHT[st] || 'mid', type: st, from: H, counter,
+        D: clamp(Q - Def * TUNE.dCarry + 10 - (saved ? 15 : 0), 0, 95), height: HEIGHT[st] || 'mid', type: st, from: H, counter,
         forceBh: T.choices.attack === 'back' && rng() < 0.6,
       };
       H = R;
@@ -457,7 +471,7 @@ export class MatchSim {
     }
     const byIdx = this.P.indexOf(by);
     const text = this.describe(shots, winner, endType, by);
-    return { shots, winner, endType, by: byIdx, label: ctx.label, big: ctx.big, text, gauges: this.P.map(p => Math.round(p.gauge)), states: this.P.map(p => this.mentalState(p)) };
+    return { shots, winner, endType, by: byIdx, label: ctx.label, big: ctx.big, skill: shots.find(x => x.skill)?.skill, text, gauges: this.P.map(p => Math.round(p.gauge)), states: this.P.map(p => this.mentalState(p)) };
   }
 
   describe(shots, winner, endType, by) {
@@ -516,6 +530,13 @@ export class MatchSim {
       }
     }
     const mul = (keys, f) => keys.forEach(k => { if (w[k]) w[k] *= f; });
+    // 배운 기술은 더 자주 쓴다
+    if (H.skills) {
+      const u = TUNE.skill.use, sk = H.skills;
+      if (sk.drop) mul(['dropshot', 'drop_volley'], u.drop[sk.drop]);
+      if (sk.smash) mul(['smash'], u.smash[sk.smash]);
+      if (sk.swing) mul(['swing_volley'], u.swing[sk.swing]);
+    }
     if (ch.shot === 'moon') mul(['topspin_lob', 'def_lob', 'moon_volley'], 2.5);
     if (ch.shot === 'slice' || ch.shot === 'deep_slice') mul(['fh_slice', 'bh_slice', 'chip_return'], 2.5);
     if (ch.shot === 'power') mul(['fh_drive', 'bh_drive', 'smash', 'swing_volley', 'return', 'passing'], 2);

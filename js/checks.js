@@ -37,4 +37,10 @@ export const CHECKS = [
   { group: '3. 첫 대회 (7주차)', label: '예선 탈락 뒤', hint: '축하 자리 없이 지나가요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '개나리 전국대회 우승, 국화 승급', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'national', 'W'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '입상 뒤 같이 나가자는 연락', hint: '같이 나간다, 거절한다 중에 골라 보세요.', make: s => { ready(s); const t = s.calendar.find(x => x.week > 45); s.pendingEvents = [{ id: 'invite', tid: t.id, pid: 'sunhee', after: { name: '해솔구청장배', stage: 'SF' } }]; } },
+
+  { group: '4. 첫 대회 뒤 (기술)', label: '누가 뭔가 알려 줄 것 같은 칸', hint: '훈련을 눌러 얼굴 위 ! 표시를 보세요. 그 칸을 고르면 기술 힌트가 나와요.', make: s => { ready(s); s.faces.club = ['sunhee']; s.hintAt = { club: { skill: 'drop', who: 'sunhee' } }; s.lastSpot = 'lesson'; } },
+  { group: '4. 첫 대회 뒤 (기술)', label: '코치가 알려 주는 레슨', hint: '훈련 → 레슨을 고르세요. 버튼에 ! 표시가 있어요.', make: s => { ready(s); s.hintAt = { lesson: { skill: 'smash', who: 'coach' } }; } },
+  { group: '4. 첫 대회 뒤 (기술)', label: '치다 보니 자연스럽게 알게 된 턴', hint: '훈련 → 벽치기를 고르세요.', make: s => { ready(s); s.lastSpot = 'practice'; s.force = { hint: 'drop' }; } },
+  { group: '4. 첫 대회 뒤 (기술)', label: '경험으로 기술 배우기', hint: '기술 버튼을 누르세요. 배워도 턴은 그대로예요.', make: s => { ready(s); s.hints = { drop: 2, smash: 1, read: 1 }; s.exp = 220; } },
+  { group: '4. 첫 대회 뒤 (기술)', label: '기술을 모두 배운 뒤 경기', hint: '경기를 시작하고 중계로 보세요. 기술이 통하면 이름이 크게 떠요. 끝나면 쓴 기술 횟수가 나와요.', make: (s, G) => { ready(s); strong(s, 48); s.skills = { drop: 2, smash: 2, swing: 2, read: 2 }; s.hints = { drop: 2, smash: 2, swing: 2, read: 2 }; G.checkTour(s, 'local'); return 'tourIntro'; } },
 ];

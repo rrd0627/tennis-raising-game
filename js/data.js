@@ -87,6 +87,17 @@ export const OUTINGS = [
   { id: 'home', name: '본가에서 쉬다 왔다', rate: 0.2, fatigue: -18, stress: -20, mood: 1 },
 ];
 
+// 기술. 힌트를 얻으면 경험으로 배운다. 턴을 쓰지 않는다. 0: 못함, 1: 할 줄 안다, 2: 자신 있다.
+export const SKILLS = {
+  drop: { name: '드롭', desc: '네트 앞에 짧게 떨어뜨린다.' },
+  smash: { name: '스매시', desc: '높은 공을 놓치지 않고 때린다.' },
+  swing: { name: '스윙발리', desc: '떠 있는 공에 달려들며 세게 친다.' },
+  read: { name: '예측 수비', desc: '상대가 어디로 칠지 미리 움직인다.' },
+};
+export const SKILL_PRICE = [80, 150]; // 배우는 데 드는 경험. 힌트가 늘면 줄어든다.
+export const SKILL_LV_NAME = ['알게 됐다', '할 줄 안다 ○', '자신 있다 ◎'];
+export const EXP_OF = { lesson: 4, club: 8 }; // 대회 > 클럽 게임 > 레슨
+
 // 몸과 마음의 상태. turns: 지속 턴, k: 훈련 효과 배수.
 export const CONDS = {
   sure: { name: '이제 좀 되는지도?', kind: 'good', turns: 3, k: 1.1 },
@@ -174,22 +185,23 @@ export const INTRO_SCENES = [
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────
 // spec: 특기 칸. spots: 칸마다 나타나는 가중치(없으면 안 나타남). gives: 같이 훈련하면 더 느는 능력치. 홈트는 집에서 혼자 한다.
+// teaches: 알려 줄 수 있는 기술.
 export const PARTNERS = [
   { id: 'hana', spec: 'practice', spots: { practice: 5, lesson: 3, club: 1, gym: 1 }, gives: { comm: 0.5, resilience: 0.5 }, name: '김하나', arch: '테니스 입문 동기', style: '올라운드', div: '개나리', level: 17, growth: 0.32, aff: 25, known: true,
     bias: {}, color: { hair: '#5a3a2a', outfit: '#ffb3c7' }, line: '우리 같이 크는 거야!' },
-  { id: 'sunhee', spec: 'club', spots: { club: 5, practice: 2 }, gives: { def_lob: 0.5, topspin_lob: 0.4, bh_slice: 0.4, c_lob: 0.3 }, name: '박선희', arch: '클럽 고인물 선배', style: '로브·슬라이스 수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
+  { id: 'sunhee', teaches: ['drop', 'read'], spec: 'club', spots: { club: 5, practice: 2 }, gives: { def_lob: 0.5, topspin_lob: 0.4, bh_slice: 0.4, c_lob: 0.3 }, name: '박선희', arch: '클럽 고인물 선배', style: '로브·슬라이스 수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
     bias: { def_lob: 18, topspin_lob: 14, fh_slice: 14, bh_slice: 16, c_lob: 10, power: -12, first_serve: -10 }, color: { hair: '#2b2b2b', outfit: '#9ad0a8' }, line: '공은 넘기기만 하면 돼~' },
   { id: 'sumin', spec: 'gym', spots: { gym: 5, lesson: 2, practice: 2, club: 1 }, gives: { drive: 0.6, stamina: 0.3 }, name: '이수민', arch: '같은 회사 동기', style: '올라운드', div: '개나리', level: 22, growth: 0.16, aff: 30, known: true,
     bias: {}, color: { hair: '#7a4b2a', outfit: '#a8c8ff' }, line: '팀장님 몰래 연습 가자.' },
-  { id: 'daeun', spec: 'club', spots: { club: 5, practice: 2, lesson: 1 }, gives: { fh_volley: 0.5, bh_volley: 0.4, poach: 0.5 }, name: '정다은', arch: '전위 장인', style: '포치·발리형 전위', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
+  { id: 'daeun', teaches: ['swing', 'smash'], spec: 'club', spots: { club: 5, practice: 2, lesson: 1 }, gives: { fh_volley: 0.5, bh_volley: 0.4, poach: 0.5 }, name: '정다은', arch: '전위 장인', style: '포치·발리형 전위', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
     bias: { fh_volley: 16, bh_volley: 14, poach: 20, smash: 10, drive: 10, def_lob: -10 }, color: { hair: '#c0473a', outfit: '#ffd166' }, line: '앞은 내가 다 먹을게.' },
-  { id: 'jiwoo', spec: 'practice', spots: { practice: 5, gym: 2, club: 2 }, gives: { speed: 0.6, first_step: 0.5 }, name: '한지우', arch: '대학생 유망주', style: '스피드형', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
+  { id: 'jiwoo', teaches: ['read'], spec: 'practice', spots: { practice: 5, gym: 2, club: 2 }, gives: { speed: 0.6, first_step: 0.5 }, name: '한지우', arch: '대학생 유망주', style: '스피드형', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
     bias: { speed: 18, first_step: 14, stamina: 10, composure: -12 }, color: { hair: '#3a2a5a', outfit: '#b5f0e0' }, line: '언니 저 시험 끝나면 다 나가요!', exams: [15, 16, 41, 42] },
-  { id: 'arah', spec: 'gym', spots: { gym: 5, club: 3, practice: 1 }, gives: { fh_drive: 0.5, power: 0.5, swing_volley: 0.3 }, name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
+  { id: 'arah', teaches: ['swing', 'smash'], spec: 'gym', spots: { gym: 5, club: 3, practice: 1 }, gives: { fh_drive: 0.5, power: 0.5, swing_volley: 0.3 }, name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
     bias: { fh_drive: 16, power: 14, swing_volley: 14, composure: -10, comm: -8 }, color: { hair: '#1e1e2a', outfit: '#ff8a5c' }, line: '이길 거면 같이 해.' },
-  { id: 'mikyung', spec: 'lesson', spots: { lesson: 5, club: 3 }, gives: { shot_sel: 0.5, positioning: 0.5, composure: 0.4 }, name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '노련한 전술형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
+  { id: 'mikyung', teaches: ['read', 'drop'], spec: 'lesson', spots: { lesson: 5, club: 3 }, gives: { shot_sel: 0.5, positioning: 0.5, composure: 0.4 }, name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '노련한 전술형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
     bias: { shot_sel: 16, positioning: 16, composure: 18, clutch: 14, speed: -14, stamina: -10 }, color: { hair: '#8a8a8a', outfit: '#c9b6ff' }, line: '급할수록 한 박자 늦게.' },
-  { id: 'yujin', spec: 'lesson', spots: { lesson: 5, gym: 2, club: 2 }, gives: { first_serve: 0.6, power: 0.4, smash: 0.3 }, name: '최유진', arch: '선수 출신 에이스', style: '파워·서브형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
+  { id: 'yujin', teaches: ['smash', 'swing'], spec: 'lesson', spots: { lesson: 5, gym: 2, club: 2 }, gives: { first_serve: 0.6, power: 0.4, smash: 0.3 }, name: '최유진', arch: '선수 출신 에이스', style: '파워·서브형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
     bias: { first_serve: 16, power: 16, fh_drive: 12, smash: 12, composure: -6 }, color: { hair: '#2a2a2a', outfit: '#ffffff' }, line: '국화 오면 연락해.' },
 ];
 export const PARTNER = Object.fromEntries(PARTNERS.map(p => [p.id, p]));
@@ -243,8 +255,8 @@ export const POINTS = {
 };
 // 대회에서 남는 것: 경험, 인맥, 상품 (우마무스메의 SP, 팬, 신발·꽃장식 자리)
 export const TOUR_EXP = {
-  local: { W: 40, F: 30, SF: 22, QF: 16, R16: 12, R32: 8, G: 5 },
-  national: { W: 80, F: 60, SF: 45, QF: 32, R16: 24, R32: 18, R64: 14, R128: 10, G: 8 },
+  local: { W: 60, F: 44, SF: 34, QF: 26, R16: 20, R32: 16, G: 12 },
+  national: { W: 110, F: 85, SF: 65, QF: 50, R16: 40, R32: 32, R64: 26, R128: 22, G: 16 },
 };
 export const TOUR_FAME = {
   local: { W: 12, F: 8, SF: 5, QF: 3, R16: 1, R32: 1, G: 0 },

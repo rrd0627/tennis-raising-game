@@ -2,7 +2,7 @@
 // node tools/season.js [횟수]  첫 회차만 곡선을 자세히 찍고, 나머지는 요약한다.
 import * as G from '../js/game.js';
 import { MatchSim, quickMatch, aiChoices } from '../js/sim.js';
-import { PARTNERS, BIG_STATS, PROFILE } from '../js/data.js';
+import { PARTNERS, BIG_STATS, PROFILE, SKILLS } from '../js/data.js';
 const PLANS = { power: { formation: 'diag', shot: 'power', tempo: 'attack' }, twoup: { formation: 'up', shot: 'dash', tempo: 'normal' }, twoback: { formation: 'back', shot: 'slice', tempo: 'normal' }, lob: { formation: 'diag', shot: 'moon', tempo: 'safe' } };
 
 const RUNS = +process.argv[2] || 30;
@@ -38,6 +38,7 @@ const randomProfile = () => Object.fromEntries(PROFILE.map(q => [q.key, pick(q.o
 function play(detail) {
   const s = G.newGame('테스트', randomProfile());
   let matches = 0, watched = 0, wins = 0, last = -99, turn = 0, bondTurns = 0, firstBond = null;
+  let firstSkill = null;
   const used = {}, fails = {}, feels = { good: 0, bad: 0 };
   let moodSum = 0, moodN = 0;
   const out = [];
@@ -48,6 +49,7 @@ function play(detail) {
       const yes = ev.id === 'invite' ? G.tour(s, ev.tid).week - last >= NATIONAL_GAP && s.fatigue < 60 : ev.id === 'callout' ? Math.random() < 0.5 : true;
       G.resolveEvent(s, ev, yes ? 'accept' : 'refuse');
     }
+    for (const id of Object.keys(SKILLS)) while (G.canBuySkill(s, id)) { G.buySkill(s, id); firstSkill = firstSkill ?? s.week; }
     let tw = G.tournamentThisWeek(s);
     const open = G.openTournament(s);
     if (!tw && open && !s.injury && !s.overtime && s.fatigue < 60 && s.week - last >= (open.type === 'national' ? NATIONAL_GAP : LOCAL_GAP)) {
@@ -91,7 +93,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, exp: s.exp, fame: s.fame, prizes: s.prizes.length, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, firstSkill, tiers: Object.values(s.skills).reduce((a, b) => a + b, 0), hints: Object.values(s.hints).reduce((a, b) => a + b, 0), exp: s.exp, fame: s.fame, prizes: s.prizes.length, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
 }
 
 const rs = [];
@@ -108,6 +110,7 @@ const fb = rs.map(r => r.firstBond).filter(Boolean);
 console.log(`호흡 훈련: ${range(rs.map(r => r.bondTurns))}턴 | 첫 호흡 훈련 주: ${fb.length ? range(fb) : '없음'} | 호흡 맞는 사람 ${range(rs.map(r => r.bonded))}명`);
 console.log(`칸 사용 중앙값: ${['lesson', 'gym', 'practice', 'club', 'home', 'rest', 'family', 'clinic'].map(k => `${k} ${med(rs.map(r => r.used[k] || 0))}`).join(', ')} | 칸 레벨 예: ${rs[0].lv}`);
 console.log(`실패: ${range(rs.map(r => r.failN))}턴 | 연습한 대로 나옴 ${med(rs.map(r => r.feels.good))} 안 나옴 ${med(rs.map(r => r.feels.bad))} | 평균 기분 ${(rs.reduce((a, r) => a + r.mood, 0) / rs.length).toFixed(2)}`);
+console.log(`기술 단계 ${range(rs.map(r => r.tiers))} / 8 | 힌트 ${med(rs.map(r => r.hints))}개 | 첫 기술 주 ${range(rs.map(r => r.firstSkill ?? 999))}`);
 console.log(`경험 ${med(rs.map(r => Math.round(r.exp)))} 인맥 ${med(rs.map(r => Math.round(r.fame)))} 상품 ${med(rs.map(r => r.prizes))}개 | 작전별 승률: ${Object.entries(planWins).map(([k, [w, n]]) => `${k} ${(w / Math.max(1, n) * 100).toFixed(0)}%`).join(', ')}`);
 console.log(`엔딩: ${count('ending')}`);
 for (const q of PROFILE) console.log(`${q.key} 승급 주 중앙값: ` + q.options.map(o => { const w = rs.filter(r => r[q.key] === o.id && r.promoted).map(r => r.promoted); return `${o.id} ${w.length ? med(w) : '-'}`; }).join(', '));

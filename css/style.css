@@ -278,6 +278,19 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 @keyframes sweep { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
 .trophy { position: absolute; left: 50%; top: 22%; z-index: 3; transform: translateX(-50%); font-size: 62px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .35)); pointer-events: none; }
 
+/* 기술 */
+.skillrow { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.skillrow > div { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.skillrow small { flex-basis: 100%; color: #5b6560; font-size: 12px; word-break: keep-all; }
+.skillrow em { font-style: normal; font-size: 11.5px; font-weight: 800; color: #5b6560; }
+.skillrow em.lv1 { color: #2f8ae0; } .skillrow em.lv2 { color: #e8a200; }
+.skillrow.unknown { opacity: .6; }
+.skillrow .btn { flex: none; line-height: 1.25; }
+.skillrow .needhint { flex: none; flex-basis: auto; width: 62px; text-align: right; }
+.hintmark { position: absolute; top: -7px; left: -3px; z-index: 2; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #ff4f6e; border: 1.5px solid #fff; color: #fff; font-size: 12px; font-weight: 900; font-style: normal; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); animation: hintpop 1s ease-in-out infinite; }
+.hintmark.onbtn { top: 2px; left: auto; right: 4px; }
+@keyframes hintpop { 50% { transform: translateY(-3px); } }
+
 /* 몸과 마음 상태 */
 .condchips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .cchip { color: #fff; font-size: 10.5px; font-weight: 800; border: 1.5px solid #fff; border-radius: 99px; padding: 1px 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); white-space: nowrap; }
@@ -368,7 +381,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .say { bottom: 24px; font-size: 12.5px; padding: 6px 10px; }
   .risk { bottom: 24px; }
 }
-@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i, .tf.bond .pt.xs, .screen.party .heroimg, .spots i { animation: none; } .confetti { display: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i, .tf.bond .pt.xs, .screen.party .heroimg, .spots i, .hintmark { animation: none; } .confetti { display: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
 
 /* 시트·오버레이 */
 .overlay { position: fixed; inset: 0; background: rgba(20, 30, 24, .45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
