@@ -81,7 +81,7 @@ function runFx() {
 const SCREENS = {
   title: () => V.check ? checkListHTML() : `
     <div class="screen title" data-a="titleStart">
-      <div class="logo"><div class="ball">🎾</div><h1>테니스 선수<br>키우기</h1><p>신입 회원을 개나리에서 국화까지, 선배가 함께하는 3년</p></div>
+      <div class="logo"><div class="ball">🎾</div><h1>테니스 선수<br>키우기</h1><p>간절히 바라는 사람에게 테니스의 요정이 찾아간다</p></div>
       ${portrait('me', 'smile', 'title-pt')}
       <p class="tapstart">${S && !S.ending ? '화면을 눌러 이어 하기' : '화면을 눌러 시작'}</p>
       ${S && !S.ending ? `<p class="tiny">${esc(S.name)} · ${weekInfo(Math.min(S.week, 156)).label}</p>` : ''}
@@ -101,17 +101,17 @@ const SCREENS = {
     const P = V.profile, q = PROFILE[P.step - 1];
     let line, body;
     if (P.step === 0) {
-      line = '선배님, 오늘 새로 온 회원이에요. 좀 봐 주세요. 이분 성함이…';
-      body = `<div class="nameline"><input id="pname" maxlength="8" placeholder="후배 이름" value="" autocomplete="off"><button class="btn primary" data-a="profileName">이에요</button></div>`;
+      line = '누, 누구세요? 테니스의 요정이요? 진짜요? 아, 저는…';
+      body = `<div class="nameline"><input id="pname" maxlength="8" placeholder="이 사람의 이름" value="" autocomplete="off"><button class="btn primary" data-a="profileName">이에요</button></div>`;
     } else if (q) {
       line = `${P.reply} ${q.ask}`;
-      body = `<p class="hint">어떤 후배일까요? 골라 주세요.</p><div class="opts">${q.options.map(o => `<button class="opt" data-a="profileOpt" data-id="${o.id}">${o.name}</button>`).join('')}</div>`;
+      body = `<p class="hint">다음 날 첫 레슨. 코치 눈에는 요정이 안 보인다. 이 사람은 어떤 사람일까요? 골라 주세요.</p><div class="opts">${q.options.map(o => `<button class="opt" data-a="profileOpt" data-id="${o.id}">${o.name}</button>`).join('')}</div>`;
     } else {
-      line = `${P.reply} 좋아요, ${P.name} 님. 오늘은 포핸드부터 해 봐요. 이쪽 선배님이 옆에서 봐 주실 거예요!`;
-      body = `<button class="btn primary big" data-a="profileDone">같이 해 보자!</button>`;
+      line = `${P.reply} 좋아요, ${P.name} 님. 오늘은 포핸드부터 해 봐요!`;
+      body = `<p class="hint">${esc(P.name)}: (요정님, 저 잘할 수 있을까요?)</p><button class="btn primary big" data-a="profileDone">나만 믿어!</button>`;
     }
     return `<div class="screen talk">
-      ${portrait('coach', 'smile', 'title-pt')}
+      ${portrait(P.step === 0 ? 'me' : 'coach', 'smile', 'title-pt')}
       <div class="talkline">${esc(line)}</div>
       ${body}
     </div>`;
@@ -368,7 +368,7 @@ const SCREENS = {
       dialog = `<div class="dialog ask"><div><b class="namechip">${esc(S.name)}</b><p>${esc(talk.line)}</p><div class="picks">${talk.options.map((o, i) => `<button class="pickbtn" data-a="tourjoy" data-i="${i}">${esc(o.label)}</button>`).join('')}</div></div></div>`;
     } else if (step === 'party') {
       const lines = PARTY_LINES[tr.final], n = lines[S.results.length % lines.length];
-      hero = `<div class="duo"><img class="heroimg a" decoding="sync" src="${heroURL(PLAYER_LOOK, 'cheer')}" alt="${esc(S.name)}"><img class="heroimg b" decoding="sync" src="${heroURL(lookOf(tr.partner), 'cheer')}" alt="${esc(pname)}"></div>`;
+      hero = `<div class="duo"><img class="heroimg a" decoding="sync" src="${heroURL(PLAYER_LOOK, 'cheer')}" alt="${esc(S.name)}"><img class="heroimg b" decoding="sync" src="${heroURL(lookOf(tr.partner), 'cheer')}" alt="${esc(pname)}"></div>${FAIRY}`;
       extra = `${confettiHTML()}<div class="spots"><i></i><i></i></div>${tr.final === 'W' ? '<div class="trophy">🏆</div>' : ''}<div class="bigword good">${esc(PARTY_WORD[tr.final])}</div>`;
       dialog = `<div class="dialog"><div><p>${esc(fill(n))}</p>${foot}</div></div>`;
     } else if (step === 'rewards') {
@@ -408,7 +408,8 @@ const SCREENS = {
       <div class="card"><p>${esc(e.text)}</p>${e.partner ? `<p>파트너: ${esc(e.partner)}</p>` : ''}</div>
       <div class="card rankcard"><small>최종 평가</small><b class="r r-${r.letter[0]}">${r.letter}</b><div><p>${r.score.toLocaleString()}점 · 능력 ${r.stat.toLocaleString()} + 기술 ${r.skill.toLocaleString()}</p><p class="muted">NTRP로 치면 ${r.ntrp.toFixed(1)} 정도</p></div></div>
       <div class="card"><p>최종 부서: ${S.division}부 · 종합 능력 ${G.overall(S.stats).toFixed(1)}</p><p>우승: 개나리 비전국 ${S.titles.local} · 전국 ${S.titles.national} · 국화 비전국 ${S.titles.gukwhaLocal} · 전국 ${S.titles.gukwhaNational}</p><p>출전 ${S.results.length}회 · 부상 ${S.injuries}회 · 계단 ${S.stair?.n || 0}번</p></div>
-      <button class="btn primary big" data-a="restart">새로 시작</button>
+      <p class="hint nextwish">🧚 어디선가 또 누군가 간절히 빌고 있다…</p>
+      <button class="btn primary big" data-a="restart">다음 사람에게 가기</button>
     </div>`;
   },
 };
@@ -424,7 +425,7 @@ function oppRow(o) {
 // 대회 뒤 화면
 const isParty = stage => ['W', 'F', 'SF', 'QF', 'FP', 'FF', 'FW'].includes(stage);
 function tourSteps(tr) { return isParty(tr.final) ? ['result', 'party', 'joy', 'rewards'] : ['result', 'joy', 'rewards']; }
-// 대회 결과에 따라 후배가 건네는 말
+// 대회 결과에 따라 주인공이 건네는 말
 function tourTalk(stage) { return ['W', 'FW'].includes(stage) ? TOUR_JOY.top : ['F', 'FF'].includes(stage) ? TOUR_JOY.second : ['SF', 'QF', 'FP'].includes(stage) ? TOUR_JOY.deep : TOUR_JOY.low; }
 function confettiHTML() {
   const colors = ['#ff5f8f', '#ffd24d', '#5fb8ff', '#7fe08a', '#ffffff'];
@@ -452,7 +453,9 @@ const namesOf = ids => ids.map(id => PARTNER[id].name).join(', ');
 const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '좋음'], ['↑', '최고']];
 const BIG_SHORT = { stroke: '스트로크', net: '네트', serve: '서브', physical: '피지컬', tactics: '전술', mental: '멘탈' };
 function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
-function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">`; }
+// 요정(플레이어)은 늘 곁에 있다. 임시 그림.
+const FAIRY = '<div class="fairy" aria-hidden="true">🧚</div>';
+function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">${FAIRY}`; }
 // ── 결과 단계: 설명 → (가끔) 선택 → 대사 → 결과 ─────────────
 function resultSteps(L) {
   return [L.desc && 'desc', L.fail && 'fail', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', L.hint && 'hint', L.bonds?.length && 'bond', 'result', rankUps(L).length && 'rank', L.joy && (L.joyPicked == null ? 'joy' : 'joyreply')].filter(Boolean);
@@ -478,7 +481,7 @@ const SWING = { lesson: ['fh', 'bh'], gym: ['stretch', 'tired'], practice: ['bh'
 const FLOAT = { rest: 'Z', family: '♥', clinic: '+', overtime: '…' };
 function actorHTML(L, pose) {
   const pair = SWING[L.act], fl = FLOAT[L.act], look = LOOK_OF[L.act] || PLAYER_LOOK;
-  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}`;
+  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}${FAIRY}`;
   return heroHTML(pose, LOOK_OF[L.act]) + (fl ? `<div class="floaty"><i>${fl}</i><i>${fl}</i><i>${fl}</i></div>` : '');
 }
 // 빨리 넘기기: 설명과 대사를 건너뛴다. 선택, 이정표, 결과, 등급 상승은 건너뛰지 않는다.
@@ -727,7 +730,7 @@ function pickInfo() {
   const p = G.previewAction(S, V.pick), people = S.faces[V.pick] || [], bonds = ACT[V.pick].train ? G.bondsAt(S, V.pick) : [];
   const topicName = id => LESSONS[id]?.name || '기본기';
   const text = {
-    lesson: () => S.lessons.length ? `코치님 추천은 ${topicName(p.topic)}래요. 선배가 정해 주셔도 돼요.` : `이번엔 코치님이 정해 준대요. ${topicName(p.topic)}!`,
+    lesson: () => S.lessons.length ? `코치님 추천은 ${topicName(p.topic)}래요. 요정님이 정해 주셔도 돼요.` : `이번엔 코치님이 정해 준대요. ${topicName(p.topic)}!`,
     gym: () => '퇴근하고 헬스장 갈게요. 몸이 튼튼해져요.',
     practice: () => '벽치기 하고 올게요. 혼자서도 스트로크가 늘어요.',
     home: () => '집에서 몸 풀게요. 혼자 하지만 거의 안 지쳐요.',
@@ -933,7 +936,7 @@ async function onClick(e) {
     case 'nopartner': S.pendingEvents.push({ id: 'noPartner', tid: d.tid }); G.save(S); V.sheet = null; V.screen = 'week'; break;
     case 'retrymatch': { const again = G.retryMatch(S, S.tournament, d.yes === '1'); G.save(S); if (again) { V.screen = 'between'; break; } V.tourStep = 0; V.screen = 'tourResult'; break; }
     case 'skills': if (S.pendingEvents.length) return; V.note = null; V.pick = null; V.sheet = 'skills'; break;
-    case 'buyskill': if (G.buySkill(S, d.id)) { G.save(S); toast(`선배! ${SKILLS[d.id].name}, ${SKILL_LV_NAME[G.skillLv(S, d.id)]}!`); } break;
+    case 'buyskill': if (G.buySkill(S, d.id)) { G.save(S); toast(`요정님! ${SKILLS[d.id].name}, ${SKILL_LV_NAME[G.skillLv(S, d.id)]}!`); } break;
     case 'trainback': V.train = false; V.pick = null; V.note = null; break;
     case 'nope': if (S.pendingEvents.length) return; V.pick = null; V.note = nopeLine(d.id); break;
     case 'lessonpick': doAction('lesson', d.topic); break;

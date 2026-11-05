@@ -278,6 +278,10 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 @keyframes sweep { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
 .trophy { position: absolute; left: 50%; top: 22%; z-index: 3; transform: translateX(-50%); font-size: 62px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .35)); pointer-events: none; }
 
+/* 요정: 임시 그림 */
+.fairy { position: absolute; left: 14px; top: 26%; z-index: 2; font-size: 36px; line-height: 1; filter: drop-shadow(0 0 8px rgba(255, 240, 150, .95)); pointer-events: none; animation: fairybob 2.4s ease-in-out infinite; }
+@keyframes fairybob { 50% { transform: translateY(-12px) rotate(6deg); } }
+.nextwish { text-align: center; }
 /* 대회 정보 */
 .tourcard { display: flex; flex-direction: column; gap: 5px; }
 .tourcard h3 { margin: 0; font-size: 18px; }
@@ -394,7 +398,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .say { bottom: 24px; font-size: 12.5px; padding: 6px 10px; }
   .risk { bottom: 24px; }
 }
-@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i, .tf.bond .pt.xs, .screen.party .heroimg, .spots i, .hintmark { animation: none; } .confetti { display: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i, .tf.bond .pt.xs, .screen.party .heroimg, .spots i, .hintmark, .fairy { animation: none; } .confetti { display: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
 
 /* 시트·오버레이 */
 .overlay { position: fixed; inset: 0; background: rgba(20, 30, 24, .45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }

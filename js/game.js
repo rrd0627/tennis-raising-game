@@ -67,10 +67,9 @@ export function newGame(name, profile = {}) {
     }
   }
   rollFaces(state, rng);
-  addMsg(state, 'coach', `선배님, ${state.name} 님 잘 부탁해요. 처음에는 제가 시키는 것만 하게 할게요. 뭘 배울지는 치다 보면 알게 돼요.`);
-  addMsg(state, 'hana', `저 ${state.name}${(state.name.charCodeAt(state.name.length - 1) - 0xAC00) % 28 ? "이랑" : "랑"} 같이 테니스 시작했어요! 선배님, 저희 같이 대회도 나갈 수 있게 봐 주세요 😆`);
-  addMsg(state, 'me', '선배, 오늘 처음 뵙겠습니다. 앞으로 잘 부탁드려요!');
-  addMsg(state, 'system', '당신은 클럽 선배입니다. 후배가 개나리부 전국대회에서 우승해 국화가 되고, 국화부 전국대회 결승전에서 우승하도록 3년 동안 함께하세요. 목표를 놓치면 다시 해 볼 기회는 세 번입니다.');
+  addMsg(state, 'coach', `${state.name} 님, 반가워요! 처음에는 제가 시키는 것만 해 봐요. 뭘 배울지는 치다 보면 알게 돼요.`);
+  addMsg(state, 'hana', '나 이번에 테니스 시작했어! 우리 같이 대회도 나가 보자 😆');
+  addMsg(state, 'system', '당신은 테니스의 요정입니다. 이 사람이 개나리부 전국대회에서 우승해 국화가 되고, 국화부 전국대회 결승전에서 우승하도록 3년 동안 곁에서 돌봐 주세요. 목표를 놓치면 다시 해 볼 기회는 세 번입니다.');
   return state;
 }
 
@@ -510,7 +509,7 @@ function pickChoice(state, id, face, rng, outing) {
   const fill = s => s.replaceAll('{p}', face ? PARTNER[face].name : '');
   return { id: c.id, who: c.who === 'partner' ? face : c.who, prompt: fill(c.prompt), options: c.options.map(o => o.label) };
 }
-// 후배와 같이 기뻐한다. 고르는 말은 선배가 하는 말이고, 효과는 작다.
+// 주인공과 같이 기뻐한다. 고르는 말은 요정이 하는 말이고, 효과는 작다.
 export function chooseJoy(state, i) {
   const log = state.weekLog;
   if (!log?.joy || log.joyPicked != null) return;
@@ -866,7 +865,7 @@ export function eventView(state, ev) {
     }
     case 'meet': return { who: ev.pid, title: '새로운 인연', text: `${P[ev.pid].name} (${P[ev.pid].arch}): "${P[ev.pid].line}"`, choices: [['ok', '반가워요']] };
     case 'withdraw': return { who: ev.pid, title: '대회 기권', text: `부상으로 ${ev.tname}에 못 나간다고 ${P[ev.pid].name}에게 연락했다. (친밀도 -3)`, choices: [['ok', '확인']] };
-    case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'me', title: '목표 달성!', text: `선배! ${g.text}, 해냈어요!`, choices: [['ok', '잘했어!']] }; }
+    case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'me', title: '목표 달성!', text: `요정님! ${g.text}, 해냈어요!`, choices: [['ok', '잘했어!']] }; }
     case 'noPartner': {
       const t = tour(state, ev.tid);
       if (state.retries <= 0) return { who: 'coach', title: '파트너를 못 구했다', text: `코치: "${t.name}에 같이 나갈 사람을 못 구했군요. 복식은 혼자 못 나가요. 괜찮아요, 다들 이럴 때 그만둬요."`, choices: [['refuse', '라켓을 내려놓는다']] };
