@@ -61,10 +61,16 @@ export const SCENES = [
   { act: 'club', withFace: true, who: 'partner', text: '{p}: "방금 그 로브 뭐야?" 둘이 한참 웃었다.' },
   { act: 'club', withFace: true, who: 'partner', text: '{p}: "오늘 우리 좀 맞는 것 같지 않아?"' },
 
-  // ── 쉬는 주 ──
-  { act: 'rest', who: 'me', text: '하루 종일 잤다. 꿈에서도 공을 쳤다.' },
-  { act: 'rest', who: 'me', text: '소파와 한 몸이 되었다. 손목이 쉬는 게 느껴진다.' },
-  { act: 'rest', who: 'me', text: '테니스 영상을 보다 잠들었다. 깨 보니 세 시간이 지났다.' },
+  // ── 쉬는 주. sleep은 휴식 결과(REST_RESULTS)의 id ──
+  { act: 'rest', sleep: 'poor', who: 'me', text: '누웠는데 오늘 네트에 꽂은 서브가 자꾸 떠오른다. 세 시가 넘었다.' },
+  { act: 'rest', sleep: 'poor', who: 'me', text: '내일 회의 생각에 잠이 안 왔다. 결국 라켓 줄 텐션을 검색했다.' },
+  { act: 'rest', sleep: 'poor', who: 'me', text: '경기 영상 하나만 더 보고 자려다 해가 떴다.' },
+  { act: 'rest', sleep: 'fine', who: 'me', text: '소파와 한 몸이 되었다. 손목이 쉬는 게 느껴진다.' },
+  { act: 'rest', sleep: 'fine', who: 'me', text: '테니스 영상을 보다 잠들었다. 깨 보니 세 시간이 지났다.' },
+  { act: 'rest', sleep: 'fine', who: 'me', text: '늦잠을 자고 밥을 먹었다. 오늘 한 일은 그게 전부다.' },
+  { act: 'rest', sleep: 'deep', who: 'me', text: '하루 종일 잤다. 꿈에서도 공을 쳤다.' },
+  { act: 'rest', sleep: 'deep', who: 'me', text: '알람 없이 눈을 떴다. 어깨가 새것 같다.' },
+  { act: 'rest', sleep: 'deep', who: 'me', text: '열두 시간을 잤다. 오늘은 서브도 들어갈 것 같다.' },
   { act: 'family', who: 'me', text: '엄마: "너 요즘 왜 이렇게 탔니?"' },
   { act: 'family', who: 'me', text: '친구들: "너 요즘 테니스 얘기만 해." 맞는 말이다.' },
   { act: 'family', who: 'me', text: '오랜만에 친구를 만났다. 세 시간 중 두 시간을 테니스 얘기를 했다.' },

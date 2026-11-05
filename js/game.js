@@ -1,6 +1,6 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
 import { SCENES, MILESTONES, STORIES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
@@ -164,12 +164,26 @@ function growStat(state, sid, amt, K, rng) {
 }
 function growGroup(state, gid, amt, K, rng) { for (const [sid] of GROUP_BY_ID[gid].stats) growStat(state, sid, amt, K, rng); }
 
+// 휴식 결과 뽑기. 첫 달에는 잠을 설치지 않는다.
+function rollRest(state, rng) {
+  let x = rng();
+  const r = REST_RESULTS.find(o => (x -= o.rate) < 0) || REST_RESULTS[1];
+  return r.id === 'poor' && state.week < 9 ? REST_RESULTS[1] : r;
+}
+
 export function runWeek(state, id, topic) {
   const rng = rngOf(state);
   const a = ACT[id];
   if (id === 'lesson') { topic = topic || coachTopic(state); state.lastTopic = topic; state.lessonCount++; state.coach += 1.5; }
   const fx = effectOf(state, id, topic);
   const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : id === 'practice' ? state.lastTopic : null, gains: {}, with: null, scene: null, mile: null };
+  if (id === 'rest') {
+    const r = rollRest(state, rng);
+    fx.fatigue = r.fatigue; fx.stress = r.stress;
+    log.rest = r.id; log.mood = r.mood;
+    state.moodNudge = r.mood;
+    state.condition = clamp(state.condition + r.mood, -2, 2);
+  }
   const before = bigValues(state.stats), f0 = state.fatigue, s0 = state.stress;
   const K = actionK(state, id);
   for (const [gid, amt] of Object.entries(fx.groups)) growGroup(state, gid, amt, K, rng);
@@ -197,7 +211,7 @@ export function runWeek(state, id, topic) {
   const after = bigValues(state.stats);
   for (const b of BIG_STATS) { const g = after[b.id] - before[b.id]; if (g >= 0.05) log.gains[b.id] = g; }
   log.fatigue = state.fatigue - f0; log.stress = state.stress - s0;
-  log.scene = pickScene(state, id, log.topic, face, after, rng);
+  log.scene = pickScene(state, id, log.topic, face, after, rng, log.rest);
   if (a.tennis) log.mile = checkMilestone(state, after, log.topic);
   state.weekLog = log;
   return log;
@@ -216,7 +230,7 @@ function sceneTier(id, topic, big) {
   const key = { stroke: 'stroke', net: 'net', serve: 'serve', physical: 'physical', mental: 'mental' }[topic];
   return key ? tierOf(big[key]) : tierOf(big.tactics);
 }
-function pickScene(state, id, topic, face, big, rng) {
+function pickScene(state, id, topic, face, big, rng, sleep) {
   const job = jobOf(state);
   if (id === 'overtime' && job && rng() < 0.6) return { who: 'me', text: job.overtime };
   const groupTopic = topic && LESSONS[topic]?.counter ? 'counter' : topic;
@@ -224,7 +238,7 @@ function pickScene(state, id, topic, face, big, rng) {
   const fixed = SCENES.find(x => x.week === state.week && x.act === id);
   let list = fixed ? [fixed] : [];
   if (!list.length && face) list = SCENES.filter(x => x.act === id && x.withFace);
-  if (!list.length) list = SCENES.filter(x => x.act === id && !x.week && !x.withFace && (x.tier === undefined || x.tier === tier) && (id !== 'lesson' || x.topic === groupTopic));
+  if (!list.length) list = SCENES.filter(x => x.act === id && !x.week && !x.withFace && (x.tier === undefined || x.tier === tier) && (id !== 'lesson' || x.topic === groupTopic) && (x.sleep === undefined || x.sleep === sleep));
   if (!list.length) return null;
   const fresh = list.filter(x => !state.seen.includes(SCENES.indexOf(x)));
   const pool = fresh.length ? fresh : list;
@@ -374,7 +388,8 @@ export function endWeek(state) {
   if (state.stress >= 85) state.highStressWeeks += WEEKS_PER_TURN;
   // 컨디션
   const c = Math.round(gauss(rng) * 0.8 + (state.fatigue < 40 ? 0.5 : 0) + (state.stress < 30 ? 0.5 : 0) - (state.fatigue > 70 ? 1 : 0) - (state.stress > 70 ? 1 : 0));
-  state.condition = clamp(c, -2, 2);
+  state.condition = clamp(c + (state.moodNudge || 0), -2, 2); // 잠을 어떻게 잤는지가 다음 턴까지 간다
+  state.moodNudge = 0;
   state.confidence += (50 - state.confidence) * 0.1;
   // 파트너 성장
   for (const p of PARTNERS) state.partners[p.id].level = clamp(state.partners[p.id].level + p.growth * WEEKS_PER_TURN, 1, 95);

@@ -33,7 +33,7 @@ function shade(hex, f) {
 }
 
 // ── 경기용 SD 캐릭터 (2~2.5등신), 앞·뒤 2방향 ────────────────
-// pose: ready | fh | bh | serve | volley | smash | cheer | sad
+// pose: ready | fh | bh | serve | volley | smash | cheer | sad, 라켓 없이: tired | stretch | relax
 export function chibiCanvas(look, facing = 'front', pose = 'ready', size = 256) {
   const c = document.createElement('canvas'); c.width = c.height = size;
   const ctx = c.getContext('2d');
@@ -50,7 +50,10 @@ export function chibiCanvas(look, facing = 'front', pose = 'ready', size = 256) 
     volley: [cx + 52, 112, -0.6], smash: [cx + 22, 22, 0.4], cheer: [cx + 50, 40, -0.2], sad: [cx + 40, 196, 0.9],
   }[pose] || [cx + 46, 150, -0.3];
   if (!front) racket[0] = cx * 2 - racket[0], racket[2] = -racket[2];
+  // 라켓 없는 자세의 양손 위치
+  const bare = { tired: [[cx + 30, 190], [cx - 30, 190]], stretch: [[cx + 80, 46], [cx - 80, 46]], relax: [[cx + 22, 178], [cx - 22, 178]] }[pose];
   const drawRacket = () => {
+    if (bare) return;
     const [rx, ry, ang] = racket;
     ctx.save(); ctx.translate(rx, ry); ctx.rotate(ang);
     ctx.strokeStyle = '#333'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 18); ctx.lineTo(0, 46); ctx.stroke();
@@ -61,7 +64,7 @@ export function chibiCanvas(look, facing = 'front', pose = 'ready', size = 256) 
     ctx.restore();
   };
   // 다리
-  const legSpread = pose === 'ready' || pose === 'volley' ? 20 : pose === 'sad' ? 10 : 16;
+  const legSpread = pose === 'ready' || pose === 'volley' ? 20 : pose === 'sad' || pose === 'tired' ? 10 : 16;
   ctx.fillStyle = L.skin; ctx.strokeStyle = skinLine;
   for (const s of [-1, 1]) { rr(ctx, cx + s * legSpread - 9, 192, 18, 44, 8); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle = '#fff'; ctx.strokeStyle = '#999';
@@ -73,10 +76,10 @@ export function chibiCanvas(look, facing = 'front', pose = 'ready', size = 256) 
   ctx.fillStyle = shade(L.outfit, 1.25); rr(ctx, cx - 28, 126, 56, 10, 6); ctx.fill();
   // 팔
   ctx.strokeStyle = L.skin; ctx.lineWidth = 13;
-  const hand = [racket[0] + (front ? 0 : 0), racket[1] + 40];
+  const hand = bare ? bare[0] : [racket[0] + (front ? 0 : 0), racket[1] + 40];
   const handY = Math.min(hand[1], 190);
   ctx.beginPath(); ctx.moveTo(cx + (hand[0] > cx ? 24 : -24), 138); ctx.lineTo(hand[0], handY); ctx.stroke();
-  const other = raise ? [cx - 44, 70] : pose === 'sad' ? [cx - 30, 186] : pose === 'bh' ? [cx - 62, 140] : [cx - 46, 164];
+  const other = bare ? [...bare[1]] : raise ? [cx - 44, 70] : pose === 'sad' ? [cx - 30, 186] : pose === 'bh' ? [cx - 62, 140] : [cx - 46, 164];
   if (!front && !raise) other[0] = cx * 2 - other[0];
   ctx.beginPath(); ctx.moveTo(cx + (other[0] > cx ? 24 : -24), 138); ctx.lineTo(other[0], other[1]); ctx.stroke();
   ctx.lineWidth = 4;
@@ -93,10 +96,11 @@ export function chibiCanvas(look, facing = 'front', pose = 'ready', size = 256) 
     ctx.beginPath(); ctx.arc(cx, hy - 4, 62, Math.PI * 1.02, Math.PI * 1.98); ctx.lineTo(cx + 50, hy - 6);
     ctx.quadraticCurveTo(cx + 24, hy - 22, cx + 6, hy - 10); ctx.quadraticCurveTo(cx - 20, hy - 24, cx - 52, hy - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
     // 얼굴
-    const sad = pose === 'sad', happy = pose === 'cheer';
+    const sad = pose === 'sad' || pose === 'tired', happy = pose === 'cheer' || pose === 'stretch' || pose === 'relax';
     ctx.fillStyle = '#2a1c18';
     for (const s of [-1, 1]) {
-      if (happy) { ctx.lineWidth = 5; ctx.strokeStyle = '#2a1c18'; ctx.beginPath(); ctx.arc(cx + s * 22, hy + 14, 9, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+      if (pose === 'tired') { ctx.lineWidth = 5; ctx.strokeStyle = '#2a1c18'; ctx.beginPath(); ctx.moveTo(cx + s * 22 - 9, hy + 13); ctx.lineTo(cx + s * 22 + 9, hy + 13); ctx.stroke(); }
+      else if (happy) { ctx.lineWidth = 5; ctx.strokeStyle = '#2a1c18'; ctx.beginPath(); ctx.arc(cx + s * 22, hy + 14, 9, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
       else { ctx.beginPath(); ctx.ellipse(cx + s * 22, hy + 12, 7, sad ? 7 : 10, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx + s * 22 + 2, hy + 8, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#2a1c18'; }
     }
     ctx.fillStyle = 'rgba(255,120,140,0.45)';
@@ -190,8 +194,9 @@ export async function sdFrames(charId, look, facing) {
 // 주간 화면의 전신 캐릭터. 실제 아트가 들어오면 여기서 바꾼다.
 const heroCache = new Map();
 export function heroURL(look, pose = 'ready') {
-  if (!heroCache.has(pose)) heroCache.set(pose, chibiCanvas(look, 'front', pose, 1024).toDataURL());
-  return heroCache.get(pose);
+  const key = pose + look.outfit;
+  if (!heroCache.has(key)) heroCache.set(key, chibiCanvas(look, 'front', pose, 1024).toDataURL());
+  return heroCache.get(key);
 }
 
 // ── 주간 화면 배경 (임시 그림) ────────────────────────────

@@ -1,7 +1,7 @@
 // 화면 — 타이틀, 인트로, 주간 행동, 결과, 메신저, 대회·랭킹, 능력치, 대회/경기, 엔딩
 import * as G from './game.js';
 import {
-  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
+  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, REST_RESULTS, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME } from './sim.js';
@@ -54,6 +54,24 @@ function render() {
   app.innerHTML = fn();
   app.scrollTop = 0;
   hydratePortraits();
+  runFx();
+}
+// 결과 화면 연출: 체력 바가 차오르고 큰 숫자가 올라간다. 탭이 숨겨져 있어도 끝 값에 도착한다.
+function runFx() {
+  const bar = app.querySelector('.ebar i[data-to]');
+  if (bar) setTimeout(() => { bar.style.width = bar.dataset.to + '%'; }, 80);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const el of app.querySelectorAll('[data-count]')) {
+    const to = +el.dataset.count, t0 = performance.now() + 220;
+    el.textContent = '+0';
+    const tick = () => {
+      if (!el.isConnected) return;
+      const k = Math.max(0, Math.min(1, (performance.now() - t0) / 650));
+      el.textContent = `+${Math.round(to * (1 - (1 - k) ** 2))}`;
+      if (k < 1) setTimeout(tick, 30);
+    };
+    tick();
+  }
 }
 
 // ── 타이틀 ────────────────────────────────────────────────
@@ -114,7 +132,7 @@ const SCREENS = {
       ${bgHTML(SCENE_OF[place] || 'home', wi)}
       ${hudHTML()}
       <div class="hero">
-        ${heroHTML(pose)}
+        ${heroHTML(pose, LOOK_OF[place])}
         ${title ? `<div class="ribbon">${esc(title)}</div>` : ''}
         <div class="sidebtns">
           <button class="sidebtn" data-a="go" data-s="stats" aria-label="능력치">📊</button>
@@ -136,17 +154,21 @@ const SCREENS = {
     // 결과: 게임 대화창. 아무 곳이나 누르면 다음으로 넘어간다
   result: () => {
     const L = S.weekLog;
-    const pose = L.mile ? 'cheer' : POSE_OF[L.act] || 'ready';
+    const rest = REST_RESULTS.find(r => r.id === L.rest);
+    const pose = L.mile ? 'cheer' : rest ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
     const scene = L.scene || { who: 'me', text: '' };
+    const healed = Math.round(-L.fatigue);
+    const burst = (L.act === 'rest' || L.act === 'family') && healed >= 1;
     return `
     <div class="screen home" data-a="endweek">
-      ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week))}
-      ${hudHTML(false)}
+      ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week), rest?.id === 'poor' ? 'dim' : '')}
+      ${hudHTML(false, S.fatigue - L.fatigue)}
       <div class="hero">
-        ${heroHTML(pose)}
-        <div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>
+        ${heroHTML(pose, L.mile ? undefined : LOOK_OF[L.act])}
+        ${rest ? `<div class="ribbon evt"><small>${ACT.rest.icon} ${ACT.rest.name}</small><b>${esc(rest.name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
         ${L.mile ? `<div class="mile"><small>★ 처음 해낸 순간</small><b>${esc(L.mile.title)}</b><p>${esc(L.mile.text)}</p></div>` : ''}
-        ${Math.abs(L.fatigue) >= 1 ? `<div class="risk cost"><small>체력</small><b>${signed(-L.fatigue)}</b></div>` : ''}
+        ${burst ? `<div class="burst ${rest?.id || ''}"><b data-count="${healed}">+${healed}</b><small>체력</small></div>` : ''}
+        ${L.mood ? `<div class="moodband ${L.mood < 0 ? 'down' : 'up'}">${L.mood < 0 ? '↘ 기분이 가라앉았다' : '↗ 기분이 좋아졌다'}</div>` : ''}
       </div>
       <div class="homepanel">
         ${statRow(L.gains, false)}
@@ -155,10 +177,12 @@ const SCREENS = {
           <div>
             <p>${esc(scene.text)}</p>
             ${L.with ? `<small class="withline">${esc(withJosa(PARTNER[L.with].name))} 같이 했다</small>` : ''}
+            <small class="fxline">${changeLine(L)}</small>
             <small class="tapnext">눌러서 계속 ▼</small>
           </div>
         </div>
       </div>
+      <div class="wipe"></div>
     </div>`;
   },
 
@@ -332,12 +356,25 @@ function oppRow(o) { return `<div class="opp">${portrait(`opp:${o.seed % 997}:0`
 
 // 주간 화면 조각
 const SCENE_OF = { lesson: 'court', practice: 'wall', club: 'club', rest: 'room', family: 'cafe', tour: 'venue', overtime: 'office' };
-const POSE_OF = { lesson: 'fh', practice: 'bh', club: 'volley', rest: 'ready', family: 'cheer', tour: 'serve', overtime: 'sad' };
+const POSE_OF = { lesson: 'fh', practice: 'bh', club: 'volley', rest: 'relax', family: 'relax', tour: 'serve', overtime: 'tired' };
+const REST_POSE = { poor: 'tired', fine: 'relax', deep: 'stretch' };
+// 코트 밖에서는 옷이 다르다 (임시 그림)
+const OFF_COURT = { band: PLAYER_LOOK.hair };
+const LOOK_OF = { rest: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, family: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#f3b94f' }, overtime: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#5b6b84' } };
 const BTN_ROWS = [['rest', 'lesson', 'practice'], ['family', 'club', 'tour']];
 const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '좋음'], ['↑', '최고']];
 const BIG_SHORT = { stroke: '스트로크', net: '네트', serve: '서브', physical: '피지컬', tactics: '전술', mental: '멘탈' };
-function bgHTML(kind, wi) { return `<img class="bgimg" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
-function heroHTML(pose) { return `<img class="heroimg" decoding="sync" src="${heroURL(PLAYER_LOOK, pose)}" alt="${esc(S.name)}">`; }
+function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
+function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">`; }
+// 결과 글 상자의 변화 요약
+function changeLine(L) {
+  const parts = [];
+  if (Math.abs(L.fatigue) >= 1) parts.push(`체력 ${signed(-L.fatigue)}`);
+  if (Math.abs(L.stress) >= 1) parts.push(`스트레스 ${signed(L.stress)}`);
+  if (L.mood) parts.push(`기분 ${L.mood < 0 ? '↘' : '↗'}`);
+  if (!parts.length && L.act === 'rest') return '체력은 이미 가득하다';
+  return parts.join(' · ');
+}
 function actTitle(id, topic) {
   const a = ACT[id], n = LESSONS[topic]?.name;
   if (id === 'lesson') return `${a.icon} 레슨 · ${n}`;
@@ -345,7 +382,7 @@ function actTitle(id, topic) {
   return `${a.icon} ${a.name}`;
 }
 // 위쪽: 목표까지 남은 턴, 목표, 체력, 기분
-function hudHTML(gear = true) {
+function hudHTML(gear = true, fromFatigue = null) {
   const wi = weekInfo(S.week), goal = G.currentGoal(S);
   const left = Math.max(1, Math.floor(((goal ? goal.by : G.TOTAL_WEEKS) - S.week) / 2) + 1);
   const nextT = Object.entries(S.entries).map(([tid]) => G.tour(S, tid)).filter(t => t.week > S.week).sort((a, b) => a.week - b.week)[0];
@@ -357,7 +394,7 @@ function hudHTML(gear = true) {
       <div class="ucal ${left <= 3 ? 'urgent' : ''}"><b>${left}</b><small>턴 남음</small></div>
       <div class="hudr">
         <div class="goalbar"><i>목표</i><span>${esc(goal ? goal.text : '3년의 끝까지')}</span></div>
-        <div class="energy"><small>체력</small><div class="ebar"><i style="width:${Math.round(S.fatigue)}%"></i></div><span class="mood m${S.condition + 2}">${arrow} ${word}</span></div>
+        <div class="energy"><small>체력</small><div class="ebar"><i style="width:${Math.round(fromFatigue ?? S.fatigue)}%" ${fromFatigue === null ? '' : `data-to="${Math.round(S.fatigue)}"`}></i></div><span class="mood m${S.condition + 2}">${arrow} ${word}</span></div>
       </div>
     </div>
   </div>`;
@@ -418,7 +455,7 @@ function pickInfo() {
     lesson: () => S.lessons.length ? `코치 추천은 ${topicName(p.topic)}. 직접 고를 수도 있어요.` : `이번엔 코치님이 정해 줘요. ${topicName(p.topic)}!`,
     practice: () => `지난 레슨(${topicName(S.lastTopic)})을 혼자 복습해요.`,
     club: () => '클럽 사람들과 게임해요. 실전 감각이 붙어요.',
-    rest: () => '푹 쉬어요. 체력이 크게 회복돼요.',
+    rest: () => '오늘은 쉬어요. 잘 자면 체력이 크게 회복돼요.',
     family: () => '가족·친구를 만나요. 스트레스가 풀려요.',
   }[V.pick]();
   const tire = p.fatigue >= 16 ? '많이 지쳐요.' : p.fatigue > 0 ? '조금 지쳐요.' : '';

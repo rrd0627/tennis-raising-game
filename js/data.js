@@ -61,6 +61,12 @@ export const ACTIONS = [
   { id: 'overtime', name: '야근', icon: '💼', fatigue: 10, stress: 10, work: 4 },
 ];
 export const ACT = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+// 휴식은 결과가 세 가지로 갈린다. fatigue·stress는 위 rest 값을 대신하고, 평균은 전과 거의 같다. mood는 지금과 다음 턴 기분에 더해진다.
+export const REST_RESULTS = [
+  { id: 'poor', name: '잠을 설쳤다', rate: 0.2, fatigue: -25, stress: -4, mood: -1 },
+  { id: 'fine', name: '개운하다', rate: 0.55, fatigue: -45, stress: -8, mood: 0 },
+  { id: 'deep', name: '푹 잤다!', rate: 0.25, fatigue: -65, stress: -12, mood: 1 },
+];
 
 // 레슨 내용. 처음엔 코치가 정하고, 경기에서 약점을 깨달으면 직접 고를 수 있게 된다.
 export const LESSONS = {
