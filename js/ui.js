@@ -11,7 +11,7 @@ import { HOME_LINES, STATE_LINES, LOCK_LINES } from './scenes.js';
 
 const app = document.getElementById('app');
 let S = null;
-const V = { screen: 'title', tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null };
+const V = { screen: 'title', tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null, step: 0, wipe: false };
 let M = null; // 경기 진행 상태
 let introTimer = null;
 
@@ -153,36 +153,28 @@ const SCREENS = {
 
     // 결과: 게임 대화창. 아무 곳이나 누르면 다음으로 넘어간다
   result: () => {
-    const L = S.weekLog;
+    const L = S.weekLog, steps = resultSteps(L), step = steps[Math.min(V.step, steps.length - 1)], done = step === 'result';
     const rest = REST_RESULTS.find(r => r.id === L.rest);
-    const pose = L.mile ? 'cheer' : rest ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
-    const scene = L.scene || { who: 'me', text: '' };
-    const healed = Math.round(-L.fatigue);
-    const burst = (L.act === 'rest' || L.act === 'family') && healed >= 1;
+    const pose = done && L.mile ? 'cheer' : rest && step !== 'desc' ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
+    const fatigue0 = S.fatigue - L.fatigue;
+    const big = done ? bigResult(L) : null;
+    const wipe = V.wipe; V.wipe = false;
     return `
-    <div class="screen home" data-a="endweek">
-      ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week), rest?.id === 'poor' ? 'dim' : '')}
-      ${hudHTML(false, S.fatigue - L.fatigue)}
+    <div class="screen home ${step === 'choice' ? 'askmode' : ''}" ${step === 'choice' ? '' : 'data-a="resnext"'}>
+      ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week), rest?.id === 'poor' && step !== 'desc' ? 'dim' : '')}
+      ${hudHTML(false, done ? { fatigue: fatigue0, to: S.fatigue } : { fatigue: fatigue0, cond: L.cond0 })}
       <div class="hero">
-        ${heroHTML(pose, L.mile ? undefined : LOOK_OF[L.act])}
-        ${rest ? `<div class="ribbon evt"><small>${ACT.rest.icon} ${ACT.rest.name}</small><b>${esc(rest.name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
-        ${L.mile ? `<div class="mile"><small>★ 처음 해낸 순간</small><b>${esc(L.mile.title)}</b><p>${esc(L.mile.text)}</p></div>` : ''}
-        ${burst ? `<div class="burst ${rest?.id || ''}"><b data-count="${healed}">+${healed}</b><small>체력</small></div>` : ''}
-        ${L.mood ? `<div class="moodband ${L.mood < 0 ? 'down' : 'up'}">${L.mood < 0 ? '↘ 기분이 가라앉았다' : '↗ 기분이 좋아졌다'}</div>` : ''}
+        ${heroHTML(pose, LOOK_OF[L.act])}
+        ${done && rest ? `<div class="ribbon evt"><small>${ACT.rest.icon} ${ACT.rest.name}</small><b>${esc(rest.name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
+        ${done && L.mile ? `<div class="mile"><small>★ 처음 해낸 순간</small><b>${esc(L.mile.title)}</b><p>${esc(L.mile.text)}</p></div>` : ''}
+        ${big ? `<div class="burst ${rest?.id || ''}"><b data-count="${big.n}">+${big.n}</b><small>${esc(big.label)}</small></div>` : ''}
+        ${done && L.mood ? `<div class="moodband ${L.mood < 0 ? 'down' : 'up'}">${L.mood < 0 ? '↘ 기분이 가라앉았다' : '↗ 기분이 좋아졌다'}</div>` : ''}
       </div>
       <div class="homepanel">
-        ${statRow(L.gains, false)}
-        <div class="dialog">
-          ${portrait(scene.who, 'smile', 'pt sm')}
-          <div>
-            <p>${esc(scene.text)}</p>
-            ${L.with ? `<small class="withline">${esc(withJosa(PARTNER[L.with].name))} 같이 했다</small>` : ''}
-            <small class="fxline">${changeLine(L)}</small>
-            <small class="tapnext">눌러서 계속 ▼</small>
-          </div>
-        </div>
+        ${statRow(done ? L.gains : {}, false, done ? null : L.before)}
+        ${stepDialog(step, L)}
       </div>
-      <div class="wipe"></div>
+      ${wipe ? '<div class="wipe"></div>' : ''}
     </div>`;
   },
 
@@ -366,14 +358,60 @@ const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '
 const BIG_SHORT = { stroke: '스트로크', net: '네트', serve: '서브', physical: '피지컬', tactics: '전술', mental: '멘탈' };
 function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
 function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">`; }
-// 결과 글 상자의 변화 요약
-function changeLine(L) {
-  const parts = [];
-  if (Math.abs(L.fatigue) >= 1) parts.push(`체력 ${signed(-L.fatigue)}`);
-  if (Math.abs(L.stress) >= 1) parts.push(`스트레스 ${signed(L.stress)}`);
-  if (L.mood) parts.push(`기분 ${L.mood < 0 ? '↘' : '↗'}`);
-  if (!parts.length && L.act === 'rest') return '체력은 이미 가득하다';
-  return parts.join(' · ');
+// ── 결과 단계: 설명 → (가끔) 선택 → 대사 → 결과 ─────────────
+function resultSteps(L) {
+  return [L.desc && 'desc', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', 'result'].filter(Boolean);
+}
+// 빨리 넘기기: 설명과 대사를 건너뛴다. 선택은 건너뛰지 않는다.
+function skipFast() {
+  if (!S.fast) return;
+  const steps = resultSteps(S.weekLog);
+  while (V.step < steps.length - 1 && steps[V.step] !== 'choice') V.step++;
+}
+function nextStep() {
+  if (V.step >= resultSteps(S.weekLog).length - 1) return false;
+  V.step++;
+  skipFast();
+  return true;
+}
+// "코치: 말" 꼴의 글을 이름표와 말로 나눈다
+function speech(text) {
+  const m = /^([^\s:"]{1,8}(?: [^\s:"]{1,6})?): ([\s\S]*)$/.exec(text);
+  return m ? { name: m[1], text: m[2] } : { name: null, text };
+}
+function stepDialog(step, L) {
+  const foot = `<div class="dfoot"><button class="fastbtn ${S.fast ? 'on' : ''}" data-a="fasttoggle">${S.fast ? '빨리 ▶▶' : '빨리 끔'}</button><small class="tapnext">눌러서 계속 ▼</small></div>`;
+  const face = (who, name) => (who === 'me' && name ? '' : portrait(who, 'smile', 'pt sm'));
+  if (step === 'desc') return `<div class="dialog narr"><div><p>${esc(L.desc)}</p>${foot}</div></div>`;
+  if (step === 'choice') {
+    const s = speech(L.choice.prompt);
+    return `<div class="dialog ask">${face(L.choice.who, s.name || 'x')}<div>${s.name ? `<b class="namechip">${esc(s.name)}</b>` : ''}<p>${esc(s.text)}</p><div class="picks">${L.choice.options.map((o, i) => `<button class="pickbtn" data-a="scenepick" data-i="${i}">${esc(o)}</button>`).join('')}</div></div></div>`;
+  }
+  if (step === 'talk') {
+    const line = L.reply || L.scene, s = speech(line.text);
+    return `<div class="dialog">${face(line.who, s.name)}<div>${s.name ? `<b class="namechip">${esc(s.name)}</b>` : ''}<p>${esc(s.text)}</p>${L.with ? `<small class="withline">${esc(withJosa(PARTNER[L.with].name))} 같이 했다</small>` : ''}${foot}</div></div>`;
+  }
+  return `<div class="dialog"><div><ul class="reslines">${resultLines(L).map(x => `<li>${x}</li>`).join('')}</ul>${foot}</div></div>`;
+}
+// 받침에 맞는 주격 조사: 네트가, 멘탈이
+const withSubj = name => { const c = name.charCodeAt(name.length - 1) - 0xAC00; return name + (c >= 0 && c % 28 ? '이' : '가'); };
+// 결과 글: 변화마다 한 줄
+function resultLines(L) {
+  const out = Object.entries(L.gains).filter(([, g]) => g >= 0.5).sort((x, y) => y[1] - x[1]).map(([id, g]) => `${withSubj(BIG_NAME[id])} <b class="up">${Math.round(g)}</b> 올랐다.`);
+  const f = Math.round(-L.fatigue), st = Math.round(L.stress);
+  if (f >= 1) out.push(`체력이 <b class="up">${f}</b> 회복됐다.`);
+  if (f <= -1) out.push(`체력이 <b class="down">${-f}</b> 줄었다.`);
+  if (st <= -1) out.push(`스트레스가 <b class="up">${-st}</b> 줄었다.`);
+  if (st >= 1) out.push(`스트레스가 <b class="down">${st}</b> 늘었다.`);
+  if (L.mood) out.push(L.mood < 0 ? '기분이 가라앉았다.' : '기분이 좋아졌다.');
+  if (!out.length) out.push(L.act === 'rest' ? '체력은 이미 가득하다.' : '별다른 변화는 없었다.');
+  return out;
+}
+// 결과 단계의 큰 숫자: 쉬는 행동은 체력, 테니스는 가장 많이 오른 능력치
+function bigResult(L) {
+  if (L.act === 'rest' || L.act === 'family') { const n = Math.round(-L.fatigue); return n >= 1 ? { n, label: '체력' } : null; }
+  const top = Object.entries(L.gains).sort((x, y) => y[1] - x[1])[0];
+  return top && top[1] >= 0.5 ? { n: Math.round(top[1]), label: BIG_NAME[top[0]] } : null;
 }
 function actTitle(id, topic) {
   const a = ACT[id], n = LESSONS[topic]?.name;
@@ -382,11 +420,13 @@ function actTitle(id, topic) {
   return `${a.icon} ${a.name}`;
 }
 // 위쪽: 목표까지 남은 턴, 목표, 체력, 기분
-function hudHTML(gear = true, fromFatigue = null) {
+// view: 결과 단계에서 아직 안 바뀐 값을 보여 줄 때 쓴다 (fatigue, to, cond)
+function hudHTML(gear = true, view = {}) {
   const wi = weekInfo(S.week), goal = G.currentGoal(S);
   const left = Math.max(1, Math.floor(((goal ? goal.by : G.TOTAL_WEEKS) - S.week) / 2) + 1);
   const nextT = Object.entries(S.entries).map(([tid]) => G.tour(S, tid)).filter(t => t.week > S.week).sort((a, b) => a.week - b.week)[0];
-  const [arrow, word] = MOOD[S.condition + 2];
+  const cond = view.cond ?? S.condition;
+  const [arrow, word] = MOOD[cond + 2];
   return `<div class="uhud">
     <div class="hudtop"><span class="yr">${wi.label}</span><span class="badge div-${S.division}">${S.division === '국화' ? '🌼' : '🌱'} ${S.division}</span>${nextT ? `<span class="yr">📅 ${nextT.week - S.week}주 뒤 ${esc(nextT.name)}</span>` : ''}</div>
     ${gear ? `<button class="gearbtn" data-a="settings" aria-label="설정">⚙️</button>` : ''}
@@ -394,14 +434,14 @@ function hudHTML(gear = true, fromFatigue = null) {
       <div class="ucal ${left <= 3 ? 'urgent' : ''}"><b>${left}</b><small>턴 남음</small></div>
       <div class="hudr">
         <div class="goalbar"><i>목표</i><span>${esc(goal ? goal.text : '3년의 끝까지')}</span></div>
-        <div class="energy"><small>체력</small><div class="ebar"><i style="width:${Math.round(fromFatigue ?? S.fatigue)}%" ${fromFatigue === null ? '' : `data-to="${Math.round(S.fatigue)}"`}></i></div><span class="mood m${S.condition + 2}">${arrow} ${word}</span></div>
+        <div class="energy"><small>체력</small><div class="ebar"><i style="width:${Math.round(view.fatigue ?? S.fatigue)}%" ${view.to === undefined ? '' : `data-to="${Math.round(view.to)}"`}></i></div><span class="mood m${cond + 2}">${arrow} ${word}</span></div>
       </div>
     </div>
   </div>`;
 }
 // 큰 능력치 한 줄. plus에 값이 있으면 위에 +숫자가 뜬다
-function statRow(plus = {}, tappable = true) {
-  const big = G.bigValues(S.stats);
+function statRow(plus = {}, tappable = true, values = null) {
+  const big = values || G.bigValues(S.stats);
   const cells = BIG_STATS.map(b => {
     const v = big[b.id], g = plus[b.id], gr = grade(v);
     return `<span class="ust"><small>${BIG_SHORT[b.id]}</small><span class="v"><b class="r r-${gr}">${gr}</b>${Math.round(v)}</span>${g >= 0.5 ? `<em>+${Math.round(g)}</em>` : ''}</span>`;
@@ -461,7 +501,13 @@ function pickInfo() {
   const tire = p.fatigue >= 16 ? '많이 지쳐요.' : p.fatigue > 0 ? '조금 지쳐요.' : '';
   return `<div class="say info"><span>${esc(text)} ${tire}</span>${face ? `<span class="fc">${esc(withJosa(whoName(face)))} 같이 해요. 더 잘 늘 거예요.</span>` : ''}</div>`;
 }
-function doAction(id, topic) { G.runWeek(S, id, topic); S.phase = 'result'; G.save(S); V.sheet = null; V.pick = null; V.screen = 'result'; }
+function doAction(id, topic) { G.runWeek(S, id, topic); S.phase = 'result'; G.save(S); V.sheet = null; V.pick = null; V.screen = 'result'; V.step = 0; V.wipe = true; skipFast(); }
+function finishWeek() {
+  S.tournament = null; S.phase = 'plan'; V.pick = null; V.note = null;
+  G.endWeek(S);
+  G.save(S);
+  V.screen = S.ending ? 'ending' : 'week';
+}
 function confirmPick() {
   const id = V.pick;
   V.pick = null;
@@ -595,13 +641,10 @@ async function onClick(e) {
     case 'tempo': S.choices = { ...DEFAULT_CHOICES, ...(S.choices || {}), tempo: d.v, mental: d.v === 'safe' ? 'breathe' : 'keep' }; G.save(S); break;
     case 'choice': S.choices = { ...DEFAULT_CHOICES, ...(S.choices || {}), [d.k]: d.v }; G.save(S); break;
     case 'plandetail': V.detail = !V.detail; break;
-    case 'endweek': {
-      S.tournament = null; S.phase = 'plan'; V.pick = null; V.note = null;
-      G.endWeek(S);
-      G.save(S);
-      V.screen = S.ending ? 'ending' : 'week';
-      break;
-    }
+    case 'endweek': finishWeek(); break;
+    case 'resnext': if (!nextStep()) finishWeek(); break;
+    case 'scenepick': G.chooseScene(S, +d.i); G.save(S); skipFast(); break;
+    case 'fasttoggle': S.fast = !S.fast; G.save(S); skipFast(); break;
     case 'spd': if (M) { M.hl = d.v === 'hl'; M.speed = M.hl ? 1 : +d.v; if (M.view) M.view.speed = M.speed; app.querySelectorAll('[data-a=spd]').forEach(b => b.classList.toggle('on', b.dataset.v === d.v)); } return;
     case 'skipgame': if (M) { M.skipGame = true; M.view && (M.view.speed = 20); } return;
     case 'skipmatch': if (M) { M.skipMatch = true; M.skipGame = true; M.view && (M.view.speed = 20); } return;

@@ -56,6 +56,7 @@ function play(detail) {
       else if (s.unlocked.club && turn % 3 === 0) act = 'club';
       else topic = chooseLesson(s);
       G.runWeek(s, act, topic);
+      if (s.weekLog.choice) G.chooseScene(s, turn % 2); // 선택은 번갈아 고른다
     }
     const wk = s.week;
     G.endWeek(s);

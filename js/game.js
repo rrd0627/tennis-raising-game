@@ -3,7 +3,7 @@ import {
   ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
-import { SCENES, MILESTONES, STORIES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
+import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
@@ -176,7 +176,7 @@ export function runWeek(state, id, topic) {
   const a = ACT[id];
   if (id === 'lesson') { topic = topic || coachTopic(state); state.lastTopic = topic; state.lessonCount++; state.coach += 1.5; }
   const fx = effectOf(state, id, topic);
-  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : id === 'practice' ? state.lastTopic : null, gains: {}, with: null, scene: null, mile: null };
+  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : id === 'practice' ? state.lastTopic : null, gains: {}, with: null, scene: null, mile: null, cond0: state.condition };
   if (id === 'rest') {
     const r = rollRest(state, rng);
     fx.fatigue = r.fatigue; fx.stress = r.stress;
@@ -213,8 +213,60 @@ export function runWeek(state, id, topic) {
   log.fatigue = state.fatigue - f0; log.stress = state.stress - s0;
   log.scene = pickScene(state, id, log.topic, face, after, rng, log.rest);
   if (a.tennis) log.mile = checkMilestone(state, after, log.topic);
+  log.before = before; log.f0 = f0; log.s0 = s0;
+  log.desc = pickDesc(state, id, log.topic, face, rng);
+  if (!log.mile && state.week >= 3 && !SCENES.some(x => x.week === state.week && x.act === id)) log.choice = pickChoice(state, id, face, rng);
   state.weekLog = log;
   return log;
+}
+// 결과의 첫 단계: 상황 설명
+function pickDesc(state, id, topic, face, rng) {
+  if (state.week === 1) return DESC_LINES.first[0];
+  const a = ACT[id];
+  const pool = [...(DESC_LINES[id] || []), ...(a.tennis ? DESC_SEASON[weekInfo(state.week).quarter] || [] : [])];
+  if (!pool.length) return '';
+  const name = topic ? LESSONS[topic].name : '';
+  const line = pool[Math.floor(rng() * pool.length)].replaceAll('{topic}', name);
+  return face ? `${line} ${PARTNER[face].name}도 온다고 했다.` : line;
+}
+// 세 턴에 한 번쯤 선택이 끼어든다. 안 나온 것부터 나온다.
+const CHOICE_RATE = 0.35;
+function pickChoice(state, id, face, rng) {
+  if (rng() >= CHOICE_RATE) return null;
+  const list = CHOICE_SCENES.filter(c => c.act === id && (!c.withFace || face));
+  if (!list.length) return null;
+  state.seenChoices = state.seenChoices || [];
+  const fresh = list.filter(c => !state.seenChoices.includes(c.id));
+  const pool = fresh.length ? fresh : list;
+  const c = pool[Math.floor(rng() * pool.length)];
+  state.seenChoices.push(c.id);
+  if (state.seenChoices.length > 16) state.seenChoices.shift();
+  const fill = s => s.replaceAll('{p}', face ? PARTNER[face].name : '');
+  return { id: c.id, who: c.who === 'partner' ? face : c.who, prompt: fill(c.prompt), options: c.options.map(o => o.label) };
+}
+// 선택을 적용한다. 효과는 결과 단계에서 드러난다.
+export function chooseScene(state, i) {
+  const log = state.weekLog;
+  if (!log?.choice || log.picked != null) return;
+  const o = CHOICE_SCENES.find(c => c.id === log.choice.id).options[i], fx = o.fx || {};
+  const rng = rngOf(state), face = log.with;
+  if (fx.grow) {
+    const e = effectOf(state, log.act, log.topic), K = actionK(state, log.act);
+    for (const [gid, amt] of Object.entries(e.groups)) growGroup(state, gid, amt * fx.grow, K, rng);
+    for (const [sid, amt] of Object.entries(e.stats)) growStat(state, sid, amt * fx.grow, K, rng);
+  }
+  for (const k of ['fatigue', 'stress', 'confidence', 'coach', 'club', 'work']) state[k] += fx[k] || 0;
+  if (face) {
+    const ps = state.partners[face];
+    ps.aff = clamp(ps.aff + (fx.aff || 0), 0, 100); ps.combo = clamp(ps.combo + (fx.combo || 0), 0, 100);
+  }
+  clampStatus(state);
+  const after = bigValues(state.stats);
+  log.gains = {};
+  for (const b of BIG_STATS) { const g = after[b.id] - log.before[b.id]; if (g >= 0.05) log.gains[b.id] = g; }
+  log.fatigue = state.fatigue - log.f0; log.stress = state.stress - log.s0;
+  log.picked = i;
+  log.reply = { who: o.who === 'partner' ? face : o.who || 'me', text: o.reply.replaceAll('{p}', face ? PARTNER[face].name : '') };
 }
 function clampStatus(state) {
   state.fatigue = clamp(state.fatigue, 0, 100); state.stress = clamp(state.stress, 0, 100);

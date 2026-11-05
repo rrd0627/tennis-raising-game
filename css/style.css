@@ -174,7 +174,6 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .moodband { position: absolute; left: 50%; bottom: 5px; z-index: 3; transform: translateX(-50%); white-space: nowrap; color: #fff; font-family: var(--f-display); font-size: 15px; padding: 3px 16px; border: 2px solid #fff; border-radius: 99px; box-shadow: 0 2px 8px rgba(0, 0, 0, .3); animation: scenein .35s ease-out .35s both; }
 .moodband.down { background: linear-gradient(#3f8fe6, #2467c0); }
 .moodband.up { background: linear-gradient(#ff7aa8, #f0447e); }
-.fxline { margin-top: 2px; color: #3f6b58; font-weight: 700; font-size: 12.5px; }
 .wipe { position: absolute; inset: 0; z-index: 3; pointer-events: none; background: repeating-linear-gradient(135deg, #f7b9cf 0 46px, #a9c7ea 46px 92px); animation: wipeout .5s ease-in both; }
 @keyframes wipeout { to { transform: translateX(105%); } }
 
@@ -219,7 +218,24 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .dialog > div { min-width: 0; flex: 1; align-self: stretch; display: flex; flex-direction: column; gap: 4px; }
 .dialog p { margin: 0; font-size: 16px; line-height: 1.55; word-break: keep-all; }
 .withline { color: var(--pink); font-weight: 700; }
-.tapnext { margin-top: auto; align-self: flex-end; animation: tappulse 1.6s ease-in-out infinite; }
+.tapnext { animation: tappulse 1.6s ease-in-out infinite; }
+.dfoot { margin-top: auto; padding-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fastbtn { font-size: 11px; font-weight: 800; color: #5b6560; background: #e9ece6; border-radius: 99px; padding: 3px 10px; }
+.fastbtn.on { color: #fff; background: #4fb266; }
+.namechip { align-self: flex-start; color: #fff; background: #4fb266; border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 800; }
+.dialog.narr p { color: #3d4a43; }
+.dialog.ask p { font-size: 15px; line-height: 1.45; }
+.picks { display: flex; flex-direction: column; gap: 7px; margin-top: 6px; }
+.pickbtn { padding: 10px 12px; text-align: left; font-size: 14px; font-weight: 800; color: var(--ink); background: linear-gradient(#fff, #f1f8ea); border: 2px solid #4fb266; border-radius: 12px; box-shadow: 0 2px 0 #3c8f50; }
+.pickbtn:active { transform: translateY(2px); box-shadow: none; }
+.screen.home.askmode .bgimg { filter: brightness(.5) saturate(.8); }
+.screen.home.askmode .heroimg { filter: brightness(.55); animation: none; transform: translateX(-50%); }
+.reslines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 15px; line-height: 1.4; }
+.reslines li { animation: scenein .28s ease-out both; }
+.reslines li:nth-child(2) { animation-delay: .12s; } .reslines li:nth-child(3) { animation-delay: .24s; } .reslines li:nth-child(4) { animation-delay: .36s; } .reslines li:nth-child(n+5) { animation-delay: .48s; }
+.reslines b { font-weight: 800; }
+.reslines b.up { color: #e4571a; }
+.reslines b.down { color: #2f6fc4; }
 .hero .mile { position: absolute; left: 12px; right: 12px; top: 40px; z-index: 4; padding: 12px; }
 
 /* 작은 폰: 버튼을 낮춰 캐릭터 자리를 지킨다 */
@@ -240,6 +256,9 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .gbtn .pt.xs { width: 24px; height: 24px; top: -8px; right: -4px; }
   .dialog { min-height: 114px; padding: 10px 12px; }
   .dialog p { font-size: 14.5px; line-height: 1.45; }
+  .reslines { font-size: 13px; gap: 1px; }
+  .pickbtn { padding: 7px 10px; font-size: 13px; }
+  .dialog.ask p { font-size: 13.5px; }
   .sidebtn { width: 36px; height: 36px; font-size: 16px; }
   .burst { top: 79%; width: 140px; height: 104px; margin: -52px 0 0 -70px; }
   .burst b { font-size: 40px; }
@@ -247,7 +266,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .say { bottom: 24px; font-size: 12.5px; padding: 6px 10px; }
   .risk { bottom: 24px; }
 }
-@media (prefers-reduced-motion: reduce) { .heroimg, .tapnext, .gbtn.hot, .burst, .moodband { animation: none; } .wipe { display: none; } }
+@media (prefers-reduced-motion: reduce) { .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li { animation: none; } .wipe { display: none; } }
 
 /* 시트·오버레이 */
 .overlay { position: fixed; inset: 0; background: rgba(20, 30, 24, .45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
