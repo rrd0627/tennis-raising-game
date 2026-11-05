@@ -228,9 +228,14 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .gbtn .gi { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); font-size: 27px; line-height: 1.1; }
 .gbtn .lock { position: absolute; left: 8px; top: 2px; font-size: 13px; }
 .gbtn .pt.xs { position: absolute; top: -9px; right: -5px; width: 30px; height: 30px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .3); }
-.gbtn.g-lesson { --c: #3a8fe8; --d: #2266bd; flex: 1.45 1 0; height: 86px; }
-.gbtn.g-lesson .gi { font-size: 33px; }
-.gbtn.g-lesson b { font-size: 18px; }
+.gbtn.g-train { --c: #3a8fe8; --d: #2266bd; flex: 1.45 1 0; height: 86px; }
+.gbtn.g-train .gi { font-size: 33px; }
+.gbtn.g-train b { font-size: 18px; }
+.gbtn.g-lesson { --c: #3a8fe8; --d: #2266bd; }
+.gbtn.g-gym { --c: #e8733a; --d: #b84f1b; }
+.gbtn.g-home { --c: #5dbb7a; --d: #38925a; }
+.gbtn.g-skill { --c: #6f7fd8; --d: #4a58ad; }
+.gbtn.g-clinic { --c: #45b8a8; --d: #2a8c7e; }
 .gbtn.g-practice { --c: #2fb4c8; --d: #198697; }
 .gbtn.g-family { --c: #f4a51f; --d: #c47a08; }
 .gbtn.g-club { --c: #8a6be0; --d: #5f42b5; }
@@ -242,6 +247,28 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .gbtn.hot { animation: hotbtn 1.5s ease-in-out infinite; }
 @keyframes hotbtn { 50% { box-shadow: 0 0 0 2px var(--d), 0 4px 0 2px var(--d), 0 0 18px 6px #ffd84d; } }
 .gbtn.on { z-index: 2; transform: translateY(-7px) scale(1.06); box-shadow: 0 0 0 3px #ffc91f, 0 4px 0 3px #d69a00, 0 10px 16px rgba(0, 0, 0, .35); animation: none; }
+
+/* 훈련 칸: 칸마다 와 있는 사람과 친밀도가 위에 뜬다 */
+.tgrid { display: flex; align-items: flex-end; gap: 5px; }
+.tback { flex: none; width: 26px; height: 62px; border-radius: 12px; background: rgba(255, 255, 255, .95); color: #3d4a43; font-size: 22px; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
+.tcell { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.tcell .gbtn { flex: none; width: 100%; height: 72px; border-radius: 22px; border-width: 2px; padding-bottom: 4px; }
+.tcell .gbtn.on { transform: translateY(-2px) scale(1.03); }
+.tcell .gbtn .gi { font-size: 25px; top: 4px; }
+.tcell .gbtn b { font-size: 12.5px; }
+.tcell .gbtn .lock { left: 4px; top: 1px; font-size: 11px; }
+.gbtn .lvl { position: absolute; left: 5px; top: 2px; font-size: 9px; font-weight: 800; color: #5b6560; }
+.tfaces { width: 100%; height: 36px; display: flex; justify-content: center; align-items: flex-end; }
+.tf { position: relative; flex: none; width: 28px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.tf + .tf { margin-left: -8px; }
+.tf .pt.xs { width: 28px; height: 28px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.tf i { display: block; width: 24px; height: 5px; background: #fff; border: 1px solid #fff; border-radius: 3px; overflow: hidden; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+.tf i u { display: block; height: 100%; background: #4f97dc; }
+.tf i.full u { background: #ff9a1f; }
+.tf.bond { z-index: 1; }
+.tf.bond .pt.xs { box-shadow: 0 0 0 2px #ff5fa2, 0 0 10px 4px #ffd84d; animation: bondglow 1.2s ease-in-out infinite; }
+@keyframes bondglow { 50% { box-shadow: 0 0 0 2px #5fb8ff, 0 0 14px 6px #ffd84d; } }
+.pos { color: var(--turf-deep); font-weight: 700; }
 
 /* 결과: 버튼 자리에 대화 상자가 들어와서 캐릭터 위치가 그대로다 */
 .dialog { flex: none; display: flex; gap: 12px; align-items: flex-start; min-height: 158px; background: rgba(255, 255, 255, .97); border-radius: 16px; padding: 14px; box-shadow: 0 4px 14px rgba(0, 0, 0, .28); animation: scenein .28s ease-out; }
@@ -276,9 +303,17 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .gbtn { height: 54px; border-radius: 22px; padding-bottom: 3px; }
   .gbtn .gi { font-size: 20px; top: 2px; }
   .gbtn b { font-size: 13px; }
-  .gbtn.g-lesson { height: 62px; }
-  .gbtn.g-lesson .gi { font-size: 24px; }
-  .gbtn.g-lesson b { font-size: 15px; }
+  .gbtn.g-train { height: 62px; }
+  .gbtn.g-train .gi { font-size: 24px; }
+  .gbtn.g-train b { font-size: 15px; }
+  .tcell .gbtn { height: 56px; border-radius: 18px; padding-bottom: 3px; }
+  .tcell .gbtn .gi { font-size: 19px; top: 3px; }
+  .tcell .gbtn b { font-size: 11.5px; }
+  .tback { height: 50px; }
+  .tfaces { height: 31px; }
+  .tf { width: 24px; }
+  .tf .pt.xs { width: 24px; height: 24px; }
+  .tf i { width: 20px; height: 4px; }
   .grow.sub .gbtn { height: 48px; }
   .grow.sub .gbtn .gi { font-size: 18px; }
   .grow.sub .gbtn b { font-size: 12.5px; }
@@ -295,7 +330,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
   .say { bottom: 24px; font-size: 12.5px; padding: 6px 10px; }
   .risk { bottom: 24px; }
 }
-@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i { animation: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .heroimg, .screen.home.hopping .heroimg, .tapnext, .gbtn.hot, .burst, .moodband, .reslines li, .bigword, .stamp, .rankpop, .floaty i, .tf.bond .pt.xs { animation: none; } .floaty i { opacity: 1; } .heroimg.fb, .fxball, .wipe { display: none; } .turnword { animation: none; opacity: 0; } }
 
 /* 시트·오버레이 */
 .overlay { position: fixed; inset: 0; background: rgba(20, 30, 24, .45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }

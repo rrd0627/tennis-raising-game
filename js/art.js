@@ -201,7 +201,7 @@ export function heroURL(look, pose = 'ready') {
 
 // ── 주간 화면 배경 (임시 그림) ────────────────────────────
 // 실제 아트가 들어오면 art/manifest.json 의 bg[kind] 경로를 쓴다.
-// kind: home | court | wall | club | room | cafe | venue | office
+// kind: home | court | wall | club | room | cafe | venue | office | gym
 const BG_W = 540, BG_H = 1170;
 const SEASON_KEY = { 봄: 'spring', 여름: 'summer', 가을: 'autumn', 겨울: 'winter' };
 const SKY = { spring: ['#7cc8f2', '#dff3ff'], summer: ['#3fa9ee', '#c6ebff'], autumn: ['#79aedb', '#f8e6cc'], winter: ['#a7bdd3', '#edf2f6'] };
@@ -396,6 +396,24 @@ const SCENES = {
     ctx.fillStyle = 'rgba(255,255,255,.9)'; for (let x = 18; x < BG_W; x += 132) ctx.fillRect(x, 506, 96, 18);
     paintCourt(ctx, 544, '#3f8f73', '#2f65ad');
     paintNet(ctx, 604, 70);
+  },
+  // 헬스: 회사 앞 헬스장, 창밖으로 건물
+  gym(ctx, season) {
+    const g = ctx.createLinearGradient(0, 0, 0, 660); g.addColorStop(0, '#dfe5ea'); g.addColorStop(1, '#c6ced6');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, BG_W, 660);
+    ctx.fillStyle = SKY[season][1]; ctx.fillRect(24, 90, 492, 200);
+    ctx.fillStyle = '#9fb0bf'; for (const [x, w, h] of [[40, 70, 120], [130, 90, 160], [240, 60, 100], [320, 100, 140], [440, 70, 110]]) ctx.fillRect(x, 290 - h, w, h);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.strokeRect(24, 90, 492, 200);
+    for (const x of [188, 352]) { ctx.beginPath(); ctx.moveTo(x, 90); ctx.lineTo(x, 290); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(24, 330, 492, 180);
+    ctx.strokeStyle = 'rgba(120,135,150,.6)'; ctx.lineWidth = 4; ctx.strokeRect(24, 330, 492, 180);
+    ctx.fillStyle = '#59636e'; ctx.fillRect(0, 660, BG_W, BG_H - 660);
+    ctx.fillStyle = '#4a535d'; for (let x = 0; x < BG_W; x += 90) for (let y = 660; y < BG_H; y += 90) if ((x + y) % 180 === 30) ctx.fillRect(x, y, 90, 90);
+    ctx.fillStyle = '#2f353c';
+    for (const y of [420, 470, 590]) { ctx.fillRect(40, y, 150, 10); for (const x of [34, 184]) { ctx.beginPath(); ctx.arc(x + 6, y + 5, 20, 0, Math.PI * 2); ctx.fill(); } }
+    ctx.fillStyle = '#3a4048'; ctx.fillRect(350, 470, 150, 30); ctx.fillRect(366, 500, 16, 150); ctx.fillRect(468, 500, 16, 150);
+    ctx.fillStyle = '#e8456b'; ctx.fillRect(340, 448, 170, 22);
+    ctx.fillStyle = '#39414b'; ctx.fillRect(420, 330, 10, 118); ctx.fillStyle = '#2f353c'; ctx.fillRect(388, 322, 74, 12);
   },
   // 야근: 밤 사무실
   office(ctx) {

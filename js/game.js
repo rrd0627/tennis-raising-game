@@ -1,14 +1,14 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
-import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
+import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
 export const WEEKS_PER_TURN = 2;
-export const GROWTH = 9.5; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
+export const GROWTH = 7.2; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
 const SAVE_KEY = 'tennis-raising-save-v3';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -32,7 +32,7 @@ export function newGame(name, profile = {}) {
     v: 3, seed, rs: seed, name: name || '나', week: 1,
     fatigue: 10, stress: 15, confidence: 50, condition: 0,
     division: '개나리', work: 50, coach: 10, club: 5,
-    stats: {}, faces: {}, overtime: false, injury: null, slump: false,
+    stats: {}, faces: {}, spots: freshSpots(), lastSpot: 'lesson', overtime: false, injury: null, slump: false,
     unlocked: {}, lessons: [], lessonCount: 0, lastTopic: 'stroke', seen: [], miles: [], storiesDone: [],
     partners: {}, calendar: [], entries: {}, asked: {}, invited: [], inbox: [], msgSeq: 1,
     points: { 개나리: { national: [], local: [] }, 국화: { national: [], local: [] } }, npc: {},
@@ -70,7 +70,15 @@ export function newGame(name, profile = {}) {
 }
 
 export function save(state) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); return true; } catch { return false; } }
-export function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+export function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? migrate(JSON.parse(s)) : null; } catch { return null; } }
+function freshSpots() { return Object.fromEntries(TRAIN_SPOTS.map(id => [id, { lv: 1, n: 0 }])); }
+// 칸이 생기기 전 저장을 지금 구조로 맞춘다
+function migrate(s) {
+  s.spots = { ...freshSpots(), ...(s.spots || {}) };
+  s.lastSpot = s.lastSpot || 'lesson';
+  s.faces = Object.fromEntries(TRAIN_SPOTS.map(id => { const f = s.faces?.[id]; return [id, Array.isArray(f) ? f : f ? [f] : []]; }));
+  return s;
+}
 export function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { } }
 
 export function addMsg(state, from, text, extra = {}) {
@@ -105,17 +113,33 @@ export function nextTournament(state) { return state.calendar.find(t => t.week >
 // 처음엔 레슨·휴식·가족뿐이고, 이야기가 진행되면 늘어난다
 export function visibleActions(state) { return ACTIONS.filter(a => a.id !== 'overtime' && (!a.unlock || state.unlocked[a.unlock])); }
 
-// 연습과 클럽 게임에 함께할 사람이 턴마다 달라진다
+// 사람들이 턴마다 칸에 무작위로 나타난다. 자기 특기 칸(spec)에 더 자주 온다. 안 나오는 턴도 있다.
+const SHOW_RATE = 0.7;
 function rollFaces(state, rng) {
-  state.faces = {};
-  const ks = PARTNERS.filter(p => !partnerAvailable(state, p.id, state.week));
-  if (!ks.length) return;
-  for (const id of ['practice', 'club']) if (rng() < 0.5) state.faces[id] = ks[Math.floor(rng() * ks.length)].id;
+  state.faces = Object.fromEntries(TRAIN_SPOTS.map(id => [id, []]));
+  if (state.week < 3) return; // 첫 레슨은 혼자 받는다
+  const open = visibleActions(state).filter(a => a.train).map(a => a.id);
+  const wk = ((state.week - 1) % 52) + 1;
+  for (const p of PARTNERS) {
+    if (!state.partners[p.id].known || p.exams?.includes(wk)) continue;
+    const present = rng() < SHOW_RATE;
+    const spots = open.filter(id => p.spots[id]);
+    const total = spots.reduce((a, id) => a + p.spots[id], 0);
+    let x = rng() * total;
+    if (!present || !spots.length) continue;
+    const at = spots.find(id => (x -= p.spots[id]) < 0) || spots[0];
+    state.faces[at].push(p.id);
+  }
 }
-// 친밀도가 높을수록 같이 할 때 효과가 크다
-export function faceBonus(state, pid) { return pid ? 1.15 + state.partners[pid].aff / 250 : 1; }
+// 호흡이 맞는 사람이 자기 특기 칸에 와 있으면 그 칸의 훈련이 크게 곱해진다
+export function hasBond(state, pid) { return state.partners[pid].aff >= BOND_AT; }
+export function bondsAt(state, id) { return (state.faces[id] || []).filter(pid => PARTNER[pid].spec === id && hasBond(state, pid)); }
+const CROWD_K = 0.08, BOND_K = 1.4, SPOT_K = 0.08, AFF_PER_TRAIN = 9;
+export function spotLevel(state, id) { return state.spots[id]?.lv || 1; }
 function actionK(state, id) {
-  return (1 + state.condition * 0.08) * (state.slump ? 0.5 : 1) * faceBonus(state, state.faces[id]);
+  const base = (1 + state.condition * 0.08) * (state.slump ? 0.5 : 1);
+  if (!ACT[id].train) return base;
+  return base * (1 + (state.faces[id] || []).length * CROWD_K) * BOND_K ** bondsAt(state, id).length * (1 + (spotLevel(state, id) - 1) * SPOT_K);
 }
 function isHeat(state) { const w = weekInfo(state.week).w; return w >= 21 && w <= 31; }
 function injuryChance(state) { return state.week < 9 ? 0 : clamp((state.fatigue - 30) / 250, 0, 0.35) * (1 - state.stats.flex / 200); } // 첫 달은 다치지 않는다
@@ -128,34 +152,48 @@ export function coachTopic(state) {
   const score = { stroke: b.stroke, net: b.net, serve: b.serve, physical: b.physical, mental: Math.min(b.mental, b.tactics) };
   return BASIC_LESSONS.reduce((x, y) => (score[y] < score[x] ? y : x));
 }
-// 행동의 실제 효과. 혼자 연습은 지난 레슨 복습이라 효과가 작다.
+// 행동의 기본 효과. 레슨은 배우는 내용을 따른다.
 function effectOf(state, id, topic) {
   const a = ACT[id];
-  if (id === 'lesson' || id === 'practice') {
-    const l = LESSONS[id === 'lesson' ? topic : state.lastTopic], k = id === 'lesson' ? 1 : 0.6;
-    const scale = o => Object.fromEntries(Object.entries(o || {}).map(([x, v]) => [x, v * k]));
-    return { groups: scale(l.groups), stats: scale(l.stats), fatigue: a.fatigue + (id === 'lesson' ? l.fatigue || 0 : 0), stress: a.stress + (id === 'lesson' ? l.stress || 0 : 0) };
+  if (id === 'lesson') {
+    const l = LESSONS[topic];
+    return { groups: l.groups, stats: l.stats || {}, fatigue: a.fatigue + (l.fatigue || 0), stress: a.stress + (l.stress || 0) };
   }
-  return { groups: a.groups || {}, stats: {}, fatigue: a.fatigue, stress: a.stress };
+  return { groups: a.groups || {}, stats: a.stats || {}, fatigue: a.fatigue, stress: a.stress };
 }
-function fatigueOf(state, a, fx) { return fx.fatigue * (a.tennis && fx.fatigue > 0 && isHeat(state) ? 1.3 : 1); }
+// 호흡이 맞으면: 뭘 할지 아니까 대처가 빠르고, 부담감이 줄어 편하게 친다
+const BOND_COUNTER = 0.3, BOND_CALM = 0.6, BOND_STRESS = -3;
+const CALM_STATS = ['clutch', 'composure', 'comm'];
+// 능력치별 성장량: 기본 효과 + 같이 하는 사람이 주는 것 + 호흡
+function growthPlan(state, id, fx) {
+  const plan = {}, add = (sid, v) => { plan[sid] = (plan[sid] || 0) + v; };
+  for (const [gid, amt] of Object.entries(fx.groups)) for (const [sid] of GROUP_BY_ID[gid].stats) add(sid, amt);
+  for (const [sid, amt] of Object.entries(fx.stats)) add(sid, amt);
+  for (const pid of state.faces[id] || []) for (const [sid, amt] of Object.entries(PARTNER[pid].gives)) add(sid, amt);
+  const bonds = bondsAt(state, id).length;
+  if (bonds) {
+    for (const [sid] of GROUP_BY_ID.counter.stats) add(sid, BOND_COUNTER * bonds);
+    for (const sid of CALM_STATS) add(sid, BOND_CALM * bonds);
+  }
+  return plan;
+}
+// 체력 소모: 코트는 여름에 더 힘들고, 칸 레벨이 오르면 더 힘들다
+function fatigueOf(state, a, fx) {
+  const lv = a.train && fx.fatigue > 2 ? (spotLevel(state, a.id) - 1) * 1.5 : 0;
+  return (fx.fatigue + lv) * (a.tennis && fx.fatigue > 0 && isHeat(state) ? 1.3 : 1);
+}
 
 // 버튼에 보여 줄 예상치
 export function previewAction(state, id, topic) {
   const a = ACT[id], t = id === 'lesson' ? topic || coachTopic(state) : null;
-  const fx = effectOf(state, id, t), K = actionK(state, id), gains = [];
+  const fx = effectOf(state, id, t), K = actionK(state, id), plan = growthPlan(state, id, fx), gains = [];
   for (const big of BIG_STATS) {
     let sum = 0;
-    for (const gid of big.groups) {
-      for (const [sid] of GROUP_BY_ID[gid].stats) {
-        const amt = (fx.groups[gid] || 0) + (fx.stats[sid] || 0);
-        if (amt) sum += GROWTH * amt * K * (1 - state.stats[sid] / 160);
-      }
-    }
+    for (const sid of bigIds(big)) if (plan[sid]) sum += GROWTH * plan[sid] * K * (1 - state.stats[sid] / 160);
     if (sum > 0) gains.push([big.id, sum / bigIds(big).length]);
   }
   gains.sort((x, y) => y[1] - x[1]);
-  return { gains, topic: t, injury: a.tennis ? injuryChance(state) : 0, fatigue: fatigueOf(state, a, fx), stress: fx.stress };
+  return { gains, topic: t, injury: a.risk ? injuryChance(state) : 0, fatigue: fatigueOf(state, a, fx), stress: fx.stress + BOND_STRESS * bondsAt(state, id).length };
 }
 
 function growStat(state, sid, amt, K, rng) {
@@ -176,7 +214,9 @@ export function runWeek(state, id, topic) {
   const a = ACT[id];
   if (id === 'lesson') { topic = topic || coachTopic(state); state.lastTopic = topic; state.lessonCount++; state.coach += 1.5; }
   const fx = effectOf(state, id, topic);
-  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : id === 'practice' ? state.lastTopic : null, gains: {}, with: null, scene: null, mile: null, cond0: state.condition };
+  const people = a.train ? [...(state.faces[id] || [])] : [], bonds = a.train ? bondsAt(state, id) : [];
+  const lead = bonds[0] || people[0] || null;
+  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : null, gains: {}, with: lead, people, bonds, scene: null, mile: null, cond0: state.condition };
   if (id === 'rest') {
     const r = rollRest(state, rng);
     fx.fatigue = r.fatigue; fx.stress = r.stress;
@@ -185,23 +225,28 @@ export function runWeek(state, id, topic) {
     state.condition = clamp(state.condition + r.mood, -2, 2);
   }
   const before = bigValues(state.stats), f0 = state.fatigue, s0 = state.stress;
-  const K = actionK(state, id);
-  for (const [gid, amt] of Object.entries(fx.groups)) growGroup(state, gid, amt, K, rng);
-  for (const [sid, amt] of Object.entries(fx.stats)) growStat(state, sid, amt, K, rng);
-  const face = state.faces[id];
-  if (face) {
-    const ps = state.partners[face];
-    ps.aff = clamp(ps.aff + 3, 0, 100); ps.combo = clamp(ps.combo + 2, 0, 100);
-    log.with = face;
+  const K = actionK(state, id), plan = growthPlan(state, id, fx);
+  for (const [sid, amt] of Object.entries(plan)) growStat(state, sid, amt, K, rng);
+  log.K = K; log.plan = plan;
+  const fatigueNow = fatigueOf(state, a, fx);
+  for (const pid of people) {
+    const ps = state.partners[pid];
+    ps.aff = clamp(ps.aff + AFF_PER_TRAIN, 0, 100); ps.combo = clamp(ps.combo + 2, 0, 100);
   }
-  if (a.tennis && rng() < injuryChance(state)) {
+  if (a.train) {
+    state.lastSpot = id;
+    const sp = state.spots[id];
+    sp.n++;
+    if (sp.n % SPOT_USES_PER_LV === 0 && sp.lv < SPOT_MAX_LV) { sp.lv++; log.spotUp = sp.lv; }
+  }
+  if (a.risk && rng() < injuryChance(state)) {
     const names = ['테니스 엘보', '발목 염좌', '손목 통증', '종아리 근육 경련', '어깨 통증'];
     state.injury = { name: names[Math.floor(rng() * names.length)], weeks: 2 * (1 + Math.floor(rng() * 3)) };
     state.injuries++;
     state.pendingEvents.push({ id: 'injury' });
   }
-  state.fatigue += fatigueOf(state, a, fx) - 3;
-  state.stress += fx.stress + 4; // 4는 회사 생활
+  state.fatigue += fatigueNow - 3;
+  state.stress += fx.stress + BOND_STRESS * bonds.length + 4; // 4는 회사 생활
   state.work += a.work || 0;
   state.overtime = false;
   if (a.tennis) state.club += id === 'club' ? 1 : 0.25;
@@ -211,23 +256,24 @@ export function runWeek(state, id, topic) {
   const after = bigValues(state.stats);
   for (const b of BIG_STATS) { const g = after[b.id] - before[b.id]; if (g >= 0.05) log.gains[b.id] = g; }
   log.fatigue = state.fatigue - f0; log.stress = state.stress - s0;
-  log.scene = pickScene(state, id, log.topic, face, after, rng, log.rest);
-  if (a.tennis) log.mile = checkMilestone(state, after, log.topic);
+  log.scene = pickScene(state, id, log.topic, lead, after, rng, log.rest);
+  if (a.train) log.mile = checkMilestone(state, after, log.topic || a.mile);
   log.before = before; log.f0 = f0; log.s0 = s0;
-  log.desc = pickDesc(state, id, log.topic, face, rng);
-  if (!log.mile && state.week >= 3 && !SCENES.some(x => x.week === state.week && x.act === id)) log.choice = pickChoice(state, id, face, rng);
+  log.desc = pickDesc(state, id, log.topic, people, rng);
+  if (bonds.length) log.bondLine = BOND_TRAIN_LINES[Math.floor(rng() * BOND_TRAIN_LINES.length)].replaceAll('{p}', PARTNER[bonds[0]].name);
+  if (!log.mile && state.week >= 3 && !SCENES.some(x => x.week === state.week && x.act === id)) log.choice = pickChoice(state, id, lead, rng);
   state.weekLog = log;
   return log;
 }
 // 결과의 첫 단계: 상황 설명
-function pickDesc(state, id, topic, face, rng) {
+function pickDesc(state, id, topic, people, rng) {
   if (state.week === 1) return DESC_LINES.first[0];
   const a = ACT[id];
   const pool = [...(DESC_LINES[id] || []), ...(a.tennis ? DESC_SEASON[weekInfo(state.week).quarter] || [] : [])];
   if (!pool.length) return '';
   const name = topic ? LESSONS[topic].name : '';
   const line = pool[Math.floor(rng() * pool.length)].replaceAll('{topic}', name);
-  return face ? `${line} ${PARTNER[face].name}도 온다고 했다.` : line;
+  return people.length ? `${line} ${people.map(p => PARTNER[p].name).join(', ')}도 온다고 했다.` : line;
 }
 // 세 턴에 한 번쯤 선택이 끼어든다. 안 나온 것부터 나온다.
 const CHOICE_RATE = 0.35;
@@ -250,11 +296,7 @@ export function chooseScene(state, i) {
   if (!log?.choice || log.picked != null) return;
   const o = CHOICE_SCENES.find(c => c.id === log.choice.id).options[i], fx = o.fx || {};
   const rng = rngOf(state), face = log.with;
-  if (fx.grow) {
-    const e = effectOf(state, log.act, log.topic), K = actionK(state, log.act);
-    for (const [gid, amt] of Object.entries(e.groups)) growGroup(state, gid, amt * fx.grow, K, rng);
-    for (const [sid, amt] of Object.entries(e.stats)) growStat(state, sid, amt * fx.grow, K, rng);
-  }
+  if (fx.grow) for (const [sid, amt] of Object.entries(log.plan || {})) growStat(state, sid, amt * fx.grow, log.K || 1, rng);
   for (const k of ['fatigue', 'stress', 'confidence', 'coach', 'club', 'work']) state[k] += fx[k] || 0;
   if (face) {
     const ps = state.partners[face];
@@ -308,9 +350,22 @@ function checkMilestone(state, big, topic) {
   return { title: m.title, text: m.text };
 }
 // 이어지는 이야기: 한 턴에 하나만
+// 사람별 이야기: 친밀도가 다음 단계에 닿으면 나온다
+function personStory(state) {
+  for (const p of PARTNERS) {
+    const ps = state.partners[p.id], i = ps.storyStep || 0, step = PERSON_STORIES[p.id]?.[i];
+    if (!ps.known || !step || ps.aff < step.at) continue;
+    ps.storyStep = i + 1;
+    state.pendingEvents.push({ id: 'bond', pid: p.id, step: i });
+    return true;
+  }
+  return false;
+}
 function checkStories(state) {
   const big = bigValues(state.stats), o = overall(state.stats);
   const st = STORIES.find(x => !state.storiesDone.includes(x.id) && x.when(state, big, o));
+  // 행동을 여는 이야기가 먼저다
+  if (!st?.unlock && personStory(state)) return;
   if (!st) return;
   state.storiesDone.push(st.id);
   state.pendingEvents.push({ id: 'story', story: st.id });
@@ -476,8 +531,8 @@ export function endWeek(state) {
     delete state.entries[tw.t.id];
     state.pendingEvents.push({ id: 'withdraw', tname: tw.t.name, pid: tw.entry.partner });
   }
-  rollFaces(state, rng);
   checkStories(state);
+  rollFaces(state, rng);
   genInvites(state, rng);
   rollEvents(state, rng);
   save(state);
@@ -525,6 +580,7 @@ export function eventView(state, ev) {
     case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
     case 'goalMiss': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "이번 목표(${g.text})는 아쉬웠어요. 괜찮아요, 다음 목표로 가요."`, choices: [['ok', '다시 해 보자']] }; }
     case 'story': { const st = STORIES.find(x => x.id === ev.story); return { who: st.who, title: st.title, text: st.text + (st.note ? ` (${st.note})` : ''), choices: [['ok', st.ok]] }; }
+    case 'bond': { const st = PERSON_STORIES[ev.pid][ev.step], full = st.at >= BOND_AT; return { who: ev.pid, title: full ? '호흡이 맞기 시작했다' : '조금 가까워졌다', text: st.text + (full ? ' (같이 훈련하면 훨씬 잘 늘고, 같이 대회에 나가면 편하게 친다)' : ''), choices: [['ok', st.ok]] }; }
     case 'realize': return { who: 'coach', title: '깨달음', text: `${REALIZE_LINES[ev.topic]} (레슨 선택지 추가: ${LESSONS[ev.topic].name})`, choices: [['ok', '배워 볼게요']] };
     case 'lessonsOpen': return { who: 'coach', title: '코치의 말', text: '코치: "이제 뭘 배울지 스스로 알겠죠? 레슨 내용은 직접 골라 봐요."', choices: [['ok', '네!']] };
     default: return { who: 'system', title: '알림', text: '', choices: [['ok', '확인']] };
@@ -562,7 +618,7 @@ export function resolveEvent(state, ev, choice) {
     }
     case 'story': {
       const st = STORIES.find(x => x.id === ev.story);
-      if (st.unlock) state.unlocked[st.unlock] = true;
+      if (st.unlock) { state.unlocked[st.unlock] = true; rollFaces(state, rngOf(state)); }
       for (const [pid, v] of Object.entries(st.aff || {})) state.partners[pid].aff = clamp(state.partners[pid].aff + v, 0, 100);
       if (st.club) state.club += st.club;
       break;
@@ -655,6 +711,13 @@ export function buildTeams(state, tr) {
   const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond };
   if (state.yips > 0) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
   const ps = state.partners[tr.partner];
+  // 호흡이 맞는 사람과 나가면 뭘 할지 아니까 대처가 빠르고, 부담감이 줄어 편하게 친다
+  if (hasBond(state, tr.partner)) {
+    for (const [sid] of GROUP_BY_ID.counter.stats) me.stats[sid] = Math.min(99, me.stats[sid] + 4);
+    for (const sid of ['clutch', 'composure']) me.stats[sid] = Math.min(99, me.stats[sid] + 6);
+    for (const sid of ['cover', 'comm']) me.stats[sid] = Math.min(99, me.stats[sid] + 4);
+    me.conf = Math.min(100, me.conf + 10);
+  }
   const partner = { id: tr.partner, name: PARTNER[tr.partner].name, stats: partnerStats(state, tr.partner), conf: 45 + ps.aff / 5, condition: 0 };
   const human = { players: [me, partner], combo: ps.combo, isHuman: true, choices: { ...(state.choices || {}) } };
   return { human, npc, opp };
@@ -726,7 +789,7 @@ function finishTournament(state, tr, stage) {
 export function evaluateEnding(state) {
   const gN = state.titles.gukwhaNational, gAny = gN + state.titles.gukwhaLocal;
   const rank = rankOf(state, '국화', 'national', myPoints(state, '국화', 'national', TOTAL_WEEKS));
-  const partnerEnd = PARTNERS.find(p => state.partners[p.id].aff >= 90 && state.partners[p.id].nationalWins >= 1);
+  const partnerEnd = PARTNERS.find(p => state.partners[p.id].aff >= 95 && state.partners[p.id].nationalWins >= 2);
   const tact = groupAvg(state.stats, 'tactics');
   let id = 'love';
   if (gN >= 1 && rank === 1) id = 'queen';

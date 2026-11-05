@@ -1,7 +1,7 @@
 // 화면 — 타이틀, 인트로, 주간 행동, 결과, 메신저, 대회·랭킹, 능력치, 대회/경기, 엔딩
 import * as G from './game.js';
 import {
-  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, REST_RESULTS, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
+  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, TRAIN_SPOTS, BOND_AT, REST_RESULTS, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME } from './sim.js';
@@ -11,7 +11,7 @@ import { HOME_LINES, STATE_LINES, LOCK_LINES } from './scenes.js';
 
 const app = document.getElementById('app');
 let S = null;
-const V = { screen: 'title', tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null, step: 0, wipe: false, evtDone: null, turnWord: null };
+const V = { screen: 'title', train: false, tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null, step: 0, wipe: false, evtDone: null, turnWord: null };
 let M = null; // 경기 진행 상태
 let introTimer = null;
 
@@ -120,16 +120,17 @@ const SCREENS = {
   week: () => {
     if (V.evtDone) return eventDoneScreen(V.evtDone);
     if (S.pendingEvents.length) return eventScreen(S.pendingEvents[0]);
-    const wi = weekInfo(S.week), tw = G.tournamentThisWeek(S), say = homeLine(tw), pick = V.pick;
+    const wi = weekInfo(S.week), tw = G.tournamentThisWeek(S), say = homeLine(tw), pick = V.pick, training = V.train && !tw && !S.overtime;
     let moves;
     if (tw) moves = `<button class="btn primary big" data-a="tourgo">대회 출전하기 ▶</button>`;
     else if (S.overtime) moves = `<button class="btn primary big" data-a="act" data-id="overtime">야근하러 가기 ▶</button>`;
+    else if (training) moves = trainGrid();
     else moves = `<div class="gbtns">${BTN_ROWS.map((row, i) => `<div class="grow ${i ? 'sub' : ''}">${row.map(gameButton).join('')}</div>`).join('')}</div>`;
     const place = tw ? 'tour' : S.overtime ? 'overtime' : pick;
     const pose = POSE_OF[place] || (S.injury || S.slump || S.fatigue >= 60 ? 'sad' : S.condition > 0 ? 'cheer' : 'ready');
     const pv = pick && pick !== 'tour' ? G.previewAction(S, pick) : null;
-    const riskPct = pv && ACT[pick].tennis ? Math.round(pv.injury * 100) : null;
-    const title = tw ? `🏆 ${tw.t.name} · 파트너 ${PARTNER[tw.entry.partner].name}` : S.overtime ? '💼 마감 야근' : pick === 'tour' ? `🏆 ${G.openTournament(S).name}` : pick ? actTitle(pick, pick === 'practice' ? S.lastTopic : pv.topic) : '';
+    const riskPct = pv && ACT[pick].risk ? Math.round(pv.injury * 100) : null;
+    const title = tw ? `🏆 ${tw.t.name} · 파트너 ${PARTNER[tw.entry.partner].name}` : S.overtime ? '💼 마감 야근' : pick === 'tour' ? `🏆 ${G.openTournament(S).name}` : pick ? actTitle(pick, pv.topic) : training ? '🎾 무슨 훈련을 할까' : '';
     const bubble = pick ? pickInfo() : V.note ? `<div class="say"><span>${esc(V.note)}</span></div>` : `<div class="say">${say.who !== 'me' ? portrait(say.who, 'smile', 'pt xs') : ''}<span>${esc(say.text)}</span></div>`;
     return `
     <div class="screen home">
@@ -160,7 +161,7 @@ const SCREENS = {
     const L = S.weekLog, steps = resultSteps(L), step = steps[Math.min(V.step, steps.length - 1)];
     const done = step === 'result', after = done || step === 'rank';
     const rest = REST_RESULTS.find(r => r.id === L.rest);
-    const pose = step === 'mile' || step === 'rank' ? 'cheer' : rest && step !== 'desc' ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
+    const pose = step === 'mile' || step === 'rank' || step === 'bond' ? 'cheer' : rest && step !== 'desc' ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
     const fatigue0 = S.fatigue - L.fatigue;
     const big = done ? bigResult(L) : null, ranks = step === 'rank' ? rankUps(L) : [];
     const moving = step === 'desc' || step === 'talk';
@@ -172,6 +173,7 @@ const SCREENS = {
         ${moving ? actorHTML(L, pose) : heroHTML(pose, LOOK_OF[L.act])}
         ${done && rest ? `<div class="ribbon evt"><small>${ACT.rest.icon} ${ACT.rest.name}</small><b>${esc(rest.name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
         ${step === 'mile' ? `<div class="bigword good"><small>★ 처음 해낸 순간</small>${esc(L.mile.title)}</div>` : ''}
+        ${step === 'bond' ? `<div class="bigword good"><small>${esc(namesOf(L.bonds))}</small>호흡 훈련!</div>` : ''}
         ${done && stampWord(L) ? `<div class="stamp">${esc(stampWord(L))}</div>` : ''}
         ${big ? `<div class="burst ${rest?.id || ''}"><b data-count="${big.n}">+${big.n}</b><small>${esc(big.label)}</small></div>` : ''}
         ${done && L.mood ? `<div class="moodband ${L.mood < 0 ? 'down' : 'up'}">${L.mood < 0 ? '↘ 기분이 가라앉았다' : '↗ 기분이 좋아졌다'}</div>` : ''}
@@ -248,10 +250,11 @@ const SCREENS = {
       body = `<div class="card"><h3>${g.name} <small>평균 ${G.groupAvg(S.stats, tab).toFixed(1)}</small></h3>${g.stats.map(([id, n]) => statBar(n, S.stats[id], tab === 'counter' ? counterHint(id) : '')).join('')}</div>`;
     } else if (tab === 'rel') {
       body = `<div class="card">${statBar('직장 평판', S.work)}${statBar('코치 신뢰', S.coach)}${statBar('클럽 명성', S.club)}${statBar('자신감', S.confidence)}${statBar('피로', S.fatigue)}${statBar('스트레스', S.stress)}
+        <p>훈련 ${TRAIN_SPOTS.map(id => `${ACT[id].name} Lv${G.spotLevel(S, id)}`).join(' · ')}</p>
         <p>종합 능력 <b>${G.overall(S.stats).toFixed(1)}</b> (${grade(G.overall(S.stats))}) · 부상 이력 ${S.injuries}회</p>
         ${S.unlocks.length ? `<p>코치 비기: ${S.unlocks.map(u => CHOICE_DEFS[2].opts.find(o => o[0] === u)?.[1]).join(', ')}</p>` : ''}</div>`;
     } else {
-      body = PARTNERS.filter(p => S.partners[p.id].known).map(p => { const ps = S.partners[p.id]; return `<div class="card prow">${portrait(p.id, 'smile', 'pt sm')}<div><b>${p.name}</b> <small>${p.arch} · ${p.style} · ${ps.div}</small>${statBar('실력', ps.level)}${statBar('친밀도', ps.aff)}${statBar('콤비', ps.combo)}</div></div>`; }).join('') + `<p class="hint">훈련을 계속하다 보면 새 파트너를 만날 수 있습니다.</p>`;
+      body = PARTNERS.filter(p => S.partners[p.id].known).map(p => { const ps = S.partners[p.id]; return `<div class="card prow">${portrait(p.id, 'smile', 'pt sm')}<div><b>${p.name}</b> <small>${p.arch} · ${p.style} · ${ps.div} · 자주 가는 곳 ${ACT[p.spec].name}${G.hasBond(S, p.id) ? ' · <span class="pos">호흡이 맞는다</span>' : ''}</small>${statBar('실력', ps.level)}${statBar('친밀도', ps.aff)}${statBar('콤비', ps.combo)}</div></div>`; }).join('') + `<p class="hint">훈련을 계속하다 보면 새 파트너를 만날 수 있습니다. 친밀도가 ${BOND_AT}을 넘으면 호흡이 맞습니다.</p>`;
     }
     return `<div class="screen stats"><header class="topbar"><button class="back" data-a="go" data-s="week">‹</button><div class="wk">능력치</div><div class="sub">종합 ${G.overall(S.stats).toFixed(1)}</div></header>
       <div class="tabs scroll">${tabs.map(([id, n]) => `<button class="${tab === id ? 'on' : ''}" data-a="tab" data-id="${id}">${n}</button>`).join('')}</div>${body}
@@ -264,7 +267,7 @@ const SCREENS = {
     return `<div class="screen tour">
       <div class="tour-head ${tr.type}"><small>${tr.type === 'national' ? '전국대회' : '비전국대회'} · ${tr.div}부 · 본선 ${tr.draw}강</small><h2>${esc(tr.name)}</h2>
       <p>${tr.seed ? `시드 ${tr.seed}번${tr.bye ? ' · 예선 면제' : ''}` : '노시드'}</p></div>
-      <div class="vs">${portrait('me', 'focus', 'pt')}${portrait(tr.partner, 'smile', 'pt')}<div><b>${esc(S.name)} · ${esc(PARTNER[tr.partner].name)}</b><small>콤비 ${Math.round(S.partners[tr.partner].combo)} · 컨디션 ${COND[S.condition + 2]}${tr.spare ? ' · 예비 라켓' : ''}</small></div></div>
+      <div class="vs">${portrait('me', 'focus', 'pt')}${portrait(tr.partner, 'smile', 'pt')}<div><b>${esc(S.name)} · ${esc(PARTNER[tr.partner].name)}</b><small>콤비 ${Math.round(S.partners[tr.partner].combo)} · 컨디션 ${COND[S.condition + 2]}${tr.spare ? ' · 예비 라켓' : ''}${G.hasBond(S, tr.partner) ? ' · <span class="pos">호흡이 맞는다</span>' : ''}</small></div></div>
       ${opps.length ? `<div class="card"><h3>예선 상대 (1승이면 본선)</h3>${opps.map(o => oppRow(o)).join('')}</div>` : `<div class="card"><p>상위 시드라 예선 없이 본선부터 시작합니다.</p></div>`}
       ${planHTML(opps[0] || G.currentOpponent(tr))}
       <div class="actions"><button class="btn primary big" data-a="match">${opps.length ? '첫 경기 시작 ▶' : '본선 시작 ▶'}</button></div>
@@ -353,20 +356,21 @@ function logRow(l) { return `<div class="resrow"><span>${l.stage}</span><b>${esc
 function oppRow(o) { return `<div class="opp">${portrait(`opp:${o.seed % 997}:0`, 'focus', 'pt sm')}${portrait(`opp:${o.seed % 997}:1`, 'base', 'pt sm')}<div><b>${esc(o.names.join(' · '))}</b><small>${esc(o.club)} · ${esc(o.archName)} · ${grade(o.rating)}급</small></div></div>`; }
 
 // 주간 화면 조각
-const SCENE_OF = { lesson: 'court', practice: 'wall', club: 'club', rest: 'room', family: 'cafe', tour: 'venue', overtime: 'office' };
-const POSE_OF = { lesson: 'fh', practice: 'bh', club: 'volley', rest: 'relax', family: 'relax', tour: 'serve', overtime: 'tired' };
+const SCENE_OF = { lesson: 'court', gym: 'gym', practice: 'wall', club: 'club', home: 'room', rest: 'room', family: 'cafe', tour: 'venue', overtime: 'office' };
+const POSE_OF = { lesson: 'fh', gym: 'stretch', practice: 'bh', club: 'volley', home: 'stretch', rest: 'relax', family: 'relax', tour: 'serve', overtime: 'tired' };
 const REST_POSE = { poor: 'tired', fine: 'relax', deep: 'stretch' };
 // 코트 밖에서는 옷이 다르다 (임시 그림)
 const OFF_COURT = { band: PLAYER_LOOK.hair };
-const LOOK_OF = { rest: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, family: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#f3b94f' }, overtime: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#5b6b84' } };
-const BTN_ROWS = [['rest', 'lesson', 'practice'], ['family', 'club', 'tour']];
+const LOOK_OF = { gym: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#e86a8a' }, home: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, rest: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, family: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#f3b94f' }, overtime: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#5b6b84' } };
+const BTN_ROWS = [['rest', 'train', 'skill'], ['clinic', 'family', 'tour']];
+const namesOf = ids => ids.map(id => PARTNER[id].name).join(', ');
 const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '좋음'], ['↑', '최고']];
 const BIG_SHORT = { stroke: '스트로크', net: '네트', serve: '서브', physical: '피지컬', tactics: '전술', mental: '멘탈' };
 function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
 function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">`; }
 // ── 결과 단계: 설명 → (가끔) 선택 → 대사 → 결과 ─────────────
 function resultSteps(L) {
-  return [L.desc && 'desc', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', 'result', rankUps(L).length && 'rank'].filter(Boolean);
+  return [L.desc && 'desc', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', L.bonds?.length && 'bond', 'result', rankUps(L).length && 'rank'].filter(Boolean);
 }
 // 이번 턴에 등급이 오른 능력치
 function rankUps(L) {
@@ -376,17 +380,18 @@ function rankUps(L) {
 }
 // 결과 단계의 도장. 쉬는 행동에는 찍지 않는다.
 function stampWord(L) {
-  if (!ACT[L.act].tennis) return '';
+  if (!ACT[L.act].train) return '';
+  if (L.bonds?.length) return '호흡 훈련!';
   if (S.slump) return '그럭저럭…';
   if ((L.cond0 ?? 0) >= 2) return '대성공!';
-  return { lesson: '성공!', practice: '복습 완료!', club: '좋은 게임!' }[L.act];
+  return { lesson: '성공!', gym: '운동 완료!', practice: '연습 완료!', club: '좋은 게임!', home: '오늘도 완료!' }[L.act];
 }
 // 행동 중의 움직임 (임시 그림): 테니스는 두 자세가 번갈아 나오고 공이 오간다
-const SWING = { lesson: ['fh', 'bh'], practice: ['bh', 'fh'], club: ['volley', 'fh'] };
+const SWING = { lesson: ['fh', 'bh'], gym: ['stretch', 'tired'], practice: ['bh', 'fh'], club: ['volley', 'fh'], home: ['stretch', 'relax'] };
 const FLOAT = { rest: 'Z', family: '♥', overtime: '…' };
 function actorHTML(L, pose) {
-  const pair = SWING[L.act], fl = FLOAT[L.act];
-  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(PLAYER_LOOK, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(PLAYER_LOOK, pair[1])}" alt=""><i class="fxball"></i>`;
+  const pair = SWING[L.act], fl = FLOAT[L.act], look = LOOK_OF[L.act] || PLAYER_LOOK;
+  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}`;
   return heroHTML(pose, LOOK_OF[L.act]) + (fl ? `<div class="floaty"><i>${fl}</i><i>${fl}</i><i>${fl}</i></div>` : '');
 }
 // 빨리 넘기기: 설명과 대사를 건너뛴다. 선택, 이정표, 결과, 등급 상승은 건너뛰지 않는다.
@@ -416,12 +421,13 @@ function stepDialog(step, L) {
   }
   if (step === 'talk') {
     const line = L.reply || L.scene, s = speech(line.text);
-    return `<div class="dialog">${face(line.who, s.name)}<div>${s.name ? `<b class="namechip">${esc(s.name)}</b>` : ''}<p>${esc(s.text)}</p>${L.with ? `<small class="withline">${esc(withJosa(PARTNER[L.with].name))} 같이 했다</small>` : ''}${foot}</div></div>`;
+    return `<div class="dialog">${face(line.who, s.name)}<div>${s.name ? `<b class="namechip">${esc(s.name)}</b>` : ''}<p>${esc(s.text)}</p>${L.people?.length ? `<small class="withline">${esc(withJosa(namesOf(L.people)))} 같이 했다</small>` : ''}${foot}</div></div>`;
   }
   if (step === 'mile') {
     const s = speech(L.mile.text);
     return `<div class="dialog"><div><p>${esc(L.mile.text)}</p>${foot}</div></div>`;
   }
+  if (step === 'bond') return `<div class="dialog">${portrait(L.bonds[0], 'joy', 'pt sm')}<div><p>${esc(L.bondLine)}</p>${foot}</div></div>`;
   if (step === 'rank') return `<div class="dialog"><div><ul class="reslines">${rankUps(L).map(r => `<li>${esc(r.name)} 등급이 <b class="up">${r.from}</b>에서 <b class="up">${r.to}</b>로 올랐다.</li>`).join('')}</ul>${foot}</div></div>`;
   return `<div class="dialog"><div><ul class="reslines">${resultLines(L).map(x => `<li>${x}</li>`).join('')}</ul>${foot}</div></div>`;
 }
@@ -437,6 +443,7 @@ const EVENT_LOOK = {
 const BG_LOOK = { office: 'overtime', room: 'rest', cafe: 'family' };
 function eventLook(ev) {
   if (ev.id === 'promo') return S.work >= 65 ? ['office', 'cheer', 'good'] : ['office', 'sad', 'bad'];
+  if (ev.id === 'bond') return ev.step >= 1 ? ['court', 'cheer', 'good'] : ['court', 'ready', ''];
   return EVENT_LOOK[ev.id] || ['home', 'ready', ''];
 }
 function eventFrame(look, title, inner, attrs = '', cls = '', big = '') {
@@ -479,13 +486,15 @@ function eventLines(s0) {
 const withSubj = name => { const c = name.charCodeAt(name.length - 1) - 0xAC00; return name + (c >= 0 && c % 28 ? '이' : '가'); };
 // 결과 글: 변화마다 한 줄
 function resultLines(L) {
-  const out = Object.entries(L.gains).filter(([, g]) => g >= 0.5).sort((x, y) => y[1] - x[1]).map(([id, g]) => `${withSubj(BIG_NAME[id])} <b class="up">${Math.round(g)}</b> 올랐다.`);
+  const out = Object.entries(L.gains).filter(([, g]) => g >= 0.5).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, g]) => `${withSubj(BIG_NAME[id])} <b class="up">${Math.round(g)}</b> 올랐다.`);
   const f = Math.round(-L.fatigue), st = Math.round(L.stress);
   if (f >= 1) out.push(`체력이 <b class="up">${f}</b> 회복됐다.`);
   if (f <= -1) out.push(`체력이 <b class="down">${-f}</b> 줄었다.`);
   if (st <= -1) out.push(`스트레스가 <b class="up">${-st}</b> 줄었다.`);
   if (st >= 1) out.push(`스트레스가 <b class="down">${st}</b> 늘었다.`);
   if (L.mood) out.push(L.mood < 0 ? '기분이 가라앉았다.' : '기분이 좋아졌다.');
+  if (L.people?.length) out.push(`${esc(withJosa(namesOf(L.people)))} 더 가까워졌다.`);
+  if (L.spotUp) out.push(`${withSubj(ACT[L.act].name)} <b class="up">Lv${L.spotUp}</b>로 올랐다.`);
   if (!out.length) out.push(L.act === 'rest' ? '체력은 이미 가득하다.' : '별다른 변화는 없었다.');
   return out;
 }
@@ -498,7 +507,6 @@ function bigResult(L) {
 function actTitle(id, topic) {
   const a = ACT[id], n = LESSONS[topic]?.name;
   if (id === 'lesson') return `${a.icon} 레슨 · ${n}`;
-  if (id === 'practice') return `${a.icon} 혼자 연습 · ${n || '기본기'} 복습`;
   return `${a.icon} ${a.name}`;
 }
 // 위쪽: 목표까지 남은 턴, 목표, 체력, 기분
@@ -531,13 +539,35 @@ function statRow(plus = {}, tappable = true, values = null) {
   return tappable ? `<button class="statrow" data-a="go" data-s="stats" aria-label="능력치 자세히">${cells}</button>` : `<div class="statrow">${cells}</div>`;
 }
 // 행동 버튼. 아직 못 하는 것도 자리를 지키고, 눌러 보면 이유를 말해 준다
+const MAIN_BTN = { train: { name: '훈련', icon: '🎾' }, skill: { name: '기술', icon: '📘' }, clinic: { name: '병원', icon: '🏥' }, tour: { name: '대회', icon: '🏆', risk: true } };
+function openSpots() { return G.visibleActions(S).filter(a => a.train); }
 function gameButton(id) {
+  if (id === 'train') {
+    const can = !S.injury || openSpots().some(a => !a.risk);
+    const glow = can && !S.injury && openSpots().some(a => G.bondsAt(S, a.id).length);
+    return `<button class="gbtn g-train ${can ? '' : 'off'} ${glow ? 'hot' : ''}" data-a="${can ? 'train' : 'nope'}" data-id="train"><span class="gi">${MAIN_BTN.train.icon}</span><b>${MAIN_BTN.train.name}</b></button>`;
+  }
+  // 기술과 병원은 다음 묶음에서 열린다
+  if (id === 'skill' || id === 'clinic') return `<button class="gbtn g-${id} off" data-a="nope" data-id="${id}"><span class="gi">${MAIN_BTN[id].icon}</span><span class="lock">🔒</span><b>${MAIN_BTN[id].name}</b></button>`;
   const isTour = id === 'tour', open = isTour && G.openTournament(S);
-  const a = isTour ? { name: '대회', icon: '🏆', tennis: true } : ACT[id];
-  const locked = isTour ? !open : !G.visibleActions(S).some(x => x.id === id);
-  const hurt = S.injury && a.tennis, off = locked || hurt, on = V.pick === id;
-  const face = !off && S.faces[id];
-  return `<button class="gbtn g-${id} ${on ? 'on' : ''} ${off ? 'off' : ''} ${open && !hurt ? 'hot' : ''}" data-a="${off ? 'nope' : 'act'}" data-id="${id}"><span class="gi">${a.icon}</span>${locked && !isTour ? '<span class="lock">🔒</span>' : ''}${face ? portrait(face, 'smile', 'pt xs') : ''}<b>${on ? (isTour ? '연락 ▶' : '이걸로 ▶') : a.name}</b></button>`;
+  const a = MAIN_BTN[id] || ACT[id];
+  const locked = isTour && !open;
+  const hurt = S.injury && a.risk, off = locked || hurt, on = V.pick === id;
+  return `<button class="gbtn g-${id} ${on ? 'on' : ''} ${off ? 'off' : ''} ${open && !hurt ? 'hot' : ''}" data-a="${off ? 'nope' : 'act'}" data-id="${id}"><span class="gi">${a.icon}</span><b>${on ? (isTour ? '연락 ▶' : '이걸로 ▶') : a.name}</b></button>`;
+}
+// 훈련 칸 5개. 칸마다 이번 턴에 와 있는 사람이 뜬다. 얼굴 아래는 친밀도, 빛나면 호흡 훈련.
+function trainGrid() {
+  const open = openSpots().map(a => a.id);
+  const cell = id => {
+    const a = ACT[id], locked = !open.includes(id), off = locked || (S.injury && a.risk), on = V.pick === id;
+    const people = off ? [] : S.faces[id] || [], bonds = off ? [] : G.bondsAt(S, id);
+    const faces = people.map(pid => {
+      const aff = S.partners[pid].aff;
+      return `<span class="tf ${bonds.includes(pid) ? 'bond' : ''}">${portrait(pid, 'smile', 'pt xs')}<i class="${aff >= BOND_AT ? 'full' : ''}"><u style="width:${Math.min(100, aff)}%"></u></i></span>`;
+    }).join('');
+    return `<div class="tcell"><div class="tfaces">${faces}</div><button class="gbtn g-${id} ${on ? 'on' : ''} ${off ? 'off' : ''} ${bonds.length && !on ? 'hot' : ''}" data-a="${off ? 'nope' : 'act'}" data-id="${id}"><span class="gi">${a.icon}</span>${locked ? '<span class="lock">🔒</span>' : `<span class="lvl">Lv${G.spotLevel(S, id)}</span>`}<b>${on ? '이걸로 ▶' : a.name}</b></button></div>`;
+  };
+  return `<div class="tgrid"><button class="tback" data-a="trainback" aria-label="돌아가기">‹</button>${TRAIN_SPOTS.map(cell).join('')}</div>`;
 }
 // 설정. 지우기 전에 한 번 더 묻는다
 function settingsHTML() {
@@ -546,6 +576,7 @@ function settingsHTML() {
 }
 // 못 고르는 버튼을 눌렀을 때 하는 혼잣말
 function nopeLine(id) {
+  if (id === 'skill' || id === 'clinic') return LOCK_LINES[id];
   if (S.injury) return LOCK_LINES.injured;
   if (id !== 'tour') return LOCK_LINES[id];
   const n = G.nextTournament(S);
@@ -571,23 +602,26 @@ function pickInfo() {
     const t = G.openTournament(S);
     return `<div class="say info"><span>${t.type === 'national' ? '전국대회' : '비전국대회'} · 본선 ${t.draw}강. 같이 나갈 사람에게 연락해요.</span></div>`;
   }
-  const p = G.previewAction(S, V.pick), face = S.faces[V.pick];
+  const p = G.previewAction(S, V.pick), people = S.faces[V.pick] || [], bonds = ACT[V.pick].train ? G.bondsAt(S, V.pick) : [];
   const topicName = id => LESSONS[id]?.name || '기본기';
   const text = {
     lesson: () => S.lessons.length ? `코치 추천은 ${topicName(p.topic)}. 직접 고를 수도 있어요.` : `이번엔 코치님이 정해 줘요. ${topicName(p.topic)}!`,
-    practice: () => `지난 레슨(${topicName(S.lastTopic)})을 혼자 복습해요.`,
+    gym: () => '퇴근하고 헬스장에 가요. 몸이 튼튼해져요.',
+    practice: () => '벽을 상대로 공을 쳐요. 혼자서도 스트로크가 늘어요.',
+    home: () => '집에서 몸을 풀어요. 혼자 하지만 거의 안 지쳐요.',
     club: () => '클럽 사람들과 게임해요. 실전 감각이 붙어요.',
     rest: () => '오늘은 쉬어요. 잘 자면 체력이 크게 회복돼요.',
     family: () => '가족·친구를 만나요. 스트레스가 풀려요.',
   }[V.pick]();
-  const tire = p.fatigue >= 16 ? '많이 지쳐요.' : p.fatigue > 0 ? '조금 지쳐요.' : '';
-  return `<div class="say info"><span>${esc(text)} ${tire}</span>${face ? `<span class="fc">${esc(withJosa(whoName(face)))} 같이 해요. 더 잘 늘 거예요.</span>` : ''}</div>`;
+  const tire = p.fatigue >= 16 ? '많이 지쳐요.' : p.fatigue > 2 ? '조금 지쳐요.' : '';
+  const fc = bonds.length ? `${withJosa(namesOf(bonds))} 호흡이 맞아요!` : people.length ? `${withJosa(namesOf(people))} 같이 해요.` : '';
+  return `<div class="say info"><span>${esc(text)} ${tire}</span>${fc ? `<span class="fc">${esc(fc)}</span>` : ''}</div>`;
 }
-function doAction(id, topic) { G.runWeek(S, id, topic); S.phase = 'result'; G.save(S); V.sheet = null; V.pick = null; V.screen = 'result'; V.step = 0; V.wipe = true; skipFast(); }
+function doAction(id, topic) { G.runWeek(S, id, topic); S.phase = 'result'; G.save(S); V.sheet = null; V.pick = null; V.train = false; V.screen = 'result'; V.step = 0; V.wipe = true; skipFast(); }
 
 function finishWeek() {
   const q0 = weekInfo(S.week).quarter;
-  S.tournament = null; S.phase = 'plan'; V.pick = null; V.note = null;
+  S.tournament = null; S.phase = 'plan'; V.pick = null; V.note = null; V.train = false;
   G.endWeek(S);
   G.save(S);
   V.screen = S.ending ? 'ending' : 'week';
@@ -643,7 +677,7 @@ function pickerHTML() {
       const ps = S.partners[p.id];
       const why = G.partnerAvailable(S, p.id, t.week) || (S.asked[p.id] === S.week ? '이번 주 이미 거절함' : null);
       const ch = why ? null : Math.round(G.acceptChance(S, p.id, t) * 100);
-      return `<div class="prow">${portrait(p.id, 'smile', 'pt sm')}<div><b>${p.name}</b> <small>${p.arch} · 실력 ${grade(ps.level)} · 친밀도 ${Math.round(ps.aff)}</small><small>${why ? `<span class="neg">${why}</span>` : `수락 확률 ${ch}%`}</small></div>${why ? '' : `<button class="btn sm primary" data-a="ask" data-pid="${p.id}">연락</button>`}</div>`;
+      return `<div class="prow">${portrait(p.id, 'smile', 'pt sm')}<div><b>${p.name}</b> <small>${p.arch} · 실력 ${grade(ps.level)} · 친밀도 ${Math.round(ps.aff)}${G.hasBond(S, p.id) ? ' · 호흡' : ''}</small><small>${why ? `<span class="neg">${why}</span>` : `수락 확률 ${ch}%`}</small></div>${why ? '' : `<button class="btn sm primary" data-a="ask" data-pid="${p.id}">연락</button>`}</div>`;
     }).join('')}
   </div></div>`;
 }
@@ -689,7 +723,7 @@ async function onClick(e) {
     case 'settings': if (S.pendingEvents.length) return; V.pick = null; V.note = null; V.sheet = 'settings'; break;
     case 'restartAsk': V.sheet = 'restart'; break;
     case 'cancelsheet': V.sheet = null; break;
-    case 'restart': G.clearSave(); S = null; V.sheet = null; V.pick = null; V.note = null; V.screen = 'title'; break;
+    case 'restart': G.clearSave(); S = null; V.sheet = null; V.pick = null; V.train = false; V.note = null; V.screen = 'title'; break;
     case 'go': V.screen = d.s; V.tab = null; V.thread = null; V.sheet = null; break;
     case 'tab': V.tab = d.id; break;
     case 'act':
@@ -700,6 +734,14 @@ async function onClick(e) {
       if (V.pick !== d.id) { V.pick = d.id; break; }
       confirmPick();
       break;
+    case 'train': {
+      if (S.pendingEvents.length) return;
+      V.train = true; V.note = null;
+      const last = openSpots().find(a => a.id === S.lastSpot && !(S.injury && a.risk));
+      V.pick = last ? last.id : openSpots().find(a => !(S.injury && a.risk))?.id || null;
+      break;
+    }
+    case 'trainback': V.train = false; V.pick = null; V.note = null; break;
     case 'nope': if (S.pendingEvents.length) return; V.pick = null; V.note = nopeLine(d.id); break;
     case 'lessonpick': doAction('lesson', d.topic); break;
     case 'closesheet': V.sheet = null; break;

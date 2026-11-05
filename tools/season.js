@@ -18,11 +18,25 @@ function chooseLesson(s) {
   return [G.coachTopic(s), ...s.lessons].reduce((a, b) => (score(b) > score(a) ? b : a));
 }
 
+// 열린 칸 중 약한 곳을 가장 많이 올리는 곳을 고른다. 호흡 훈련은 수치가 커서 자연히 먼저 고른다.
+function chooseSpot(s) {
+  const big = G.bigValues(s.stats), avgBig = Object.values(big).reduce((a, b) => a + b, 0) / BIG_STATS.length;
+  // 피로는 나중에 쉬는 턴으로 돌아오므로 그만큼 값을 깎는다
+  const score = (id, t) => { const p = G.previewAction(s, id, t); return p.gains.reduce((a, [b, g]) => a + g * Math.max(0.2, 1 + (avgBig - big[b]) / 15), 0) / (1 + Math.max(0, p.fatigue) / 45) * (0.85 + Math.random() * 0.3); };
+  const open = G.visibleActions(s).filter(a => a.train && (!s.injury || !a.risk)).map(a => a.id);
+  let best = null, bestV = -1, bestT;
+  for (const id of open) {
+    const t = id === 'lesson' ? chooseLesson(s) : undefined, v = score(id, t);
+    if (v > bestV) { best = id; bestV = v; bestT = t; }
+  }
+  return [best, bestT];
+}
 const pick = xs => xs[Math.floor(Math.random() * xs.length)];
 const randomProfile = () => Object.fromEntries(PROFILE.map(q => [q.key, pick(q.options).id]));
 function play(detail) {
   const s = G.newGame('테스트', randomProfile());
-  let matches = 0, watched = 0, wins = 0, last = -99, turn = 0;
+  let matches = 0, watched = 0, wins = 0, last = -99, turn = 0, bondTurns = 0, firstBond = null;
+  const used = {};
   const out = [];
   while (!s.ending) {
     turn++;
@@ -53,9 +67,10 @@ function play(detail) {
       else if (s.injury) act = s.stress > 50 ? 'family' : 'rest';
       else if (s.stress > 55) act = 'family';
       else if (s.fatigue > 45) act = 'rest';
-      else if (s.unlocked.club && turn % 3 === 0) act = 'club';
-      else topic = chooseLesson(s);
+      else [act, topic] = chooseSpot(s);
       G.runWeek(s, act, topic);
+      used[act] = (used[act] || 0) + 1;
+      if (s.weekLog.bonds?.length) { bondTurns++; firstBond = firstBond ?? s.weekLog.week; }
       if (s.weekLog.choice) G.chooseScene(s, turn % 2); // 선택은 번갈아 고른다
     }
     const wk = s.week;
@@ -66,7 +81,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
 }
 
 const rs = [];
@@ -79,6 +94,9 @@ console.log(`--- ${RUNS}회 요약 (턴 ${med(rs.map(r => r.turns))})`);
 console.log(`국화 승급 주: ${prom.length ? range(prom) : '없음'} | 승급 ${prom.length}/${RUNS}회 | 85~120주 ${prom.filter(w => w >= 85 && w <= 120).length}회`);
 console.log(`대회: ${range(rs.map(r => r.tours))} | 경기: ${range(rs.map(r => r.matches))} | 중계 경기: ${range(rs.map(r => r.watched))} | 승률 ${(rs.reduce((a, r) => a + r.wins, 0) / rs.reduce((a, r) => a + r.matches, 0) * 100).toFixed(0)}%`);
 console.log(`최종 종합: ${range(rs.map(r => Math.round(r.overall)))} | 부상: ${range(rs.map(r => r.injuries))} | 달성 목표: ${range(rs.map(r => r.goals))} | 이야기 ${med(rs.map(r => r.stories))} 이정표 ${med(rs.map(r => r.miles))}`);
+const fb = rs.map(r => r.firstBond).filter(Boolean);
+console.log(`호흡 훈련: ${range(rs.map(r => r.bondTurns))}턴 | 첫 호흡 훈련 주: ${fb.length ? range(fb) : '없음'} | 호흡 맞는 사람 ${range(rs.map(r => r.bonded))}명`);
+console.log(`칸 사용 중앙값: ${['lesson', 'gym', 'practice', 'club', 'home', 'rest', 'family'].map(k => `${k} ${med(rs.map(r => r.used[k] || 0))}`).join(', ')} | 칸 레벨 예: ${rs[0].lv}`);
 console.log(`엔딩: ${count('ending')}`);
 for (const q of PROFILE) console.log(`${q.key} 승급 주 중앙값: ` + q.options.map(o => { const w = rs.filter(r => r[q.key] === o.id && r.promoted).map(r => r.promoted); return `${o.id} ${w.length ? med(w) : '-'}`; }).join(', '));
 const min = med(rs.map(r => r.watched)) * 3 + med(rs.map(r => r.turns)) * 0.5 + 60;

@@ -42,13 +42,27 @@ export const SCENES = [
   { act: 'lesson', topic: 'counter', who: 'me', text: '{topic}. 오늘은 열 개 중 네 개를 받아냈다. 지난번엔 하나였다.' },
   { act: 'lesson', topic: 'counter', who: 'coach', text: '코치: "{topic}, 이제 눈에 보이죠?" 조금 보이는 것 같다.' },
 
-  // ── 혼자 연습 ──
+  // ── 벽치기 ──
   { act: 'practice', who: 'me', text: '벽은 실수해도 아무 말이 없다. 그래서 좋다.' },
   { act: 'practice', who: 'me', text: '벽치기를 하는데 경비 아저씨가 "오늘도 왔네" 하신다.' },
   { act: 'practice', who: 'me', text: '퇴근하고 혼자 공 200개. 손에 물집이 잡혔다.' },
   { act: 'practice', who: 'me', text: '지난 레슨을 떠올리며 스윙했다. 거울 속 자세가 코치와 다르다.' },
   { act: 'practice', withFace: true, who: 'partner', text: '{p}: "벽이랑 싸우는 거야?" 같이 랠리를 했다.' },
   { act: 'practice', withFace: true, who: 'partner', text: '{p}도 와 있었다. 같이 공을 치다 보니 어두워졌다.' },
+
+  // ── 헬스 ──
+  { act: 'gym', who: 'me', text: '스쿼트 스무 개. 트레이너: "이제 몸 풀렸죠?"' },
+  { act: 'gym', who: 'me', text: '옆 사람이 자꾸 내 라켓 가방을 본다. 헬스장에 왜 라켓을 가져왔냐는 눈이다.' },
+  { act: 'gym', who: 'me', text: '어깨 운동을 했더니 다음 날 머리 감기가 어렵다.' },
+  { act: 'gym', who: 'me', text: '거울 속 종아리가 조금 달라 보인다. 기분 탓일 수도 있다.' },
+  { act: 'gym', withFace: true, who: 'partner', text: '{p}: "한 세트만 더 하고 가자." 세 세트를 더 했다.' },
+  { act: 'gym', withFace: true, who: 'partner', text: '{p}가 내 무게를 보더니 말없이 원판을 하나 뺐다.' },
+
+  // ── 홈트 ──
+  { act: 'home', who: 'me', text: '영상 속 선생님이 "쉬워요"라고 한다. 거짓말이다.' },
+  { act: 'home', who: 'me', text: '매트 까는 데 10분, 운동 10분, 눕는 데 한 시간.' },
+  { act: 'home', who: 'me', text: '자기 전 스트레칭. 어제보다 손끝이 조금 더 내려갔다.' },
+  { act: 'home', who: 'me', text: '아랫집이 걱정돼 점프 대신 제자리걸음을 했다.' },
 
   // ── 클럽 게임 ──
   { act: 'club', tier: 0, who: 'me', text: '내가 친 공이 전부 상대 전위에게 갔다. 파트너가 웃었다.' },
@@ -90,8 +104,18 @@ export const DESC_LINES = {
   ],
   practice: [
     '아무도 없는 연습벽 앞에 섰다.',
-    '지난번에 배운 {topic}, 잊기 전에 복습해 두기로 했다.',
+    '지난번에 배운 걸 잊기 전에 쳐 두기로 했다.',
     '퇴근길에 라켓을 챙겨 연습장으로 돌아갔다.',
+  ],
+  gym: [
+    '퇴근하고 회사 앞 헬스장으로 갔다.',
+    '오늘은 코트 대신 헬스장이다.',
+    '운동화 끈을 묶었다. 오늘은 하체 날이다.',
+  ],
+  home: [
+    '집에 오자마자 매트를 깔았다.',
+    '코트 갈 시간은 없어도 매트 깔 시간은 있다.',
+    '영상 하나를 틀어 놓고 따라 해 보기로 했다.',
   ],
   club: [
     '클럽 코트에 사람이 많다. 오늘은 복식 세 게임.',
@@ -145,7 +169,7 @@ export const CHOICE_SCENES = [
     { label: '죄송해요, 끝까지 할게요', who: 'coach', reply: '코치: "그럼 10분 더 하죠." 괜히 말했다.', fx: { fatigue: 4, coach: 2 } },
     { label: '오늘 좀 피곤해요', who: 'coach', reply: '코치: "그럼 오늘은 가볍게 해요."', fx: { fatigue: -3, coach: -1 } },
   ] },
-  // ── 혼자 연습 ──
+  // ── 벽치기 ──
   { id: 'one_more', act: 'practice', who: 'me', prompt: '어두워지기 시작했다. 공은 아직 남았다.', options: [
     { label: '한 바구니만 더', who: 'me', reply: '마지막 공이 제일 잘 맞았다. 꼭 그렇다.', fx: { grow: 0.3, fatigue: 4 } },
     { label: '오늘은 끝', who: 'me', reply: '공을 줍다 보니 별이 떴다. 오늘은 여기까지.', fx: { stress: -3 } },
@@ -161,6 +185,16 @@ export const CHOICE_SCENES = [
   { id: 'rally_count', act: 'practice', withFace: true, who: 'partner', prompt: '{p}: "오늘 랠리 몇 번까지 갈까?"', options: [
     { label: '스무 번', who: 'partner', reply: '열두 번에서 끊겼다. {p}가 먼저 웃었다.', fx: { aff: 3 } },
     { label: '일단 열 번', who: 'partner', reply: '딱 열 번에서 끊겼다. 왜 딱 거기서.', fx: { aff: 2, stress: -1 } },
+  ] },
+  // ── 헬스 ──
+  { id: 'last_set', act: 'gym', who: 'me', prompt: '마지막 세트가 남았다. 팔이 벌써 떨린다.', options: [
+    { label: '끝까지 한다', who: 'me', reply: '다음 날 라켓이 무거웠다. 그래도 뿌듯하다.', fx: { grow: 0.25, fatigue: 4 } },
+    { label: '오늘은 여기까지', who: 'me', reply: '샤워하고 나오니 몸이 가볍다.', fx: { stress: -3 } },
+  ] },
+  // ── 홈트 ──
+  { id: 'sofa', act: 'home', who: 'me', prompt: '매트 바로 옆에 소파가 있다. 소파가 부른다.', options: [
+    { label: '영상 끝까지 따라 한다', who: 'me', reply: '끝까지 했다. 혼자 박수를 쳤다.', fx: { grow: 0.3, fatigue: 2 } },
+    { label: '잠깐만 눕는다', who: 'me', reply: '눈을 떠 보니 영상이 세 개 더 지나가 있었다.', fx: { stress: -3, fatigue: -2 } },
   ] },
   // ── 클럽 게임 ──
   { id: 'after_party', act: 'club', who: 'club', prompt: '회장님: "끝나고 뒤풀이 가지?"', options: [
@@ -240,8 +274,10 @@ export const MILESTONES = [
 // 이어지는 이야기: 조건을 채우면 다음 주 시작에 뜬다. 사람들이 달라지는 과정을 보여 준다.
 // when(s, b, o): o는 종합 능력. unlock: 행동 해금. aff: 친밀도, club: 클럽 명성.
 export const STORIES = [
-  { id: 'club_visit', who: 'sunhee', title: '정모 구경', text: '클럽 정모를 구경하러 갔다. 박선희: "초보는 저쪽에서 벽치기부터 해." 게임에 끼지 못했다.', ok: '벽치기라도 해 보자', unlock: 'practice', note: '혼자 연습을 할 수 있게 됐다', when: (s) => s.week >= 5 },
+  { id: 'club_visit', who: 'sunhee', title: '정모 구경', text: '클럽 정모를 구경하러 갔다. 박선희: "초보는 저쪽에서 벽치기부터 해." 게임에 끼지 못했다.', ok: '벽치기라도 해 보자', unlock: 'practice', note: '벽치기를 할 수 있게 됐다', when: (s) => s.week >= 5 },
   { id: 'join_club', who: 'coach', title: '코치의 제안', text: '코치: "대회도 나갔으니 이제 정모에도 껴 봐요. 제가 말해 둘게요."', ok: '해 볼게요', unlock: 'club', note: '클럽 게임을 할 수 있게 됐다', when: (s) => s.results.length > 0 || s.week >= 15 },
+  { id: 'first_ache', who: 'coach', title: '코치의 숙제', text: '코치: "대회 다음 날 많이 쑤시죠? 코트에 못 오는 날은 집에서 스트레칭이라도 해요."', ok: '해 볼게요', unlock: 'home', note: '홈트를 할 수 있게 됐다', when: (s) => s.results.length > 0 || s.week >= 13 },
+  { id: 'sumin_gym', who: 'sumin', title: '이수민의 제안', text: '이수민: "회사 앞 헬스장 3개월 끊으면 싸대. 같이 끊자. 공에 힘이 하나도 없다며."', ok: '그래, 끊자', unlock: 'gym', aff: { sumin: 3 }, note: '헬스를 할 수 있게 됐다', when: (s) => s.week >= 17 },
   { id: 'hana_serve', who: 'hana', title: '김하나의 메시지', text: '김하나: "나 오늘 서브 처음 들어갔어!! 세 번이나!!"', ok: '축하해!', aff: { hana: 2 }, when: (s) => s.week >= 13 },
   { id: 'boss_tan', who: 'boss', title: '탕비실에서', text: '팀장: "자네 요즘 왜 이렇게 탔어? 주말에 어디 다녀?"', ok: '테니스요', when: (s) => s.week >= 19 },
   { id: 'sumin_roof', who: 'sumin', title: '이수민의 메시지', text: '이수민: "점심시간에 옥상에서 스윙 연습하는 거 다 봤어. 나도 끼워 줘."', ok: '같이 하자', aff: { sumin: 5 }, when: (s) => s.week >= 25 },
@@ -250,6 +286,48 @@ export const STORIES = [
   { id: 'rookie_asks', who: 'club', title: '신입 회원', text: '신입 회원: "저 혹시 포핸드 좀 봐주실 수 있어요?" 뒤를 돌아봤다. 나한테 한 말이었다.', ok: '제가요…?', club: 3, when: (s, b, o) => o >= 47 },
   { id: 'hana_gap', who: 'hana', title: '김하나의 고민', text: '김하나: "언니 요즘 너무 잘 쳐. 나랑 나가면 민폐 아니야?"', ok: '무슨 소리야, 같이 가는 거지', aff: { hana: 8 }, when: (s, b, o) => o >= 45 && s.partners.hana.level < o - 8 },
   { id: 'coach_memory', who: 'coach', title: '코치의 회상', text: '코치: "처음 왔을 때 기억나요? 포핸드 100개. 공이 펜스를 넘어갔죠." 둘이 한참 웃었다.', ok: '그랬죠', when: (s) => s.division === '국화' },
+];
+
+// 사람별 이어지는 이야기. 친밀도가 at을 넘으면 다음 턴 시작에 나온다. 마지막은 호흡이 맞기 시작하는 순간이다.
+export const PERSON_STORIES = {
+  hana: [
+    { at: 50, text: '김하나: "오늘 끝나고 서브 좀 더 치고 갈래?" 이제 약속을 안 잡아도 같이 남는다.', ok: '그래' },
+    { at: 80, text: '김하나: "나 지금 포치 들어갈 거 어떻게 알았어?" 눈을 안 마주쳐도 어디로 갈지 보인다. 같이 칠 때는 실수해도 마음이 편하다.', ok: '이제 편해' },
+  ],
+  sunhee: [
+    { at: 50, text: '박선희: "오늘은 나랑 한 게임 하자." 선배가 먼저 짝을 하자고 했다.', ok: '네!' },
+    { at: 80, text: '선배가 로브를 올릴 타이밍이 보이기 시작했다. 박선희: "이제 내가 뭐 할지 아네?" 선배 옆에서 더는 어깨에 힘이 안 들어간다.', ok: '이제 편해요' },
+  ],
+  sumin: [
+    { at: 50, text: '이수민: "오늘 몇 시에 끝나? 나 헬스장 먼저 가 있을게." 회사 메신저가 운동 약속으로 찼다.', ok: '금방 갈게' },
+    { at: 80, text: '이수민: "너 오늘 왜 이렇게 편하게 쳐?" 동기 앞에서는 잘 보일 필요가 없다. 어디로 움직일지도 이제 안다.', ok: '너니까' },
+  ],
+  daeun: [
+    { at: 50, text: '정다은: "제가 앞에 있을 때 로브 올리면, 뒤로 안 빠져도 돼요?" 둘이서 움직임을 맞춰 보기 시작했다.', ok: '맞춰 봐요' },
+    { at: 80, text: '정다은이 움직이기 전에 내 발이 먼저 돌았다. 정다은: "앞은 제가, 뒤는 언니가." 이제 포치가 나와도 당황하지 않는다.', ok: '믿을게' },
+  ],
+  jiwoo: [
+    { at: 50, text: '한지우: "언니, 저 시험 끝나면 벽치기 같이 해요!" 어느새 시험 기간을 외우고 있다.', ok: '시험 잘 봐' },
+    { at: 80, text: '한지우: "언니, 제가 뛸 거 아셨죠?" 공이 어디로 가든 지우가 뛸 쪽이 먼저 보인다. 덕분에 나는 내 공만 치면 된다.', ok: '알지' },
+  ],
+  arah: [
+    { at: 50, text: '서아라: "아까 그 공, 왜 거기로 줬어?" 말투는 그대로인데 같이 남아서 복기를 한다.', ok: '다시 해 보자' },
+    { at: 80, text: '서아라: "…이제 좀 맞네." 강타 뒤에 뭐가 올지 안다. 저 사람 옆에서도 이제 숨이 안 막힌다.', ok: '그러게' },
+  ],
+  mikyung: [
+    { at: 50, text: '오미경: "오늘 급했어요. 왜 급했는지 알아요?" 베테랑이 내 경기를 보고 있었다.', ok: '알려 주세요' },
+    { at: 80, text: '오미경: "이제 서두르지 않네요." 한 박자 늦게 움직여도 어디로 올지 안다. 승부처에서 손이 떨리지 않았다.', ok: '덕분이에요' },
+  ],
+  yujin: [
+    { at: 50, text: '최유진: "서브 토스 한 번만 더 보여 줘 봐요." 선수 출신이 내 서브를 봐 주기 시작했다.', ok: '네!' },
+    { at: 80, text: '최유진: "그래요, 그 자리." 선수 출신 옆에 서도 더는 작아지지 않는다. 내 공을 치면 된다는 걸 알았다.', ok: '네' },
+  ],
+};
+// 호흡 훈련 순간의 글. {p}에 이름이 들어간다.
+export const BOND_TRAIN_LINES = [
+  '{p}가 어디로 갈지 알았다. 생각하기 전에 몸이 먼저 움직였다.',
+  '{p} 옆에서는 실수해도 괜찮다. 어깨에 힘이 빠지니 공이 편하게 나갔다.',
+  '말을 안 해도 맞는다. {p}도 웃고 있었다.',
 ];
 
 // 깨달음: 경기에서 드러난 약점이 레슨 선택지가 된다
@@ -284,7 +362,7 @@ export const TOUR_LINES = {
 
 // 주간 화면 말풍선. 상태가 있으면 STATE_LINES가 먼저 나온다.
 export const STATE_LINES = {
-  tutorial: '코치: "앞으로는 2주에 한 번씩 뭘 할지 골라 봐요. 레슨 오실 거죠?"',
+  tutorial: '코치: "앞으로는 2주에 한 번씩 뭘 할지 골라 봐요. 훈련을 누르면 레슨이 있어요."',
   injury: '{name}… 당분간은 쉬어야겠다.',
   entered: '이번 주는 {name}! 벌써 긴장된다.',
   overtime: '이번 주는 코트 근처에도 못 가겠네.',
@@ -296,7 +374,11 @@ export const STATE_LINES = {
 };
 // 아직 못 고르는 버튼을 눌렀을 때의 혼잣말
 export const LOCK_LINES = {
-  practice: '혼자 뭘 연습해야 할지 아직 모르겠다.',
+  practice: '벽치기는 어디서 하는 거지. 아직 모르겠다.',
+  gym: '헬스는 무슨. 아직 레슨만으로도 벅차다.',
+  home: '집에 오면 일단 눕고 본다. 아직은.',
+  skill: '아직 내세울 만한 기술이 없다.',
+  clinic: '병원 갈 정도는 아니다. 일단 쉬어 보자.',
   club: '클럽 게임은 아직 좀 무섭다. 조금 더 배우고 나서.',
   injured: '지금은 몸부터 챙겨야 한다.',
   noTour: '다음 대회는 {weeks}주 뒤 {name}.',

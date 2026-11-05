@@ -51,15 +51,23 @@ export const BIG_STATS = [
 ];
 
 // ── 이번 턴에 할 일 (1턴 = 2주) ───────────────────────────
-// tennis: 부상 위험이 있는 행동. unlock: 이야기가 진행되어야 나타난다. 대회 출전은 화면에서 따로 처리한다.
+// train: 훈련 칸. tennis: 코트에서 하는 일(폭염 영향). risk: 부상 위험이 있다. unlock: 이야기가 진행되어야 열린다.
+// mile: 이 칸에서 나올 수 있는 이정표 주제. 대회 출전은 화면에서 따로 처리한다.
 export const ACTIONS = [
-  { id: 'lesson', name: '레슨', icon: '🎾', tennis: true, fatigue: 18, stress: 1 },
-  { id: 'practice', name: '혼자 연습', icon: '🧱', tennis: true, unlock: 'practice', fatigue: 10, stress: 0 },
-  { id: 'club', name: '클럽 게임', icon: '👥', tennis: true, unlock: 'club', groups: { tactics: 0.5, counter: 0.5, mental: 0.35, course: 0.2 }, fatigue: 16, stress: -2 },
+  { id: 'lesson', name: '레슨', icon: '🎾', train: true, tennis: true, risk: true, fatigue: 18, stress: 1 },
+  { id: 'gym', name: '헬스', icon: '🏋️', train: true, risk: true, unlock: 'gym', mile: 'physical', groups: { physical: 0.9 }, stats: { power: 1, stamina: 0.4 }, fatigue: 16, stress: -2 },
+  { id: 'practice', name: '벽치기', icon: '🧱', train: true, tennis: true, risk: true, unlock: 'practice', mile: 'stroke', groups: { stroke: 0.8, course: 0.6 }, stats: { focus: 0.4 }, fatigue: 10, stress: 0 },
+  { id: 'club', name: '클럽 게임', icon: '👥', train: true, tennis: true, risk: true, unlock: 'club', groups: { tactics: 0.7, counter: 0.7, mental: 0.45, course: 0.25 }, fatigue: 16, stress: -2 },
+  { id: 'home', name: '홈트', icon: '🧘', train: true, unlock: 'home', mile: 'physical', groups: { physical: 0.35 }, stats: { flex: 1.2, stamina: 0.3 }, fatigue: 2, stress: -2 },
   { id: 'rest', name: '휴식', icon: '😴', fatigue: -45, stress: -8 },
   { id: 'family', name: '가족·친구', icon: '🏠', fatigue: -10, stress: -30 },
   { id: 'overtime', name: '야근', icon: '💼', fatigue: 10, stress: 10, work: 4 },
 ];
+export const TRAIN_SPOTS = ACTIONS.filter(a => a.train).map(a => a.id);
+// 칸 레벨: 같은 칸을 4번 쓰면 오른다. 레벨이 오르면 더 늘고 더 힘들다.
+export const SPOT_USES_PER_LV = 4, SPOT_MAX_LV = 5;
+// 친밀도가 이 값을 넘으면 호흡이 맞는다: 그 사람의 특기 칸에서 훈련이 크게 곱해지고, 같이 대회에 나가면 편하게 친다.
+export const BOND_AT = 80;
 export const ACT = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
 // 휴식은 결과가 세 가지로 갈린다. fatigue·stress는 위 rest 값을 대신하고, 평균은 전과 거의 같다. mood는 지금과 다음 턴 기분에 더해진다.
 export const REST_RESULTS = [
@@ -144,22 +152,23 @@ export const INTRO_SCENES = [
 ];
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────
+// spec: 특기 칸. spots: 칸마다 나타나는 가중치(없으면 안 나타남). gives: 같이 훈련하면 더 느는 능력치. 홈트는 집에서 혼자 한다.
 export const PARTNERS = [
-  { id: 'hana', name: '김하나', arch: '테니스 입문 동기', style: '올라운드', div: '개나리', level: 17, growth: 0.32, aff: 25, known: true,
+  { id: 'hana', spec: 'practice', spots: { practice: 5, lesson: 3, club: 1, gym: 1 }, gives: { comm: 0.5, resilience: 0.5 }, name: '김하나', arch: '테니스 입문 동기', style: '올라운드', div: '개나리', level: 17, growth: 0.32, aff: 25, known: true,
     bias: {}, color: { hair: '#5a3a2a', outfit: '#ffb3c7' }, line: '우리 같이 크는 거야!' },
-  { id: 'sunhee', name: '박선희', arch: '클럽 고인물 선배', style: '로브·슬라이스 수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
+  { id: 'sunhee', spec: 'club', spots: { club: 5, practice: 2 }, gives: { def_lob: 0.5, topspin_lob: 0.4, bh_slice: 0.4, c_lob: 0.3 }, name: '박선희', arch: '클럽 고인물 선배', style: '로브·슬라이스 수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
     bias: { def_lob: 18, topspin_lob: 14, fh_slice: 14, bh_slice: 16, c_lob: 10, power: -12, first_serve: -10 }, color: { hair: '#2b2b2b', outfit: '#9ad0a8' }, line: '공은 넘기기만 하면 돼~' },
-  { id: 'sumin', name: '이수민', arch: '같은 회사 동기', style: '올라운드', div: '개나리', level: 22, growth: 0.16, aff: 30, known: true,
+  { id: 'sumin', spec: 'gym', spots: { gym: 5, lesson: 2, practice: 2, club: 1 }, gives: { drive: 0.6, stamina: 0.3 }, name: '이수민', arch: '같은 회사 동기', style: '올라운드', div: '개나리', level: 22, growth: 0.16, aff: 30, known: true,
     bias: {}, color: { hair: '#7a4b2a', outfit: '#a8c8ff' }, line: '팀장님 몰래 연습 가자.' },
-  { id: 'daeun', name: '정다은', arch: '전위 장인', style: '포치·발리형 전위', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
+  { id: 'daeun', spec: 'club', spots: { club: 5, practice: 2, lesson: 1 }, gives: { fh_volley: 0.5, bh_volley: 0.4, poach: 0.5 }, name: '정다은', arch: '전위 장인', style: '포치·발리형 전위', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
     bias: { fh_volley: 16, bh_volley: 14, poach: 20, smash: 10, drive: 10, def_lob: -10 }, color: { hair: '#c0473a', outfit: '#ffd166' }, line: '앞은 내가 다 먹을게.' },
-  { id: 'jiwoo', name: '한지우', arch: '대학생 유망주', style: '스피드형', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
+  { id: 'jiwoo', spec: 'practice', spots: { practice: 5, gym: 2, club: 2 }, gives: { speed: 0.6, first_step: 0.5 }, name: '한지우', arch: '대학생 유망주', style: '스피드형', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
     bias: { speed: 18, first_step: 14, stamina: 10, composure: -12 }, color: { hair: '#3a2a5a', outfit: '#b5f0e0' }, line: '언니 저 시험 끝나면 다 나가요!', exams: [15, 16, 41, 42] },
-  { id: 'arah', name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
+  { id: 'arah', spec: 'gym', spots: { gym: 5, club: 3, practice: 1 }, gives: { fh_drive: 0.5, power: 0.5, swing_volley: 0.3 }, name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
     bias: { fh_drive: 16, power: 14, swing_volley: 14, composure: -10, comm: -8 }, color: { hair: '#1e1e2a', outfit: '#ff8a5c' }, line: '이길 거면 같이 해.' },
-  { id: 'mikyung', name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '노련한 전술형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
+  { id: 'mikyung', spec: 'lesson', spots: { lesson: 5, club: 3 }, gives: { shot_sel: 0.5, positioning: 0.5, composure: 0.4 }, name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '노련한 전술형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
     bias: { shot_sel: 16, positioning: 16, composure: 18, clutch: 14, speed: -14, stamina: -10 }, color: { hair: '#8a8a8a', outfit: '#c9b6ff' }, line: '급할수록 한 박자 늦게.' },
-  { id: 'yujin', name: '최유진', arch: '선수 출신 에이스', style: '파워·서브형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
+  { id: 'yujin', spec: 'lesson', spots: { lesson: 5, gym: 2, club: 2 }, gives: { first_serve: 0.6, power: 0.4, smash: 0.3 }, name: '최유진', arch: '선수 출신 에이스', style: '파워·서브형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
     bias: { first_serve: 16, power: 16, fh_drive: 12, smash: 12, composure: -6 }, color: { hair: '#2a2a2a', outfit: '#ffffff' }, line: '국화 오면 연락해.' },
 ];
 export const PARTNER = Object.fromEntries(PARTNERS.map(p => [p.id, p]));
