@@ -174,8 +174,9 @@ function applyFail(state, kind, rng, on, off) {
 // 코트에서 연습한 대로 나왔는지. 게임에서 더 잘 갈린다.
 function rollFeel(state, id, rng) {
   const club = id === 'club';
-  const good = (club ? 0.32 : 0.22) + state.condition * 0.04;
-  const bad = (club ? 0.22 : 0.12) + Math.max(0, state.fatigue - 30) / 300 - state.condition * 0.02 + (hasCond(state, 'doubt') ? 0.08 : 0);
+  // 잘되다가도 안 되는 날이 온다: 기분이 좋을수록 안 나올 확률이 오른다
+  const good = (club ? 0.3 : 0.2) - state.condition * 0.02;
+  const bad = (club ? 0.24 : 0.14) + Math.max(0, state.fatigue - 30) / 300 + state.condition * 0.03;
   const x = rng();
   return x < good ? 'good' : x < good + bad ? 'bad' : null;
 }
