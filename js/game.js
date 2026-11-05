@@ -1,9 +1,9 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAIR, RETRIES, RANKS, SKILLS, SKILL_PRICE, EXP_OF, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  grade, ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAIR, RETRIES, RANKS, SKILLS, SKILL_PRICE, EXP_OF, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, ARCH, PLAYERS, REGIONS, LEVELS, regionGap, HOME_REGION, STAGE_RANK, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
-import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES, HINT_LINES, STAIR_LINES } from './scenes.js';
+import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES, HINT_LINES, STAIR_LINES, JOY_LINES, JOY_REPLIES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
@@ -67,9 +67,10 @@ export function newGame(name, profile = {}) {
     }
   }
   rollFaces(state, rng);
-  addMsg(state, 'coach', `${state.name} 님, 반가워요! 처음에는 제가 시키는 것만 해 봐요. 뭘 배울지는 치다 보면 알게 돼요.`);
-  addMsg(state, 'hana', '나 이번에 테니스 시작했어! 우리 같이 대회도 나가 보자 😆');
-  addMsg(state, 'system', '최종 목표: 개나리부 전국대회 우승으로 국화가 되고, 국화부 전국대회 결승전에서 우승하기. 기간은 3년입니다. 목표를 놓치면 다시 해 볼 기회는 세 번입니다.');
+  addMsg(state, 'coach', `선배님, ${state.name} 님 잘 부탁해요. 처음에는 제가 시키는 것만 하게 할게요. 뭘 배울지는 치다 보면 알게 돼요.`);
+  addMsg(state, 'hana', `저 ${state.name}${(state.name.charCodeAt(state.name.length - 1) - 0xAC00) % 28 ? "이랑" : "랑"} 같이 테니스 시작했어요! 선배님, 저희 같이 대회도 나갈 수 있게 봐 주세요 😆`);
+  addMsg(state, 'me', '선배, 오늘 처음 뵙겠습니다. 앞으로 잘 부탁드려요!');
+  addMsg(state, 'system', '당신은 클럽 선배입니다. 후배가 개나리부 전국대회에서 우승해 국화가 되고, 국화부 전국대회 결승전에서 우승하도록 3년 동안 함께하세요. 목표를 놓치면 다시 해 볼 기회는 세 번입니다.');
   return state;
 }
 
@@ -146,7 +147,7 @@ export function appeal(p, t, level, div) {
   if (t.time === 'weekday' && p.job === 'student') v -= 1;
   if (t.time === 'night' && p.job === 'home') v -= 1;
   v -= Math.abs(LEVELS[t.level].want[div === '국화' ? 1 : 0] - level) / 5; // 실력에 맞는 대회
-  v += p.ambition * (t.prize + t.draw / 64); // 상금과 규모
+  v += p.ambition * (t.level * 0.6 + t.draw / 64); // 욕심 많은 선수는 크고 높은 대회로 간다
   return v;
 }
 const entrantCache = new Map();
@@ -471,6 +472,12 @@ export function runWeek(state, id, topic) {
   if (feel) { const l = FEEL_LINES[id][feel]; log.scene = { who: 'me', text: l[Math.floor(rng() * l.length)] }; }
   else if (!fail) log.scene = pickScene(state, id, log.topic, lead, after, rng, log.rest, log.outing);
   if (a.train && !fail) log.mile = checkMilestone(state, after, log.topic || a.mile);
+  // 같이 기뻐할 일: 처음 해낸 순간과 높은 등급
+  const rankUp = BIG_STATS.some(b => grade(after[b.id]) !== grade(before[b.id]) && ['B', 'A', 'S'].includes(grade(after[b.id])));
+  if (force.joy || log.mile || rankUp) {
+    const lines = JOY_LINES[log.mile || force.joy ? 'mile' : 'rank'];
+    log.joy = { line: lines[Math.floor(rng() * lines.length)], options: JOY_REPLIES[Math.floor(rng() * JOY_REPLIES.length)] };
+  }
   log.before = before; log.f0 = f0; log.s0 = s0;
   log.desc = pickDesc(state, id, log.topic, people, rng, log.outing);
   if (bonds.length) log.bondLine = BOND_TRAIN_LINES[Math.floor(rng() * BOND_TRAIN_LINES.length)].replaceAll('{p}', PARTNER[bonds[0]].name);
@@ -503,6 +510,15 @@ function pickChoice(state, id, face, rng, outing) {
   const fill = s => s.replaceAll('{p}', face ? PARTNER[face].name : '');
   return { id: c.id, who: c.who === 'partner' ? face : c.who, prompt: fill(c.prompt), options: c.options.map(o => o.label) };
 }
+// 후배와 같이 기뻐한다. 고르는 말은 선배가 하는 말이고, 효과는 작다.
+export function chooseJoy(state, i) {
+  const log = state.weekLog;
+  if (!log?.joy || log.joyPicked != null) return;
+  log.joyPicked = i;
+  state.confidence += 2; state.stress -= 2;
+  clampStatus(state);
+}
+export function tourJoy(state) { state.confidence += 2; state.stress -= 2; clampStatus(state); }
 // 선택을 적용한다. 효과는 결과 단계에서 드러난다.
 export function chooseScene(state, i) {
   const log = state.weekLog;
@@ -850,7 +866,7 @@ export function eventView(state, ev) {
     }
     case 'meet': return { who: ev.pid, title: '새로운 인연', text: `${P[ev.pid].name} (${P[ev.pid].arch}): "${P[ev.pid].line}"`, choices: [['ok', '반가워요']] };
     case 'withdraw': return { who: ev.pid, title: '대회 기권', text: `부상으로 ${ev.tname}에 못 나간다고 ${P[ev.pid].name}에게 연락했다. (친밀도 -3)`, choices: [['ok', '확인']] };
-    case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
+    case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'me', title: '목표 달성!', text: `선배! ${g.text}, 해냈어요!`, choices: [['ok', '잘했어!']] }; }
     case 'noPartner': {
       const t = tour(state, ev.tid);
       if (state.retries <= 0) return { who: 'coach', title: '파트너를 못 구했다', text: `코치: "${t.name}에 같이 나갈 사람을 못 구했군요. 복식은 혼자 못 나가요. 괜찮아요, 다들 이럴 때 그만둬요."`, choices: [['refuse', '라켓을 내려놓는다']] };

@@ -59,4 +59,9 @@ export const CHECKS = [
   { group: '6. 대회와 선수', label: '달력에서 미리 파트너 구하기', hint: '위쪽 🏆 → 대회 달력 → 대회를 누르세요.', make: s => { ready(s, 45); } },
   { group: '6. 대회와 선수', label: '파트너를 못 구한 목표 대회', hint: '코치에게 부탁하면 기회를 하나 써요. 그만두면 판이 끝나요.', make: s => { ready(s, 41); s.pendingEvents = [{ id: 'noPartner', tid: 'daon_1' }]; } },
   { group: '6. 대회와 선수', label: '같은 선수를 또 만났다', hint: '대회 첫 화면의 상대 줄에 전적이 나와요. 같은 대회 같은 사람은 판이 바뀌어도 같아요.', make: (s, G) => { ready(s); strong(s, 40); const tr = G.checkTour(s, 'local'); const o = tr.group.opps[0]; if (o?.pids) s.h2h[o.pids[0]] = { w: 1, l: 2 }; return 'tourIntro'; } },
+
+  { group: '7. 선배와 후배', label: '말풍선과 선택지', hint: '위쪽 말풍선은 후배가 선배에게 하는 말이에요. 훈련을 해 보면 가끔 선배가 할 말을 고르게 돼요.', make: s => { ready(s); } },
+  { group: '7. 선배와 후배', label: '같이 기뻐하는 순간', hint: '훈련 → 아무 칸이나 고르세요. 결과 뒤에 후배가 선배를 돌아봐요.', make: s => { ready(s); s.force = { joy: 'mile' }; } },
+  { group: '7. 선배와 후배', label: '우승하고 같이 기뻐하기', hint: '화면을 눌러 넘기세요. 축하 자리 뒤에 선배가 할 말을 골라요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'W'); return 'tourResult'; } },
+  { group: '7. 선배와 후배', label: '지고 나서 같이 아쉬워하기', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
 ];

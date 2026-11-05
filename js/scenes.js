@@ -185,116 +185,116 @@ export const DESC_SEASON = {
   겨울: ['손이 시려 그립이 잘 안 잡힌다. 입김이 먼저 네트를 넘는다.'],
 };
 
-// 가끔 끼어드는 선택. 고를 때는 효과를 보여 주지 않는다. 결과 단계에서 드러난다.
+// 가끔 끼어드는 선택. label은 선배(플레이어)가 후배에게 하는 말이다. 고를 때는 효과를 보여 주지 않는다. 결과 단계에서 드러난다.
 // fx: fatigue·stress·confidence·coach·club·work 증감, grow(이번 행동 성장에 더하는 비율), aff·combo(같이 한 파트너).
 export const CHOICE_SCENES = [
   // ── 레슨 ──
   { id: 'more_basket', act: 'lesson', who: 'coach', prompt: '코치: "오늘 컨디션 괜찮네요. 한 바구니 더 할까요?"', options: [
-    { label: '네, 더 할게요', who: 'coach', reply: '코치: "좋아요." 손바닥이 먼저 항복했다.', fx: { grow: 0.3, fatigue: 5 } },
-    { label: '오늘은 여기까지요', who: 'coach', reply: '코치: "쉬는 것도 실력이에요." 마음이 좀 놓였다.', fx: { stress: -4, fatigue: -3 } },
+    { label: '한 바구니 더 해 봐', who: 'coach', reply: '코치: "좋아요." 손바닥이 먼저 항복했다.', fx: { grow: 0.3, fatigue: 5 } },
+    { label: '오늘은 여기까지 해', who: 'coach', reply: '코치: "쉬는 것도 실력이에요." 마음이 좀 놓였다.', fx: { stress: -4, fatigue: -3 } },
   ] },
   { id: 'why_wrong', act: 'lesson', who: 'coach', prompt: '코치: "방금 왜 실수한 것 같아요?"', options: [
-    { label: '공을 늦게 봤어요', who: 'coach', reply: '코치: "오, 봤어요? 그럼 반은 고친 거예요."', fx: { grow: 0.15, coach: 2 } },
-    { label: '모르겠어요', who: 'coach', reply: '코치가 영상을 찍어 줬다. 내 자세가 낯설다.', fx: { coach: 1, stress: -2 } },
+    { label: '공을 늦게 본 것 같아', who: 'coach', reply: '코치: "오, 봤어요? 그럼 반은 고친 거예요."', fx: { grow: 0.15, coach: 2 } },
+    { label: '모르면 모른다고 해', who: 'coach', reply: '코치가 영상을 찍어 줬다. 내 자세가 낯설다.', fx: { coach: 1, stress: -2 } },
   ] },
-  { id: 'copy_pro', act: 'lesson', who: 'me', prompt: '옆 코트 고수의 스윙이 자꾸 눈에 들어온다.', options: [
-    { label: '조금 따라 해 본다', who: 'me', reply: '따라 했더니 공이 옆 코트로 갔다. 고수가 주워 줬다.', fx: { grow: 0.1, stress: 2 } },
-    { label: '내 공에 집중한다', who: 'coach', reply: '코치: "그래요, 지금은 내 공만 봐요."', fx: { coach: 2, confidence: 2 } },
+  { id: 'copy_pro', act: 'lesson', who: 'me', prompt: '선배, 옆 코트 고수 스윙 좀 보세요. 따라 해 봐도 돼요?', options: [
+    { label: '조금 따라 해 봐', who: 'me', reply: '따라 했더니 공이 옆 코트로 갔다. 고수가 주워 줬다.', fx: { grow: 0.1, stress: 2 } },
+    { label: '네 공에 집중해', who: 'coach', reply: '코치: "그래요, 지금은 내 공만 봐요."', fx: { coach: 2, confidence: 2 } },
   ] },
   { id: 'new_grip', act: 'lesson', who: 'coach', prompt: '코치: "그립 바꿔 볼래요? 처음엔 더 안 맞을 거예요."', options: [
-    { label: '바꿔 볼게요', who: 'me', reply: '정말 더 안 맞았다. 그런데 소리가 조금 달라졌다.', fx: { grow: 0.25, stress: 3 } },
-    { label: '아직은 이대로요', who: 'coach', reply: '코치: "알겠어요. 나중에 다시 얘기해요."', fx: { stress: -3 } },
+    { label: '바꿔 봐', who: 'me', reply: '정말 더 안 맞았다. 그런데 소리가 조금 달라졌다.', fx: { grow: 0.25, stress: 3 } },
+    { label: '아직은 그대로 해', who: 'coach', reply: '코치: "알겠어요. 나중에 다시 얘기해요."', fx: { stress: -3 } },
   ] },
   { id: 'late', act: 'lesson', who: 'coach', prompt: '회사 일로 10분 늦었다. 코치가 시계를 본다.', options: [
-    { label: '죄송해요, 끝까지 할게요', who: 'coach', reply: '코치: "그럼 10분 더 하죠." 괜히 말했다.', fx: { fatigue: 4, coach: 2 } },
-    { label: '오늘 좀 피곤해요', who: 'coach', reply: '코치: "그럼 오늘은 가볍게 해요."', fx: { fatigue: -3, coach: -1 } },
+    { label: '끝까지 하고 와', who: 'coach', reply: '코치: "그럼 10분 더 하죠." 괜히 말했다.', fx: { fatigue: 4, coach: 2 } },
+    { label: '오늘은 가볍게 해', who: 'coach', reply: '코치: "그럼 오늘은 가볍게 해요."', fx: { fatigue: -3, coach: -1 } },
   ] },
   // ── 벽치기 ──
-  { id: 'one_more', act: 'practice', who: 'me', prompt: '어두워지기 시작했다. 공은 아직 남았다.', options: [
+  { id: 'one_more', act: 'practice', who: 'me', prompt: '선배, 어두워지는데 공이 아직 남았어요.', options: [
     { label: '한 바구니만 더', who: 'me', reply: '마지막 공이 제일 잘 맞았다. 꼭 그렇다.', fx: { grow: 0.3, fatigue: 4 } },
-    { label: '오늘은 끝', who: 'me', reply: '공을 줍다 보니 별이 떴다. 오늘은 여기까지.', fx: { stress: -3 } },
+    { label: '오늘은 끝내자', who: 'me', reply: '공을 줍다 보니 별이 떴다. 오늘은 여기까지.', fx: { stress: -3 } },
   ] },
   { id: 'guard', act: 'practice', who: 'me', prompt: '경비 아저씨: "매일 오네. 대회 나가?"', options: [
-    { label: '네, 곧 나가요', who: 'me', reply: '말하고 나니 진짜 나가야 할 것 같다.', fx: { confidence: 3, stress: 2 } },
-    { label: '그냥 취미예요', who: 'me', reply: '경비 아저씨: "취미가 제일 무서워." 웃으며 가셨다.', fx: { stress: -3 } },
+    { label: '곧 나간다고 해', who: 'me', reply: '말하고 나니 진짜 나가야 할 것 같다.', fx: { confidence: 3, stress: 2 } },
+    { label: '취미라고 해', who: 'me', reply: '경비 아저씨: "취미가 제일 무서워." 웃으며 가셨다.', fx: { stress: -3 } },
   ] },
   { id: 'kid', act: 'practice', who: 'me', prompt: '꼬마: "이모, 왜 벽이랑 쳐요?"', options: [
-    { label: '벽이 제일 잘 받아 줘', who: 'me', reply: '꼬마가 고개를 끄덕였다. 이해한 것 같지는 않다.', fx: { stress: -3 } },
-    { label: '이모 아니고 언니야', who: 'me', reply: '꼬마: "네, 이모." 공이 더 세게 나갔다.', fx: { grow: 0.15, stress: 1 } },
+    { label: '벽이 제일 잘 받아 준다고 해', who: 'me', reply: '꼬마가 고개를 끄덕였다. 이해한 것 같지는 않다.', fx: { stress: -3 } },
+    { label: '언니라고 해', who: 'me', reply: '꼬마: "네, 이모." 공이 더 세게 나갔다.', fx: { grow: 0.15, stress: 1 } },
   ] },
   { id: 'rally_count', act: 'practice', withFace: true, who: 'partner', prompt: '{p}: "오늘 랠리 몇 번까지 갈까?"', options: [
-    { label: '스무 번', who: 'partner', reply: '열두 번에서 끊겼다. {p}가 먼저 웃었다.', fx: { aff: 3 } },
+    { label: '스무 번 해 봐', who: 'partner', reply: '열두 번에서 끊겼다. {p}가 먼저 웃었다.', fx: { aff: 3 } },
     { label: '일단 열 번', who: 'partner', reply: '딱 열 번에서 끊겼다. 왜 딱 거기서.', fx: { aff: 2, stress: -1 } },
   ] },
   // ── 헬스 ──
-  { id: 'last_set', act: 'gym', who: 'me', prompt: '마지막 세트가 남았다. 팔이 벌써 떨린다.', options: [
-    { label: '끝까지 한다', who: 'me', reply: '다음 날 라켓이 무거웠다. 그래도 뿌듯하다.', fx: { grow: 0.25, fatigue: 4 } },
+  { id: 'last_set', act: 'gym', who: 'me', prompt: '선배, 마지막 세트가 남았는데 팔이 벌써 떨려요.', options: [
+    { label: '끝까지 해', who: 'me', reply: '다음 날 라켓이 무거웠다. 그래도 뿌듯하다.', fx: { grow: 0.25, fatigue: 4 } },
     { label: '오늘은 여기까지', who: 'me', reply: '샤워하고 나오니 몸이 가볍다.', fx: { stress: -3 } },
   ] },
   // ── 홈트 ──
-  { id: 'sofa', act: 'home', who: 'me', prompt: '매트 바로 옆에 소파가 있다. 소파가 부른다.', options: [
-    { label: '영상 끝까지 따라 한다', who: 'me', reply: '끝까지 했다. 혼자 박수를 쳤다.', fx: { grow: 0.3, fatigue: 2 } },
-    { label: '잠깐만 눕는다', who: 'me', reply: '눈을 떠 보니 영상이 세 개 더 지나가 있었다.', fx: { stress: -3, fatigue: -2 } },
+  { id: 'sofa', act: 'home', who: 'me', prompt: '선배, 매트 바로 옆에 소파가 있어요. 소파가 불러요.', options: [
+    { label: '영상 끝까지 따라 해', who: 'me', reply: '끝까지 했다. 혼자 박수를 쳤다.', fx: { grow: 0.3, fatigue: 2 } },
+    { label: '잠깐만 누워', who: 'me', reply: '눈을 떠 보니 영상이 세 개 더 지나가 있었다.', fx: { stress: -3, fatigue: -2 } },
   ] },
   // ── 클럽 게임 ──
   { id: 'after_party', act: 'club', who: 'club', prompt: '회장님: "끝나고 뒤풀이 가지?"', options: [
-    { label: '갈게요', who: 'me', reply: '오늘 경기가 안주가 되었다. 다음 정모 명단에 내 이름이 먼저 올랐다.', fx: { club: 2, stress: -4, fatigue: 3 } },
-    { label: '내일 출근이라서요', who: 'club', reply: '회장님: "그래, 직장인이 먼저지." 집에 일찍 왔다.', fx: { fatigue: -4 } },
+    { label: '가자', who: 'me', reply: '오늘 경기가 안주가 되었다. 다음 정모 명단에 내 이름이 먼저 올랐다.', fx: { club: 2, stress: -4, fatigue: 3 } },
+    { label: '내일 출근이니까 들어가', who: 'club', reply: '회장님: "그래, 직장인이 먼저지." 집에 일찍 왔다.', fx: { fatigue: -4 } },
   ] },
-  { id: 'line_call', act: 'club', who: 'me', prompt: '상대 공이 라인 근처에 떨어졌다. 아무도 제대로 못 봤다.', options: [
-    { label: '아웃이요', who: 'me', reply: '상대가 고개를 갸웃했지만 넘어갔다. 마음이 조금 불편하다.', fx: { stress: 3, confidence: 1 } },
-    { label: '인으로 할게요', who: 'me', reply: '상대: "매너 좋으시네요." 점수는 내줬지만 기분은 괜찮다.', fx: { club: 2, stress: -2 } },
+  { id: 'line_call', act: 'club', who: 'me', prompt: '선배, 라인 근처에 떨어졌는데 아무도 제대로 못 봤어요.', options: [
+    { label: '아웃이라고 해', who: 'me', reply: '상대가 고개를 갸웃했지만 넘어갔다. 마음이 조금 불편하다.', fx: { stress: 3, confidence: 1 } },
+    { label: '인으로 해 줘', who: 'me', reply: '상대: "매너 좋으시네요." 점수는 내줬지만 기분은 괜찮다.', fx: { club: 2, stress: -2 } },
   ] },
-  { id: 'double_fault', act: 'club', who: 'me', prompt: '파트너가 더블폴트를 했다. 내 눈치를 본다.', options: [
-    { label: '괜찮아요! 다음 거요', who: 'me', reply: '다음 게임을 잡았다. 복식은 이런 거구나.', fx: { club: 1, grow: 0.1 } },
-    { label: '말없이 공을 건넨다', who: 'me', reply: '어색하게 다음 서브가 시작됐다. 말 한마디가 어렵다.', fx: { stress: 2 } },
+  { id: 'double_fault', act: 'club', who: 'me', prompt: '선배, 파트너가 더블폴트를 했어요. 제 눈치를 봐요.', options: [
+    { label: '괜찮다고 해 줘', who: 'me', reply: '다음 게임을 잡았다. 복식은 이런 거구나.', fx: { club: 1, grow: 0.1 } },
+    { label: '말없이 공을 건네', who: 'me', reply: '어색하게 다음 서브가 시작됐다. 말 한마디가 어렵다.', fx: { stress: 2 } },
   ] },
   { id: 'drink_bet', act: 'club', who: 'club', prompt: '회원: "진 팀이 음료수 사는 거 어때요?"', options: [
-    { label: '좋아요', who: 'me', reply: '졌다. 음료수 네 캔. 그래도 오늘 제일 열심히 뛰었다.', fx: { grow: 0.2, fatigue: 3 } },
-    { label: '오늘은 편하게 해요', who: 'me', reply: '웃으면서 쳤다. 공이 더 잘 들어갔다.', fx: { stress: -3 } },
+    { label: '좋다고 해', who: 'me', reply: '졌다. 음료수 네 캔. 그래도 오늘 제일 열심히 뛰었다.', fx: { grow: 0.2, fatigue: 3 } },
+    { label: '오늘은 편하게 쳐', who: 'me', reply: '웃으면서 쳤다. 공이 더 잘 들어갔다.', fx: { stress: -3 } },
   ] },
   { id: 'poach_call', act: 'club', withFace: true, who: 'partner', prompt: '{p}: "다음 포인트, 내가 포치 들어갈게."', options: [
-    { label: '믿을게요', who: 'partner', reply: '{p}가 정말 끊어 냈다. 손바닥을 마주쳤다.', fx: { aff: 4, combo: 2 } },
-    { label: '제가 커버할게요', who: 'partner', reply: '둘이 같은 공으로 달렸다. 라켓이 부딪혔다. 둘 다 웃었다.', fx: { aff: 3 } },
+    { label: '믿어 봐', who: 'partner', reply: '{p}가 정말 끊어 냈다. 손바닥을 마주쳤다.', fx: { aff: 4, combo: 2 } },
+    { label: '커버한다고 해', who: 'partner', reply: '둘이 같은 공으로 달렸다. 라켓이 부딪혔다. 둘 다 웃었다.', fx: { aff: 3 } },
   ] },
   // ── 휴식 ──
-  { id: 'remote', act: 'rest', who: 'me', prompt: '리모컨을 들었다. 뭘 볼까.', options: [
-    { label: '테니스 중계', who: 'me', reply: '프로는 저렇게 치는구나. 어차피 내 몸은 안 따라간다.', fx: { confidence: 2, stress: 1 } },
-    { label: '아무 생각 없는 예능', who: 'me', reply: '세 시간이 사라졌다. 아무 후회도 없다.', fx: { stress: -4 } },
+  { id: 'remote', act: 'rest', who: 'me', prompt: '선배, 오늘 쉬는 날인데 뭘 볼까요?', options: [
+    { label: '테니스 중계 봐', who: 'me', reply: '프로는 저렇게 치는구나. 어차피 내 몸은 안 따라간다.', fx: { confidence: 2, stress: 1 } },
+    { label: '아무 생각 없는 예능 봐', who: 'me', reply: '세 시간이 사라졌다. 아무 후회도 없다.', fx: { stress: -4 } },
   ] },
-  { id: 'early_wake', act: 'rest', who: 'me', prompt: '아침에 저절로 눈이 떠졌다.', options: [
-    { label: '더 잔다', who: 'me', reply: '다시 눈을 떠 보니 점심이었다.', fx: { fatigue: -4 } },
-    { label: '일어나서 스트레칭', who: 'me', reply: '어깨에서 소리가 났다. 좋은 소리인지는 모르겠다.', fx: { stress: -2, fatigue: -1 } },
+  { id: 'early_wake', act: 'rest', who: 'me', prompt: '선배, 아침에 저절로 눈이 떠졌어요.', options: [
+    { label: '더 자', who: 'me', reply: '다시 눈을 떠 보니 점심이었다.', fx: { fatigue: -4 } },
+    { label: '일어나서 스트레칭 해', who: 'me', reply: '어깨에서 소리가 났다. 좋은 소리인지는 모르겠다.', fx: { stress: -2, fatigue: -1 } },
   ] },
   { id: 'club_chat', act: 'rest', who: 'club', prompt: '클럽 단체방이 울린다. "오늘 번개 치실 분?"', options: [
-    { label: '못 본 척한다', who: 'me', reply: '알림을 껐다. 평화롭다.', fx: { stress: -3 } },
-    { label: '다음엔 꼭 갈게요', who: 'club', reply: '회장님이 엄지를 보냈다. 쉬는 날에도 테니스는 따라온다.', fx: { club: 1 } },
+    { label: '못 본 척해', who: 'me', reply: '알림을 껐다. 평화롭다.', fx: { stress: -3 } },
+    { label: '다음엔 꼭 간다고 해', who: 'club', reply: '회장님이 엄지를 보냈다. 쉬는 날에도 테니스는 따라온다.', fx: { club: 1 } },
   ] },
   // ── 가족·친구 ──
   { id: 'side_dish', act: 'family', outing: 'home', who: 'me', prompt: '엄마: "반찬 좀 싸 갈래? 요즘 얼굴이 왜 그래."', options: [
-    { label: '네, 주세요', who: 'me', reply: '가방이 라켓 가방보다 무거워졌다.', fx: { stress: -3, fatigue: -2 } },
-    { label: '테니스 쳐서 그래요', who: 'me', reply: '엄마: "그놈의 테니스." 결국 반찬을 받았다.', fx: { stress: -1, confidence: 1 } },
+    { label: '받아 와', who: 'me', reply: '가방이 라켓 가방보다 무거워졌다.', fx: { stress: -3, fatigue: -2 } },
+    { label: '테니스 쳐서 그렇다고 해', who: 'me', reply: '엄마: "그놈의 테니스." 결국 반찬을 받았다.', fx: { stress: -1, confidence: 1 } },
   ] },
   { id: 'friend_try', act: 'family', outing: 'play', who: 'me', prompt: '친구: "나도 테니스 해 볼까?"', options: [
-    { label: '당장 시작해', who: 'me', reply: '내가 코치처럼 말하고 있었다. 친구 눈이 흔들린다.', fx: { confidence: 2 } },
-    { label: '손목 나갈 수도 있어', who: 'me', reply: '친구: "그럼 너는 왜 해?" 대답을 못 했다.', fx: { stress: -2 } },
+    { label: '당장 시작하라고 해', who: 'me', reply: '내가 코치처럼 말하고 있었다. 친구 눈이 흔들린다.', fx: { confidence: 2 } },
+    { label: '손목 나갈 수 있다고 해', who: 'me', reply: '친구: "그럼 너는 왜 해?" 대답을 못 했다.', fx: { stress: -2 } },
   ] },
-  { id: 'nephew', act: 'family', outing: 'home', who: 'me', prompt: '조카가 라켓을 만지작거린다. 쳐 보고 싶은 눈치다.', options: [
-    { label: '살살 쳐 볼래?', who: 'me', reply: '조카가 천장을 맞혔다. 엄마 표정이 굳었다.', fx: { stress: -2 } },
-    { label: '이건 내 거야', who: 'me', reply: '조카가 울 것 같다. 결국 쥐여 줬다.', fx: { stress: -1 } },
+  { id: 'nephew', act: 'family', outing: 'home', who: 'me', prompt: '선배, 조카가 라켓을 만지작거려요. 쳐 보고 싶은 눈치예요.', options: [
+    { label: '살살 쳐 보게 해', who: 'me', reply: '조카가 천장을 맞혔다. 엄마 표정이 굳었다.', fx: { stress: -2 } },
+    { label: '이건 안 된다고 해', who: 'me', reply: '조카가 울 것 같다. 결국 쥐여 줬다.', fx: { stress: -1 } },
   ] },
   { id: 'work_talk', act: 'family', outing: 'play', who: 'me', prompt: '친구: "회사는 어때?"', options: [
-    { label: '그냥 그래', who: 'me', reply: '친구들이 회사 욕을 시작했다. 위로가 됐다.', fx: { stress: -4 } },
-    { label: '그보다 내 서브 좀 봐 봐', who: 'me', reply: '식당에서 서브 폼을 보여 줬다. 친구들이 못 본 척했다.', fx: { confidence: 1, stress: -1 } },
+    { label: '그냥 그렇다고 해', who: 'me', reply: '친구들이 회사 욕을 시작했다. 위로가 됐다.', fx: { stress: -4 } },
+    { label: '서브 폼이나 보여 줘', who: 'me', reply: '식당에서 서브 폼을 보여 줬다. 친구들이 못 본 척했다.', fx: { confidence: 1, stress: -1 } },
   ] },
   // ── 야근 ──
   { id: 'ot_dinner', act: 'overtime', who: 'boss', prompt: '팀장: "저녁 먹고 마저 하지?"', options: [
-    { label: '네…', who: 'me', reply: '저녁은 김밥이었다. 일은 끝났다.', fx: { work: 2, stress: 2 } },
-    { label: '오늘은 먼저 들어가 볼게요', who: 'boss', reply: '팀장이 한 번 쳐다봤다. 심장이 테니스 칠 때보다 더 뛴다.', fx: { work: -2, stress: -2 } },
+    { label: '어쩔 수 없지', who: 'me', reply: '저녁은 김밥이었다. 일은 끝났다.', fx: { work: 2, stress: 2 } },
+    { label: '먼저 들어간다고 해', who: 'boss', reply: '팀장이 한 번 쳐다봤다. 심장이 테니스 칠 때보다 더 뛴다.', fx: { work: -2, stress: -2 } },
   ] },
   { id: 'ot_mate', act: 'overtime', who: 'me', prompt: '옆자리: "요즘 테니스 친다며? 손목 괜찮아?"', options: [
-    { label: '손목 스냅을 보여 준다', who: 'me', reply: '옆자리가 조용히 모니터로 돌아갔다.', fx: { stress: -1 } },
-    { label: '덕분에 아파요', who: 'me', reply: '둘이 파스 얘기를 십 분 했다. 좋은 동료다.', fx: { stress: -2, work: 1 } },
+    { label: '손목 스냅을 보여 줘', who: 'me', reply: '옆자리가 조용히 모니터로 돌아갔다.', fx: { stress: -1 } },
+    { label: '덕분에 아프다고 해', who: 'me', reply: '둘이 파스 얘기를 십 분 했다. 좋은 동료다.', fx: { stress: -2, work: 1 } },
   ] },
 ];
 
@@ -405,12 +405,34 @@ export const TOUR_LINES = {
   FW: ['마지막 공이 라인 안에 떨어졌다. {p}가 달려왔다. 포핸드 100개를 치던 첫날이 생각났다.'],
 };
 
+// 후배가 선배(플레이어)를 돌아보는 순간. 고르는 말은 선배가 하는 말이다. 같이 기뻐하고 같이 아쉬워한다.
+export const JOY_LINES = {
+  mile: ['선배! 방금 보셨어요?! 저 해냈어요!', '선배, 이거 진짜예요? 제가 한 거 맞죠?', '선배! 봤어요? 봤죠? 이번 건 진짜 들어갔어요!'],
+  rank: ['선배, 저 등급 올랐어요! 보셨죠?', '선배! 저 이제 이 정도는 된대요!'],
+};
+export const JOY_REPLIES = [
+  [{ label: '잘했어!', reply: '헤헤, 선배 덕분이에요.' }, { label: '봤어, 대단한데', reply: '정말요? 또 봐 주세요!' }],
+  [{ label: '내가 뭐랬어', reply: '네! 선배 말대로 했더니 진짜 돼요!' }, { label: '들뜨지 말고 다음 공', reply: '네! …그래도 오늘은 좀 기뻐해도 되죠?' }],
+];
+// 대회가 끝난 뒤 후배와 나누는 말
+export const TOUR_JOY = {
+  top: { line: '선배! 저 우승했어요!! 보셨어요?!', options: [{ label: '최고야!', reply: '헤헤, 선배 덕분이에요. 정말로요.' }, { label: '이리 와, 사진 찍자', reply: '선배도 같이 찍어요! 빨리요!' }] },
+  second: { line: '선배, 조금만 더 했으면… 그래도 저 결승까지 갔어요.', options: [{ label: '충분히 잘했어', reply: '…네. 그래도 다음엔 맨 위에 설래요.' }, { label: '다음엔 맨 위야', reply: '네! 선배, 끝까지 봐 주셔야 해요.' }] },
+  deep: { line: '선배! 저 여기까지 왔어요!', options: [{ label: '많이 늘었네', reply: '정말요? 선배가 그러면 진짜인 것 같아요.' }, { label: '아직 더 갈 수 있어', reply: '네! 다음엔 더 위로 갈게요.' }] },
+  low: { line: '선배… 오늘 왜 이랬을까요.', options: [{ label: '괜찮아, 또 나가면 돼', reply: '네… 다음엔 1승이라도 더 할게요.' }, { label: '어디서 막혔는지 같이 보자', reply: '네, 선배. 같이 봐 주세요.' }] },
+};
+export const END_LINES = {
+  win: '선배! 우리가 해냈어요! 처음 라켓 쥐던 날 기억나요?',
+  quit: '선배, 여기까지 같이 해 주셔서 고마웠어요.',
+  done: '선배, 3년 동안 고마웠어요. 다음 시즌에도 봐 주실 거죠?',
+};
+
 // 계단처럼 느는 순간. 언제 올지는 모른다.
 export const STAIR_LINES = [
-  '어느 날 갑자기 공이 느리게 보였다. 어제까지 안 되던 게 왜 되지?',
-  '코치: "방금 그거 뭐예요?" 나도 모르겠다. 그런데 된다.',
-  '백 번 쳐도 안 되던 게 오늘 됐다. 한 계단 올라간 것 같다.',
-  '공 맞는 느낌이 달라졌다. 뭔가를 깨달은 것 같은데 말로는 못 하겠다.',
+  '선배! 갑자기 공이 느리게 보여요. 어제까지 안 되던 게 왜 되죠?',
+  '코치: "방금 그거 뭐예요?" 선배, 저도 모르겠어요. 그런데 돼요!',
+  '선배, 백 번 쳐도 안 되던 게 오늘 됐어요. 한 계단 올라간 것 같아요.',
+  '선배, 공 맞는 느낌이 달라졌어요. 뭔가 알 것 같은데 말로는 못 하겠어요.',
 ];
 // 기술을 알게 되는 순간. self: 자연스럽게, teach: 누군가 가르쳐서. {p}에 이름이 들어간다.
 export const HINT_LINES = {
@@ -434,44 +456,44 @@ export const PARTY_WORD = { FP: '다음 무대로!', FF: '준우승 축하!', FW
 
 // 주간 화면 말풍선. 상태가 있으면 STATE_LINES가 먼저 나온다.
 export const STATE_LINES = {
-  tutorial: '코치: "앞으로는 2주에 한 번씩 뭘 할지 골라 봐요. 훈련을 누르면 레슨이 있어요."',
-  injury: '{name}… 당분간은 쉬어야겠다.',
-  doubt: '어제는 됐는데 오늘은 왜 안 되지. 왜 이렇게 어려울까.',
-  yips: '서브 토스가 자꾸 신경 쓰인다.',
-  sure: '나 이제 실력이 좀 되는지도?',
-  sore: '온몸이 쑤신다. 계단이 무섭다.',
-  plateau: '요즘 늘지를 않는다. 이렇게 치는 게 맞나.',
-  plateauNear: '요즘 뭔가 잡힐 듯 말 듯하다.',
-  boost: '공이 느리게 보인다. 왜 되지?',
-  goalTour: '이번 턴은 {name}. 같이 나갈 사람부터 구해야 한다.',
-  finale: '드디어 마지막 무대다. 같이 나갈 사람에게 연락하자.',
-  entered: '이번 주는 {name}! 벌써 긴장된다.',
-  overtime: '이번 주는 코트 근처에도 못 가겠네.',
-  stressed: '머리가 복잡하다. 뭔가 좀 풀어야겠다.',
-  slump: '요즘 공이 안 맞아. 뭔가 잘못됐나.',
-  open: '이번에 {name} 열린대. 나가 볼까?',
-  tired: '몸이 천근만근이다.',
-  good: '오늘은 몸이 가볍다!',
+  tutorial: '코치: "선배님, 앞으로는 2주에 한 번씩 뭘 할지 정해 주세요. 훈련을 누르면 레슨이 있어요."',
+  injury: '{name}… 선배, 당분간은 쉬어야 할 것 같아요.',
+  doubt: '선배, 어제는 됐는데 오늘은 왜 안 될까요. 왜 이렇게 어렵죠?',
+  yips: '선배, 서브 토스가 자꾸 신경 쓰여요.',
+  sure: '선배, 저 이제 실력이 좀 되는 걸까요?',
+  sore: '온몸이 쑤셔요. 계단이 무서워요.',
+  plateau: '선배, 요즘 늘지를 않아요. 이렇게 치는 게 맞을까요?',
+  plateauNear: '선배, 요즘 뭔가 잡힐 듯 말 듯해요.',
+  boost: '선배! 공이 느리게 보여요. 왜 되는 거죠?',
+  goalTour: '선배, 이번 턴은 {name}! 같이 나갈 사람부터 구해야 해요.',
+  finale: '선배, 드디어 마지막 무대예요. 같이 나갈 사람부터 구해요.',
+  entered: '이번 주는 {name}! 벌써 긴장돼요.',
+  overtime: '선배, 이번 주는 코트 근처에도 못 가요. 회사가…',
+  stressed: '선배, 머리가 복잡해요. 뭔가 좀 풀어야 할 것 같아요.',
+  slump: '요즘 공이 안 맞아요. 뭐가 잘못된 걸까요?',
+  open: '선배, 이번에 {name} 열린대요. 나가 볼까요?',
+  tired: '선배, 몸이 천근만근이에요.',
+  good: '오늘은 몸이 가벼워요!',
 };
-// 아직 못 고르는 버튼을 눌렀을 때의 혼잣말
+// 아직 못 고르는 버튼을 눌렀을 때 후배가 하는 말
 export const LOCK_LINES = {
-  practice: '벽치기는 어디서 하는 거지. 아직 모르겠다.',
-  gym: '헬스는 무슨. 아직 레슨만으로도 벅차다.',
-  home: '집에 오면 일단 눕고 본다. 아직은.',
-  skill: '아직 내세울 만한 기술이 없다.',
-  clinic: '지금은 아픈 데가 없다. 병원 갈 일은 없다.',
-  club: '클럽 게임은 아직 좀 무섭다. 조금 더 배우고 나서.',
-  injured: '지금은 몸부터 챙겨야 한다.',
-  noTour: '다음 대회는 {weeks}주 뒤 {name}.',
-  noMoreTour: '올해 남은 대회는 없다.',
+  practice: '선배, 벽치기는 어디서 해요? 아직 잘 모르겠어요.',
+  gym: '헬스요? 아직 레슨만으로도 벅차요.',
+  home: '집에 오면 일단 눕게 돼요. 아직은요.',
+  skill: '아직 내세울 만한 기술이 없어요.',
+  clinic: '지금은 아픈 데가 없어요. 병원 갈 일은 없어요.',
+  club: '클럽 게임은 아직 좀 무서워요. 조금 더 배우고 나서요.',
+  injured: '선배, 지금은 몸부터 챙겨야 해요.',
+  noTour: '다음 대회는 {weeks}주 뒤, {name}.',
+  noMoreTour: '올해 남은 대회는 없어요.',
 };
 export const HOME_LINES = [
-  '이번엔 뭐 하지?',
-  '퇴근하고 코트 갈까, 그냥 집에 갈까.',
-  '점심시간에 또 테니스 영상을 봤다.',
-  '손바닥 굳은살이 제법 단단해졌다.',
-  '라켓 가방을 메고 출근했더니 다들 쳐다본다.',
-  '자기 전에 스윙 연습을 했다. 이불이 날아갔다.',
-  '요즘 날씨 보는 습관이 생겼다.',
-  '다음엔 뭘 배워 볼까.',
+  '선배, 이번엔 뭐 할까요?',
+  '선배, 퇴근하고 코트 갈까요, 그냥 집에 갈까요?',
+  '점심시간에 또 테니스 영상 봤어요. 선배는 누구 봐요?',
+  '선배, 손바닥 좀 보세요. 굳은살이 제법 단단해졌어요.',
+  '라켓 가방 메고 출근했더니 다들 쳐다봐요.',
+  '자기 전에 스윙 연습했어요. 이불이 날아갔어요.',
+  '요즘 날씨 보는 습관이 생겼어요. 선배 때문이에요.',
+  '선배, 다음엔 뭘 배워 볼까요?',
 ];

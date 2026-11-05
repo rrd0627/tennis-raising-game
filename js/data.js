@@ -167,7 +167,7 @@ export const PROFILE = [
   },
 ];
 
-// 인트로 컷 (임시 그림. 컷 그림만 나중에 바꾼다). 마지막 컷에서 코치와의 대화로 이어진다.
+// 인트로 컷 (임시 그림. 컷 그림만 나중에 바꾼다). 신입 회원의 이야기로 시작해서, 마지막 컷에서 선배(플레이어)를 부른다.
 export const INTRO_SCENES = [
   { icon: '⏰', bg: '#2c3550', text: '오전 6시 50분. 오늘도 알람이 울린다.' },
   { icon: '🚇', bg: '#46536b', text: '출근 지하철. 어제랑 같은 칸, 같은 자리.' },
@@ -176,6 +176,7 @@ export const INTRO_SCENES = [
   { icon: '🎾', bg: '#2f8a5b', text: '조명 켜진 코트. 나도… 저거 해 보고 싶다.' },
   { icon: '📱', bg: '#c9772e', text: '다음 날 점심시간. 테니스 레슨을 등록했다.' },
   { icon: '🌤️', bg: '#3a9a6a', text: '토요일 아침. 빌린 라켓을 들고 코트에 처음 섰다.' },
+  { icon: '🪑', bg: '#2f8a5b', text: '벤치에 앉아 있는데 코치가 손짓했다. "선배님, 잠깐만요. 새로 온 회원이에요."' },
 ];
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────
@@ -228,36 +229,35 @@ export const LEVELS = {
   1: { name: '친선', adj: -9, pts: 0.5, want: [24, 50] }, 2: { name: '지역', adj: -5, pts: 1, want: [34, 58] },
   3: { name: '광역', adj: -3, pts: 1.5, want: [38, 62] }, 4: { name: '전국', adj: 1, pts: 1, want: [44, 68] },
 };
-export const PRIZE_NAME = ['없음', '작음', '보통', '큼'];
 // 코트 재질. 내가 치던 코트(하드)와 다르면 낯설다.
 export const SURFACES = { hard: '하드', clay: '클레이', turf: '인조잔디' };
 export const HOME_SURFACE = 'hard';
 
 // ── 대회 달력: 해마다 같은 대회가 같은 때 열린다 ─────────────
-// w: 그해의 주, region: 사는 곳, surface: 코트, time: 시간, level: 레벨, draw: 규모(본선), prize: 상금 수준
+// w: 그해의 주, region: 사는 곳, surface: 코트, time: 시간, level: 레벨, draw: 규모(본선)
 export const TOURS = [
-  { id: 'haesol', name: '해솔구 친선대회', w: 7, region: 'capital', surface: 'hard', time: 'weekend', level: 1, draw: 16, prize: 0 },
-  { id: 'n_eunha', name: '전국 은하수배', w: 9, region: 'yeongnam', surface: 'hard', time: 'weekend', level: 4, draw: 64, prize: 2 },
-  { id: 'eunbit', name: '은빛시장배', w: 13, region: 'capital', surface: 'turf', time: 'weekend', level: 2, draw: 32, prize: 1 },
-  { id: 'pureun', name: '푸른숲 클럽연합배', w: 17, region: 'chungcheong', surface: 'clay', time: 'weekend', level: 2, draw: 32, prize: 1 },
-  { id: 'sinrok', name: '신록 평일 리그', w: 17, region: 'capital', surface: 'hard', time: 'weekday', level: 1, draw: 16, prize: 0 },
-  { id: 'n_baram', name: '전국 바람개비배', w: 19, region: 'honam', surface: 'turf', time: 'weekend', level: 4, draw: 64, prize: 2 },
-  { id: 'dalbit', name: '달빛구 친선대회', w: 23, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16, prize: 0 },
-  { id: 'hangang', name: '한강 여름배', w: 25, region: 'capital', surface: 'turf', time: 'weekend', level: 3, draw: 64, prize: 2 },
-  { id: 'n_hanbit', name: '전국 한빛배', w: 29, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128, prize: 3 },
-  { id: 'sandeul', name: '산들 단풍배', w: 33, region: 'gangwon', surface: 'clay', time: 'weekend', level: 2, draw: 32, prize: 1 },
-  { id: 'raon', name: '라온 시민배', w: 33, region: 'capital', surface: 'hard', time: 'weekday', level: 2, draw: 16, prize: 1 },
-  { id: 'n_noeul', name: '전국 노을배', w: 37, region: 'yeongnam', surface: 'clay', time: 'weekend', level: 4, draw: 64, prize: 2 },
-  { id: 'cheongsol', name: '청솔배', w: 39, region: 'honam', surface: 'turf', time: 'weekend', level: 3, draw: 64, prize: 2 },
-  { id: 'daon', name: '다온 우정배', w: 41, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16, prize: 0 },
-  { id: 'noeulcity', name: '노을 생활체육대회', w: 43, region: 'chungcheong', surface: 'hard', time: 'weekend', level: 2, draw: 32, prize: 1 },
-  { id: 'n_yeonmaeng', name: '연맹회장배 전국대회', w: 45, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128, prize: 3 },
+  { id: 'haesol', name: '해솔구 친선대회', w: 7, region: 'capital', surface: 'hard', time: 'weekend', level: 1, draw: 16 },
+  { id: 'n_eunha', name: '전국 은하수배', w: 9, region: 'yeongnam', surface: 'hard', time: 'weekend', level: 4, draw: 64 },
+  { id: 'eunbit', name: '은빛시장배', w: 13, region: 'capital', surface: 'turf', time: 'weekend', level: 2, draw: 32 },
+  { id: 'pureun', name: '푸른숲 클럽연합배', w: 17, region: 'chungcheong', surface: 'clay', time: 'weekend', level: 2, draw: 32 },
+  { id: 'sinrok', name: '신록 평일 리그', w: 17, region: 'capital', surface: 'hard', time: 'weekday', level: 1, draw: 16 },
+  { id: 'n_baram', name: '전국 바람개비배', w: 19, region: 'honam', surface: 'turf', time: 'weekend', level: 4, draw: 64 },
+  { id: 'dalbit', name: '달빛구 친선대회', w: 23, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16 },
+  { id: 'hangang', name: '한강 여름배', w: 25, region: 'capital', surface: 'turf', time: 'weekend', level: 3, draw: 64 },
+  { id: 'n_hanbit', name: '전국 한빛배', w: 29, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128 },
+  { id: 'sandeul', name: '산들 단풍배', w: 33, region: 'gangwon', surface: 'clay', time: 'weekend', level: 2, draw: 32 },
+  { id: 'raon', name: '라온 시민배', w: 33, region: 'capital', surface: 'hard', time: 'weekday', level: 2, draw: 16 },
+  { id: 'n_noeul', name: '전국 노을배', w: 37, region: 'yeongnam', surface: 'clay', time: 'weekend', level: 4, draw: 64 },
+  { id: 'cheongsol', name: '청솔배', w: 39, region: 'honam', surface: 'turf', time: 'weekend', level: 3, draw: 64 },
+  { id: 'daon', name: '다온 우정배', w: 41, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16 },
+  { id: 'noeulcity', name: '노을 생활체육대회', w: 43, region: 'chungcheong', surface: 'hard', time: 'weekend', level: 2, draw: 32 },
+  { id: 'n_yeonmaeng', name: '연맹회장배 전국대회', w: 45, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128 },
 ];
 // 마지막 6턴: 국화부 전국대회. 예선, 본선, 결승전을 차례로 이겨야 한다.
 export const FINALE_TOURS = [
-  { id: 'final1', base: 'final1', week: 147, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 4, finale: 1, name: '국화부 전국대회 예선' },
-  { id: 'final2', base: 'final2', week: 151, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 4, finale: 2, name: '국화부 전국대회 본선' },
-  { id: 'final3', base: 'final3', week: 155, day: 6, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 2, finale: 3, name: '국화부 전국대회 결승전' },
+  { id: 'final1', base: 'final1', week: 147, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 4, finale: 1, name: '국화부 전국대회 예선' },
+  { id: 'final2', base: 'final2', week: 151, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 4, finale: 2, name: '국화부 전국대회 본선' },
+  { id: 'final3', base: 'final3', week: 155, day: 6, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 2, finale: 3, name: '국화부 전국대회 결승전' },
 ];
 export function buildCalendar() {
   const list = [];
