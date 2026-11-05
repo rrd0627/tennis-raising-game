@@ -239,7 +239,7 @@ const SCREENS = {
       <div class="cal">${up.map(t => {
         const e = S.entries[t.id];
         const act = e ? `<span class="ok">출전 · ${esc(PARTNER[e.partner].name)}</span>` : t.week === S.week ? `<span class="muted">이번 주</span>` : '';
-        return `<div class="trow ${t.type} ${G.isGoalTour(S, t) ? 'goalrow' : ''}" data-a="tourinfo" data-tid="${t.id}"><div class="tw">${weekInfo(t.week).label.split(' · ')[1]}<small>${DAY_NAMES[t.day]}요일</small></div><div class="tn"><b>${esc(t.name)}</b><small><span class="tag ${t.type}">${t.type === 'national' ? '전국' : '비전국'}</span> ${G.isGoalTour(S, t) ? '<span class="tag goal">목표</span> ' : ''}${t.finale ? '마지막 무대' : `${REGIONS[t.region]} · ${SURFACES[t.surface]} · ${TIMES[t.time]} · ${t.draw}강`}</small></div><div class="ta">${act}</div></div>`;
+        return `<div class="trow ${t.type} ${G.isGoalTour(S, t) ? 'goalrow' : ''}" data-a="tourinfo" data-tid="${t.id}"><div class="tw">${weekInfo(t.week).season !== weekInfo(S.week).season ? `${weekInfo(t.week).season}년차 ` : ''}${weekInfo(t.week).label.split(' · ')[1]}<small>${DAY_NAMES[t.day]}요일</small></div><div class="tn"><b>${esc(t.name)}</b><small><span class="tag ${t.type}">${t.type === 'national' ? '전국' : '비전국'}</span> ${G.isGoalTour(S, t) ? '<span class="tag goal">목표</span> ' : ''}${t.finale ? '마지막 무대' : `${REGIONS[t.region]} · ${SURFACES[t.surface]} · ${TIMES[t.time]} · ${t.draw}강`}</small></div><div class="ta">${act}</div></div>`;
       }).join('')}</div>
     </div>`;
   },
@@ -827,7 +827,7 @@ function tourCard(t) {
     ${row('규모', t.finale ? '마지막 무대' : `본선 ${t.draw}강`)}
     ${row('상금', PRIZE_NAME[t.prize])}
     <p class="muted topplayers">주요 출전: ${tops.map(p => `${esc(p.name)}(${esc(ARCH[p.style].name)})`).join(', ')}</p>
-    ${e ? `<p class="plandesc">${esc(PARTNER[e.partner].name)}${/[가-힣]/.test(PARTNER[e.partner].name) ? '' : ''}와 신청했다.</p>` : t.week >= S.week ? `<button class="btn primary" data-a="pickpartner" data-tid="${t.id}">파트너 구하기</button>` : ''}
+    ${e ? `<p class="plandesc">${esc(withJosa(PARTNER[e.partner].name))} 신청했다.</p>` : t.week >= S.week ? `<button class="btn primary" data-a="pickpartner" data-tid="${t.id}">파트너 구하기</button>` : ''}
   </div>`;
 }
 function tourInfoHTML() {
