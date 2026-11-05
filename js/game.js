@@ -789,7 +789,7 @@ function finishTournament(state, tr, stage) {
 export function evaluateEnding(state) {
   const gN = state.titles.gukwhaNational, gAny = gN + state.titles.gukwhaLocal;
   const rank = rankOf(state, '국화', 'national', myPoints(state, '국화', 'national', TOTAL_WEEKS));
-  const partnerEnd = PARTNERS.find(p => state.partners[p.id].aff >= 95 && state.partners[p.id].nationalWins >= 2);
+  const partnerEnd = PARTNERS.find(p => state.partners[p.id].aff >= 90 && state.partners[p.id].nationalWins >= 1 && state.partners[p.id].combo >= 88);
   const tact = groupAvg(state.stats, 'tactics');
   let id = 'love';
   if (gN >= 1 && rank === 1) id = 'queen';
