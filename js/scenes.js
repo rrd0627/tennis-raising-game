@@ -85,10 +85,17 @@ export const SCENES = [
   { act: 'rest', sleep: 'deep', who: 'me', text: '하루 종일 잤다. 꿈에서도 공을 쳤다.' },
   { act: 'rest', sleep: 'deep', who: 'me', text: '알람 없이 눈을 떴다. 어깨가 새것 같다.' },
   { act: 'rest', sleep: 'deep', who: 'me', text: '열두 시간을 잤다. 오늘은 서브도 들어갈 것 같다.' },
-  { act: 'family', who: 'me', text: '엄마: "너 요즘 왜 이렇게 탔니?"' },
-  { act: 'family', who: 'me', text: '친구들: "너 요즘 테니스 얘기만 해." 맞는 말이다.' },
-  { act: 'family', who: 'me', text: '오랜만에 친구를 만났다. 세 시간 중 두 시간을 테니스 얘기를 했다.' },
-  { act: 'family', who: 'me', text: '조카가 라켓을 보고 "배드민턴?"이라고 했다. 참았다.' },
+  { act: 'family', outing: 'home', who: 'me', text: '엄마: "너 요즘 왜 이렇게 탔니?"' },
+  { act: 'family', outing: 'play', who: 'me', text: '친구들: "너 요즘 테니스 얘기만 해." 맞는 말이다.' },
+  { act: 'family', outing: 'play', who: 'me', text: '오랜만에 친구를 만났다. 세 시간 중 두 시간을 테니스 얘기를 했다.' },
+  { act: 'family', outing: 'home', who: 'me', text: '조카가 라켓을 보고 "배드민턴?"이라고 했다. 참았다.' },
+  { act: 'family', outing: 'trip', who: 'me', text: '바다를 봤다. 어제 놓친 공이 아무 일도 아닌 것 같았다.' },
+  { act: 'family', outing: 'trip', who: 'me', text: '기차 창밖만 봤다. 머릿속이 조금씩 비워진다.' },
+  { act: 'family', outing: 'trip', who: 'me', text: '숙소에서 늦잠을 잤다. 서브도 포핸드도 상관없는 곳이다.' },
+  { act: 'family', outing: 'play', who: 'me', text: '노래방에서 목이 나갔다. 오늘 실수한 공은 벌써 생각이 안 난다.' },
+  { act: 'clinic', who: 'me', text: '의사: "쉬라고 했잖아요." 세 번째 듣는 말이다.' },
+  { act: 'clinic', who: 'me', text: '물리치료 기계가 지잉 돌아간다. 옆 침대 아저씨도 테니스 엘보란다.' },
+  { act: 'clinic', who: 'me', text: '의사: "운동 언제까지 하실 거예요?" 대답을 못 했다.' },
   { act: 'overtime', who: 'boss', text: '팀장: "오늘 좀 남지?" 라켓 가방이 책상 밑에서 울고 있다.' },
   { act: 'overtime', who: 'me', text: '야근 중에 손목 스냅을 연습했다. 옆자리에서 쳐다봤다.' },
 ];
@@ -132,10 +139,43 @@ export const DESC_LINES = {
     '친구들과 저녁 약속이 있다.',
     '단체방이 시끄럽다. 오늘 다 같이 보자고 한다.',
   ],
+  clinic: [
+    '점심시간에 정형외과에 들렀다.',
+    '접수를 하고 앉았다. 대기실에 나 같은 사람이 많다.',
+  ],
   overtime: [
     '퇴근 시간이 지났는데 아무도 일어나지 않는다.',
     '마감이 내일이다. 라켓 가방은 사물함에 있다.',
   ],
+};
+// 쉬는 날 행선지별 설명
+export const DESC_OUTING = {
+  trip: ['갑자기 표를 끊었다. 라켓은 집에 두고 왔다.', '이번 주말은 멀리 간다. 코트가 없는 곳으로.'],
+  play: ['친구들과 저녁 약속이 있다.', '단체방이 시끄럽다. 오늘 다 같이 보자고 한다.'],
+  home: ['오랜만에 본가에 갔다.', '엄마가 밥 먹으러 오라고 했다.'],
+};
+// 코트에서 연습한 대로 나왔는지. 기분이 여기서 오르내린다.
+export const FEEL_LINES = {
+  lesson: {
+    good: ['지난번에 연습한 대로 공이 갔다. 코치가 고개를 끄덕였다.', '오늘은 되는 날이다. 어? 나 이제 좀 되나?'],
+    bad: ['지난주엔 됐던 게 오늘은 왜 안 될까. 코치가 같은 말을 또 했다.', '연습한 게 하나도 안 나온다. 왜 이렇게 어려울까.'],
+  },
+  practice: {
+    good: ['어제 연습한 스윙이 오늘도 나온다. 벽이 오늘은 내 편이다.', '공이 연달아 같은 자리에 맞았다. 나 이제 좀 되는지도?'],
+    bad: ['어제는 되던 스윙이 오늘은 어디로 갔을까.', '벽한테도 지는 날이 있다. 왜 이렇게 어렵지.'],
+  },
+  club: {
+    good: ['연습한 대로 나왔다! 파트너: "언제 이렇게 늘었어요?"', '레슨 때 배운 공이 게임에서 나왔다. 손끝이 짜릿하다.'],
+    bad: ['연습 땐 됐는데 게임만 하면 안 나온다. 왜 이렇게 어려울까.', '배운 걸 써 보려다 공이 전부 네트에 걸렸다.'],
+  },
+};
+// 무리해서 실패했을 때. 큰 글자와 글.
+export const FAIL_WORD = { flop: '제대로 안 됐다', doubt: '멘탈이 흔들린다', yips: '입스가 왔다', injury: '다쳤다' };
+export const FAIL_LINES = {
+  flop: ['몸이 무거워 공을 쫓아가지도 못했다. 오늘 운동은 운동이 아니었다.', '발이 안 움직인다. 왔다 갔다만 하다 끝났다.'],
+  doubt: ['쉬운 공을 연달아 놓쳤다. 머릿속이 복잡해졌다.', '몸이 지치니 마음까지 흔들린다. 라켓을 쥔 손에 힘이 안 들어간다.'],
+  yips: ['토스가 갑자기 손에서 안 떨어진다. 어떻게 쳤는지 기억이 안 난다.', '세컨 서브 앞에서 팔이 굳었다. 머리가 하얘졌다.'],
+  injury: ['"억" 소리가 먼저 나왔다. 오늘은 여기까지다.', '무리하지 말걸. 몸이 먼저 신호를 보냈다.'],
 };
 // 계절 설명. 테니스 행동일 때 같은 자리에 섞여 나온다.
 export const DESC_SEASON = {
@@ -231,19 +271,19 @@ export const CHOICE_SCENES = [
     { label: '다음엔 꼭 갈게요', who: 'club', reply: '회장님이 엄지를 보냈다. 쉬는 날에도 테니스는 따라온다.', fx: { club: 1 } },
   ] },
   // ── 가족·친구 ──
-  { id: 'side_dish', act: 'family', who: 'me', prompt: '엄마: "반찬 좀 싸 갈래? 요즘 얼굴이 왜 그래."', options: [
+  { id: 'side_dish', act: 'family', outing: 'home', who: 'me', prompt: '엄마: "반찬 좀 싸 갈래? 요즘 얼굴이 왜 그래."', options: [
     { label: '네, 주세요', who: 'me', reply: '가방이 라켓 가방보다 무거워졌다.', fx: { stress: -3, fatigue: -2 } },
     { label: '테니스 쳐서 그래요', who: 'me', reply: '엄마: "그놈의 테니스." 결국 반찬을 받았다.', fx: { stress: -1, confidence: 1 } },
   ] },
-  { id: 'friend_try', act: 'family', who: 'me', prompt: '친구: "나도 테니스 해 볼까?"', options: [
+  { id: 'friend_try', act: 'family', outing: 'play', who: 'me', prompt: '친구: "나도 테니스 해 볼까?"', options: [
     { label: '당장 시작해', who: 'me', reply: '내가 코치처럼 말하고 있었다. 친구 눈이 흔들린다.', fx: { confidence: 2 } },
     { label: '손목 나갈 수도 있어', who: 'me', reply: '친구: "그럼 너는 왜 해?" 대답을 못 했다.', fx: { stress: -2 } },
   ] },
-  { id: 'nephew', act: 'family', who: 'me', prompt: '조카가 라켓을 만지작거린다. 쳐 보고 싶은 눈치다.', options: [
+  { id: 'nephew', act: 'family', outing: 'home', who: 'me', prompt: '조카가 라켓을 만지작거린다. 쳐 보고 싶은 눈치다.', options: [
     { label: '살살 쳐 볼래?', who: 'me', reply: '조카가 천장을 맞혔다. 엄마 표정이 굳었다.', fx: { stress: -2 } },
     { label: '이건 내 거야', who: 'me', reply: '조카가 울 것 같다. 결국 쥐여 줬다.', fx: { stress: -1 } },
   ] },
-  { id: 'work_talk', act: 'family', who: 'me', prompt: '친구: "회사는 어때?"', options: [
+  { id: 'work_talk', act: 'family', outing: 'play', who: 'me', prompt: '친구: "회사는 어때?"', options: [
     { label: '그냥 그래', who: 'me', reply: '친구들이 회사 욕을 시작했다. 위로가 됐다.', fx: { stress: -4 } },
     { label: '그보다 내 서브 좀 봐 봐', who: 'me', reply: '식당에서 서브 폼을 보여 줬다. 친구들이 못 본 척했다.', fx: { confidence: 1, stress: -1 } },
   ] },
@@ -364,6 +404,10 @@ export const TOUR_LINES = {
 export const STATE_LINES = {
   tutorial: '코치: "앞으로는 2주에 한 번씩 뭘 할지 골라 봐요. 훈련을 누르면 레슨이 있어요."',
   injury: '{name}… 당분간은 쉬어야겠다.',
+  doubt: '어제는 됐는데 오늘은 왜 안 되지. 왜 이렇게 어려울까.',
+  yips: '서브 토스가 자꾸 신경 쓰인다.',
+  sure: '나 이제 실력이 좀 되는지도?',
+  sore: '온몸이 쑤신다. 계단이 무섭다.',
   entered: '이번 주는 {name}! 벌써 긴장된다.',
   overtime: '이번 주는 코트 근처에도 못 가겠네.',
   stressed: '머리가 복잡하다. 뭔가 좀 풀어야겠다.',
@@ -378,7 +422,7 @@ export const LOCK_LINES = {
   gym: '헬스는 무슨. 아직 레슨만으로도 벅차다.',
   home: '집에 오면 일단 눕고 본다. 아직은.',
   skill: '아직 내세울 만한 기술이 없다.',
-  clinic: '병원 갈 정도는 아니다. 일단 쉬어 보자.',
+  clinic: '지금은 아픈 데가 없다. 병원 갈 일은 없다.',
   club: '클럽 게임은 아직 좀 무섭다. 조금 더 배우고 나서.',
   injured: '지금은 몸부터 챙겨야 한다.',
   noTour: '다음 대회는 {weeks}주 뒤 {name}.',

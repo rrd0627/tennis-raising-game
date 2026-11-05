@@ -1,15 +1,16 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
-import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES } from './scenes.js';
+import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
 
 export const TOTAL_WEEKS = 156;
 export const WEEKS_PER_TURN = 2;
-export const GROWTH = 7.2; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
-const SAVE_KEY = 'tennis-raising-save-v3';
+export const GROWTH = 6.8; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
+// 확인 링크(?check)는 실제 저장을 건드리지 않도록 따로 저장한다
+const SAVE_KEY = typeof location !== 'undefined' && location.search.includes('check') ? 'tennis-raising-save-check' : 'tennis-raising-save-v3';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const avg = xs => xs.reduce((a, b) => a + b, 0) / xs.length;
 
@@ -39,7 +40,7 @@ export function newGame(name, profile = {}) {
     results: [], titles: { local: 0, national: 0, gukwhaLocal: 0, gukwhaNational: 0 },
     goalIdx: 0, goalsDone: [],
     injuries: 0, highStressWeeks: 0, flags: {}, unlocks: [], secretsGot: [], choices: null,
-    pendingEvents: [], weekLog: null, ending: null, yips: 0,
+    pendingEvents: [], weekLog: null, ending: null, conds: {},
   };
   const rng = rngOf(state);
   for (const id of ALL_STATS) state.stats[id] = Math.round(14 + rng() * 10);
@@ -77,6 +78,9 @@ function migrate(s) {
   s.spots = { ...freshSpots(), ...(s.spots || {}) };
   s.lastSpot = s.lastSpot || 'lesson';
   s.faces = Object.fromEntries(TRAIN_SPOTS.map(id => { const f = s.faces?.[id]; return [id, Array.isArray(f) ? f : f ? [f] : []]; }));
+  s.conds = s.conds || {};
+  if (s.yips > 0 && !s.conds.yips) s.conds.yips = 3;
+  delete s.yips; delete s.moodNudge;
   return s;
 }
 export function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { } }
@@ -136,13 +140,45 @@ export function hasBond(state, pid) { return state.partners[pid].aff >= BOND_AT;
 export function bondsAt(state, id) { return (state.faces[id] || []).filter(pid => PARTNER[pid].spec === id && hasBond(state, pid)); }
 const CROWD_K = 0.08, BOND_K = 1.4, SPOT_K = 0.08, AFF_PER_TRAIN = 9;
 export function spotLevel(state, id) { return state.spots[id]?.lv || 1; }
+// 몸과 마음의 상태
+export function hasCond(state, id) { return (state.conds?.[id] || 0) > 0; }
+export function condList(state) { return Object.keys(CONDS).filter(id => hasCond(state, id)).map(id => ({ id, ...CONDS[id] })); }
+export function clinicOpen(state) { return !!state.injury || hasCond(state, 'sore'); }
+function condK(state) { return condList(state).reduce((a, c) => a * (c.k || 1), 1); }
 function actionK(state, id) {
-  const base = (1 + state.condition * 0.08) * (state.slump ? 0.5 : 1);
+  const base = (1 + state.condition * 0.1) * (state.slump ? 0.5 : 1) * condK(state);
   if (!ACT[id].train) return base;
   return base * (1 + (state.faces[id] || []).length * CROWD_K) * BOND_K ** bondsAt(state, id).length * (1 + (spotLevel(state, id) - 1) * SPOT_K);
 }
 function isHeat(state) { const w = weekInfo(state.week).w; return w >= 21 && w <= 31; }
-function injuryChance(state) { return state.week < 9 ? 0 : clamp((state.fatigue - 30) / 250, 0, 0.35) * (1 - state.stats.flex / 200); } // 첫 달은 다치지 않는다
+// 무리한 훈련은 실패할 수 있다. 체력이 55 아래로 내려가면(피로 45 위) 위험이 급하게 오른다. 첫 달은 실패하지 않는다.
+export function failChance(state, a) {
+  if (!a.risk || state.week < 9) return 0;
+  const f = state.fatigue + (hasCond(state, 'sore') ? 10 : 0) - (hasCond(state, 'light') ? 10 : 0);
+  return (f <= 45 ? 0 : Math.min(0.85, ((f - 45) / 35) ** 1.5 * 0.67)) * (1 - state.stats.flex / 200);
+}
+// 실패의 모습: 제대로 운동이 안 되거나, 멘탈이 흔들리거나, 입스가 오거나, 다친다
+function rollFailKind(rng) { const x = rng(); return x < 0.4 ? 'flop' : x < 0.6 ? 'doubt' : x < 0.7 ? 'yips' : 'injury'; }
+const INJURY_NAMES = ['테니스 엘보', '발목 염좌', '손목 통증', '종아리 근육 경련', '어깨 통증', '허리 통증', '무릎 통증'];
+function applyFail(state, kind, rng, on, off) {
+  if (kind === 'injury') {
+    state.injury = { name: INJURY_NAMES[Math.floor(rng() * INJURY_NAMES.length)], weeks: 2 * (2 + Math.floor(rng() * 3)) };
+    state.injuries++;
+    state.pendingEvents.push({ id: 'injury' });
+  }
+  if (kind === 'doubt') { off('sure'); on('doubt'); }
+  if (kind === 'yips') on('yips');
+  state.condition = clamp(state.condition - 1, -2, 2);
+  state.stress += 3;
+}
+// 코트에서 연습한 대로 나왔는지. 게임에서 더 잘 갈린다.
+function rollFeel(state, id, rng) {
+  const club = id === 'club';
+  const good = (club ? 0.32 : 0.22) + state.condition * 0.04;
+  const bad = (club ? 0.22 : 0.12) + Math.max(0, state.fatigue - 30) / 300 - state.condition * 0.02 + (hasCond(state, 'doubt') ? 0.08 : 0);
+  const x = rng();
+  return x < good ? 'good' : x < good + bad ? 'bad' : null;
+}
 
 // 코치가 정해 주는 레슨: 첫 턴들은 기본기, 이후엔 가장 약한 쪽
 export function coachTopic(state) {
@@ -193,7 +229,7 @@ export function previewAction(state, id, topic) {
     if (sum > 0) gains.push([big.id, sum / bigIds(big).length]);
   }
   gains.sort((x, y) => y[1] - x[1]);
-  return { gains, topic: t, injury: a.risk ? injuryChance(state) : 0, fatigue: fatigueOf(state, a, fx), stress: fx.stress + BOND_STRESS * bondsAt(state, id).length };
+  return { gains, topic: t, fail: failChance(state, a), fatigue: fatigueOf(state, a, fx), stress: fx.stress + BOND_STRESS * bondsAt(state, id).length };
 }
 
 function growStat(state, sid, amt, K, rng) {
@@ -209,23 +245,50 @@ function rollRest(state, rng) {
   return r.id === 'poor' && state.week < 9 ? REST_RESULTS[1] : r;
 }
 
+function rollOuting(rng) {
+  let x = rng();
+  return OUTINGS.find(o => (x -= o.rate) < 0) || OUTINGS[1];
+}
 export function runWeek(state, id, topic) {
   const rng = rngOf(state);
-  const a = ACT[id];
+  const a = ACT[id], force = state.force || {}; // force: 확인 링크에서 장면을 정해 보여 줄 때만 쓴다
+  state.force = null;
   if (id === 'lesson') { topic = topic || coachTopic(state); state.lastTopic = topic; state.lessonCount++; state.coach += 1.5; }
   const fx = effectOf(state, id, topic);
-  const people = a.train ? [...(state.faces[id] || [])] : [], bonds = a.train ? bondsAt(state, id) : [];
-  const lead = bonds[0] || people[0] || null;
-  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : null, gains: {}, with: lead, people, bonds, scene: null, mile: null, cond0: state.condition };
+  const cond0 = state.condition, condOn = [], condOff = [];
+  const on = c => { if (!hasCond(state, c)) condOn.push(c); state.conds[c] = CONDS[c].turns; };
+  const off = c => { if (hasCond(state, c)) { delete state.conds[c]; condOff.push(c); } };
+  const log = { week: state.week, act: id, topic: id === 'lesson' ? topic : null, gains: {}, scene: null, mile: null, cond0, conds0: Object.keys(state.conds), injury0: state.injury?.name || null };
   if (id === 'rest') {
     const r = rollRest(state, rng);
     fx.fatigue = r.fatigue; fx.stress = r.stress;
-    log.rest = r.id; log.mood = r.mood;
-    state.moodNudge = r.mood;
+    log.rest = r.id;
     state.condition = clamp(state.condition + r.mood, -2, 2);
+    if (r.id === 'deep') on('light');
+    if (r.id !== 'poor') off('sore');
   }
+  if (id === 'family') {
+    // 여행 가거나 놀러 가면 마음이 비워진다
+    const o = OUTINGS.find(x => x.id === force.outing) || rollOuting(rng);
+    fx.fatigue = o.fatigue; fx.stress = o.stress;
+    log.outing = o.id;
+    state.condition = clamp(state.condition + o.mood, -2, 2);
+    off('doubt');
+    if (o.id === 'trip') off('yips');
+    else if (hasCond(state, 'yips')) state.conds.yips = Math.max(1, state.conds.yips - 2);
+  }
+  if (id === 'clinic') {
+    off('sore');
+    if (state.injury) { state.injury.weeks -= 4; if (state.injury.weeks <= 0) { log.healed = state.injury.name; state.injury = null; } }
+  }
+  // 무리하면 실패하고, 코트에서는 연습한 대로 나왔는지가 갈린다
+  const fail = a.risk ? force.fail || (rng() < failChance(state, a) ? rollFailKind(rng) : null) : null;
+  const feel = !fail && a.tennis && state.week >= 3 ? force.feel || rollFeel(state, id, rng) : null;
+  const people = a.train ? [...(state.faces[id] || [])] : [], bonds = a.train && !fail ? bondsAt(state, id) : [];
+  const lead = bonds[0] || people[0] || null;
+  log.with = lead; log.people = people; log.bonds = bonds;
   const before = bigValues(state.stats), f0 = state.fatigue, s0 = state.stress;
-  const K = actionK(state, id), plan = growthPlan(state, id, fx);
+  const K = actionK(state, id) * (fail ? 0.3 : feel === 'good' ? 1.15 : feel === 'bad' ? 0.85 : 1), plan = growthPlan(state, id, fx);
   for (const [sid, amt] of Object.entries(plan)) growStat(state, sid, amt, K, rng);
   log.K = K; log.plan = plan;
   const fatigueNow = fatigueOf(state, a, fx);
@@ -233,17 +296,24 @@ export function runWeek(state, id, topic) {
     const ps = state.partners[pid];
     ps.aff = clamp(ps.aff + AFF_PER_TRAIN, 0, 100); ps.combo = clamp(ps.combo + 2, 0, 100);
   }
-  if (a.train) {
+  if (a.train && !fail) {
     state.lastSpot = id;
     const sp = state.spots[id];
     sp.n++;
     if (sp.n % SPOT_USES_PER_LV === 0 && sp.lv < SPOT_MAX_LV) { sp.lv++; log.spotUp = sp.lv; }
   }
-  if (a.risk && rng() < injuryChance(state)) {
-    const names = ['테니스 엘보', '발목 염좌', '손목 통증', '종아리 근육 경련', '어깨 통증'];
-    state.injury = { name: names[Math.floor(rng() * names.length)], weeks: 2 * (1 + Math.floor(rng() * 3)) };
-    state.injuries++;
-    state.pendingEvents.push({ id: 'injury' });
+  if (id === 'lesson' && topic === 'serve' && hasCond(state, 'yips')) { state.conds.yips -= 2; if (state.conds.yips <= 0) off('yips'); }
+  if (fail) {
+    log.fail = fail;
+    log.failLine = FAIL_LINES[fail][Math.floor(rng() * FAIL_LINES[fail].length)];
+    applyFail(state, fail, rng, on, off);
+  }
+  if (feel) {
+    log.feel = feel;
+    state.condition = clamp(state.condition + (feel === 'good' ? 1 : -1), -2, 2);
+    if (feel === 'good') { if (hasCond(state, 'doubt')) off('doubt'); else if (rng() < 0.5) on('sure'); }
+    else if (hasCond(state, 'sure')) { off('sure'); on('doubt'); } // 어제는 되는 줄 알았는데
+    else if (rng() < 0.3) on('doubt');
   }
   state.fatigue += fatigueNow - 3;
   state.stress += fx.stress + BOND_STRESS * bonds.length + 4; // 4는 회사 생활
@@ -256,30 +326,33 @@ export function runWeek(state, id, topic) {
   const after = bigValues(state.stats);
   for (const b of BIG_STATS) { const g = after[b.id] - before[b.id]; if (g >= 0.05) log.gains[b.id] = g; }
   log.fatigue = state.fatigue - f0; log.stress = state.stress - s0;
-  log.scene = pickScene(state, id, log.topic, lead, after, rng, log.rest);
-  if (a.train) log.mile = checkMilestone(state, after, log.topic || a.mile);
+  log.mood = state.condition - cond0;
+  log.condOn = condOn; log.condOff = condOff;
+  if (feel) { const l = FEEL_LINES[id][feel]; log.scene = { who: 'me', text: l[Math.floor(rng() * l.length)] }; }
+  else if (!fail) log.scene = pickScene(state, id, log.topic, lead, after, rng, log.rest, log.outing);
+  if (a.train && !fail) log.mile = checkMilestone(state, after, log.topic || a.mile);
   log.before = before; log.f0 = f0; log.s0 = s0;
-  log.desc = pickDesc(state, id, log.topic, people, rng);
+  log.desc = pickDesc(state, id, log.topic, people, rng, log.outing);
   if (bonds.length) log.bondLine = BOND_TRAIN_LINES[Math.floor(rng() * BOND_TRAIN_LINES.length)].replaceAll('{p}', PARTNER[bonds[0]].name);
-  if (!log.mile && state.week >= 3 && !SCENES.some(x => x.week === state.week && x.act === id)) log.choice = pickChoice(state, id, lead, rng);
+  if (!fail && !feel && !log.mile && state.week >= 3 && !SCENES.some(x => x.week === state.week && x.act === id)) log.choice = pickChoice(state, id, lead, rng, log.outing);
   state.weekLog = log;
   return log;
 }
 // 결과의 첫 단계: 상황 설명
-function pickDesc(state, id, topic, people, rng) {
+function pickDesc(state, id, topic, people, rng, outing) {
   if (state.week === 1) return DESC_LINES.first[0];
   const a = ACT[id];
-  const pool = [...(DESC_LINES[id] || []), ...(a.tennis ? DESC_SEASON[weekInfo(state.week).quarter] || [] : [])];
+  const pool = outing ? DESC_OUTING[outing] : [...(DESC_LINES[id] || []), ...(a.tennis ? DESC_SEASON[weekInfo(state.week).quarter] || [] : [])];
   if (!pool.length) return '';
   const name = topic ? LESSONS[topic].name : '';
   const line = pool[Math.floor(rng() * pool.length)].replaceAll('{topic}', name);
   return people.length ? `${line} ${people.map(p => PARTNER[p].name).join(', ')}도 온다고 했다.` : line;
 }
 // 세 턴에 한 번쯤 선택이 끼어든다. 안 나온 것부터 나온다.
-const CHOICE_RATE = 0.35;
-function pickChoice(state, id, face, rng) {
+const CHOICE_RATE = 0.45;
+function pickChoice(state, id, face, rng, outing) {
   if (rng() >= CHOICE_RATE) return null;
-  const list = CHOICE_SCENES.filter(c => c.act === id && (!c.withFace || face));
+  const list = CHOICE_SCENES.filter(c => c.act === id && (!c.withFace || face) && (!c.outing || c.outing === outing));
   if (!list.length) return null;
   state.seenChoices = state.seenChoices || [];
   const fresh = list.filter(c => !state.seenChoices.includes(c.id));
@@ -324,7 +397,7 @@ function sceneTier(id, topic, big) {
   const key = { stroke: 'stroke', net: 'net', serve: 'serve', physical: 'physical', mental: 'mental' }[topic];
   return key ? tierOf(big[key]) : tierOf(big.tactics);
 }
-function pickScene(state, id, topic, face, big, rng, sleep) {
+function pickScene(state, id, topic, face, big, rng, sleep, outing) {
   const job = jobOf(state);
   if (id === 'overtime' && job && rng() < 0.6) return { who: 'me', text: job.overtime };
   const groupTopic = topic && LESSONS[topic]?.counter ? 'counter' : topic;
@@ -332,7 +405,7 @@ function pickScene(state, id, topic, face, big, rng, sleep) {
   const fixed = SCENES.find(x => x.week === state.week && x.act === id);
   let list = fixed ? [fixed] : [];
   if (!list.length && face) list = SCENES.filter(x => x.act === id && x.withFace);
-  if (!list.length) list = SCENES.filter(x => x.act === id && !x.week && !x.withFace && (x.tier === undefined || x.tier === tier) && (id !== 'lesson' || x.topic === groupTopic) && (x.sleep === undefined || x.sleep === sleep));
+  if (!list.length) list = SCENES.filter(x => x.act === id && !x.week && !x.withFace && (x.tier === undefined || x.tier === tier) && (id !== 'lesson' || x.topic === groupTopic) && (x.sleep === undefined || x.sleep === sleep) && (x.outing === undefined || x.outing === outing));
   if (!list.length) return null;
   const fresh = list.filter(x => !state.seen.includes(SCENES.indexOf(x)));
   const pool = fresh.length ? fresh : list;
@@ -493,10 +566,15 @@ export function endWeek(state) {
   state.slump = state.stress > 45 + mAvg / 2;
   if (state.slump && !wasSlump) state.pendingEvents.push({ id: 'slump' });
   if (state.stress >= 85) state.highStressWeeks += WEEKS_PER_TURN;
-  // 컨디션
-  const c = Math.round(gauss(rng) * 0.8 + (state.fatigue < 40 ? 0.5 : 0) + (state.stress < 30 ? 0.5 : 0) - (state.fatigue > 70 ? 1 : 0) - (state.stress > 70 ? 1 : 0));
-  state.condition = clamp(c + (state.moodNudge || 0), -2, 2); // 잠을 어떻게 잤는지가 다음 턴까지 간다
-  state.moodNudge = 0;
+  // 기분은 쌓인다. 피로와 스트레스가 깎고, 아주 좋거나 나쁜 기분은 시간이 지나면 보통으로 돌아온다.
+  let c = state.condition;
+  if (state.stress > 70 && rng() < 0.5) c--;
+  else if (state.fatigue > 70 && rng() < 0.4) c--;
+  else if (c > 0 && rng() < 0.2) c--;
+  else if (c < 0 && rng() < 0.25) c++;
+  state.condition = clamp(c, -2, 2);
+  // 상태는 턴이 지나면 풀린다
+  for (const id of Object.keys(state.conds)) { state.conds[id]--; if (state.conds[id] <= 0) delete state.conds[id]; }
   state.confidence += (50 - state.confidence) * 0.1;
   // 파트너 성장
   for (const p of PARTNERS) state.partners[p.id].level = clamp(state.partners[p.id].level + p.growth * WEEKS_PER_TURN, 1, 95);
@@ -548,6 +626,11 @@ function rollEvents(state, rng) {
     else if (rng() < 0.12) state.pendingEvents.push({ id: 'dinner' });
   }
   if (!state.flags.boss && state.work >= 55 && state.week > 8 && rng() < 0.1) state.pendingEvents.push({ id: 'boss' });
+  // 몸이 안 좋을 때 잘 치는 사람이 같이 치자고 부른다
+  if (state.week > 8 && !tw && !state.overtime && !state.injury && state.fatigue >= 45 && rng() < 0.2) {
+    const me = overall(state.stats), list = PARTNERS.filter(p => state.partners[p.id].known && state.partners[p.id].level >= me - 5);
+    if (list.length) state.pendingEvents.push({ id: 'callout', pid: list[Math.floor(rng() * list.length)].id });
+  }
   if (tw && rng() < 0.15) state.pendingEvents.push({ id: 'string' });
   if (tw && rng() < 0.04) state.pendingEvents.push({ id: 'wedding' });
   if (!state.flags.secretary && state.club >= 30 && rng() < 0.15) state.pendingEvents.push({ id: 'secretary' });
@@ -580,6 +663,8 @@ export function eventView(state, ev) {
     case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
     case 'goalMiss': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "이번 목표(${g.text})는 아쉬웠어요. 괜찮아요, 다음 목표로 가요."`, choices: [['ok', '다시 해 보자']] }; }
     case 'story': { const st = STORIES.find(x => x.id === ev.story); return { who: st.who, title: st.title, text: st.text + (st.note ? ` (${st.note})` : ''), choices: [['ok', st.ok]] }; }
+    case 'callout': return { who: ev.pid, title: '번개 연락', text: `${P[ev.pid].name}: "오늘 한 게임 어때요? 한 자리 비어요." 몸이 좀 무겁긴 한데.`, choices: [['accept', '나간다'], ['refuse', '오늘은 못 나가요']] };
+    case 'yipsOn': return { who: 'coach', title: '입스가 왔다', text: '코치: "서브 토스가 안 떨어지죠? 누구나 한 번은 와요. 서브 레슨으로 천천히 풀어요. 머리를 비우는 것도 좋아요."', choices: [['ok', '네…']] };
     case 'bond': { const st = PERSON_STORIES[ev.pid][ev.step], full = st.at >= BOND_AT; return { who: ev.pid, title: full ? '호흡이 맞기 시작했다' : '조금 가까워졌다', text: st.text + (full ? ' (같이 훈련하면 훨씬 잘 늘고, 같이 대회에 나가면 편하게 친다)' : ''), choices: [['ok', st.ok]] }; }
     case 'realize': return { who: 'coach', title: '깨달음', text: `${REALIZE_LINES[ev.topic]} (레슨 선택지 추가: ${LESSONS[ev.topic].name})`, choices: [['ok', '배워 볼게요']] };
     case 'lessonsOpen': return { who: 'coach', title: '코치의 말', text: '코치: "이제 뭘 배울지 스스로 알겠죠? 레슨 내용은 직접 골라 봐요."', choices: [['ok', '네!']] };
@@ -590,6 +675,21 @@ export function eventView(state, ev) {
 export function resolveEvent(state, ev, choice) {
   const yes = choice === 'accept';
   switch (ev.id) {
+    case 'callout': {
+      const rng = rngOf(state), ps = state.partners[ev.pid];
+      if (!yes) { ps.aff = clamp(ps.aff - 1, 0, 100); state.eventNote = '아쉬운 답장이 왔다. 그래도 몸이 먼저다.'; break; }
+      ps.aff = clamp(ps.aff + 3, 0, 100); state.fatigue += 8;
+      if (rng() < failChance(state, ACT.club)) {
+        const kind = rollFailKind(rng), on = c => { state.conds[c] = CONDS[c].turns; }, off = c => { delete state.conds[c]; };
+        applyFail(state, kind, rng, on, off);
+        state.eventNote = FAIL_LINES[kind][Math.floor(rng() * FAIL_LINES[kind].length)];
+      } else {
+        const fx = effectOf(state, 'club');
+        for (const [sid, amt] of Object.entries(growthPlan(state, 'club', fx))) growStat(state, sid, amt * 0.5, 1, rng);
+        state.eventNote = '힘들었지만 나오길 잘했다. 잘 치는 사람과 치면 확실히 다르다.';
+      }
+      break;
+    }
     case 'deadline': if (yes) { state.overtime = true; state.work += 8; } else state.work -= 8; break;
     case 'dinner': if (yes) { state.work += 3; state.fatigue += 5; } else state.work -= 3; break;
     case 'boss': state.flags.boss = true; if (yes) { state.work += 6; state.club += 2; state.fatigue += 5; } break;
@@ -709,7 +809,9 @@ export function buildTeams(state, tr) {
   npc.players.forEach(p => { p.club = opp.club; });
   const cond = state.condition - (tr.spare ? 1 : 0);
   const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond };
-  if (state.yips > 0) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
+  if (hasCond(state, 'yips')) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
+  if (hasCond(state, 'sure')) me.conf = Math.min(100, me.conf + 6);
+  if (hasCond(state, 'doubt')) me.conf = Math.max(0, me.conf - 8);
   const ps = state.partners[tr.partner];
   // 호흡이 맞는 사람과 나가면 뭘 할지 아니까 대처가 빠르고, 부담감이 줄어 편하게 친다
   if (hasBond(state, tr.partner)) {
@@ -727,7 +829,7 @@ export function recordMatch(state, tr, sim, auto = false) {
   const opp = currentOpponent(tr);
   const me = sim.P[0];
   tr.log.push({ stage: stageLabel(tr), opp: opp.names.join('·'), club: opp.club, arch: opp.archName, won, auto, games: [...sim.games] });
-  if (me.rec.df >= 5) state.yips = Math.max(state.yips, 3);
+  if (me.rec.df >= 5) { if (!hasCond(state, 'yips')) state.pendingEvents.push({ id: 'yipsOn' }); state.conds.yips = CONDS.yips.turns; }
   if (won && !state.flags.firstWin) state.flags.firstWin = state.week;
   state.confidence = clamp(state.confidence + (won ? 6 : -3), 0, 100);
   const ps = state.partners[tr.partner];
@@ -762,6 +864,13 @@ function finishTournament(state, tr, stage) {
   const lines = TOUR_LINES[stage];
   tr.scene = lines[state.results.length % lines.length].replaceAll('{p}', PARTNER[tr.partner].name);
   state.fatigue = clamp(state.fatigue + tr.fatigue, 0, 100);
+  // 대회에서 연습한 대로 나왔는지가 기분과 마음에 남는다
+  const moved = { W: 2, F: 2, SF: 1, QF: 1, G: -1 }[stage] || 0;
+  state.condition = clamp(state.condition + moved, -2, 2);
+  tr.moodLine = moved > 0 ? '연습한 게 통했다. 기분이 좋아졌다.' : moved < 0 ? '연습한 게 안 나왔다. 기분이 가라앉았다.' : '';
+  if (moved > 0) { delete state.conds.doubt; state.conds.sure = CONDS.sure.turns; }
+  if (moved < 0) { delete state.conds.sure; state.conds.doubt = CONDS.doubt.turns; }
+  if (tr.matchIdx >= 4) state.conds.sore = CONDS.sore.turns;
   state.stress = clamp(state.stress + (stage === 'W' ? -15 : stage === 'G' ? 6 : 0), 0, 100);
   state.club = clamp(state.club + (stage === 'W' ? 8 : stage === 'F' ? 5 : stage === 'SF' ? 3 : 1), 0, 100);
   // 실전 경험

@@ -36,13 +36,14 @@ const randomProfile = () => Object.fromEntries(PROFILE.map(q => [q.key, pick(q.o
 function play(detail) {
   const s = G.newGame('테스트', randomProfile());
   let matches = 0, watched = 0, wins = 0, last = -99, turn = 0, bondTurns = 0, firstBond = null;
-  const used = {};
+  const used = {}, fails = {}, feels = { good: 0, bad: 0 };
+  let moodSum = 0, moodN = 0;
   const out = [];
   while (!s.ending) {
     turn++;
     while (s.pendingEvents.length) {
       const ev = s.pendingEvents.shift();
-      const yes = ev.id === 'invite' ? G.tour(s, ev.tid).week - last >= NATIONAL_GAP && s.fatigue < 60 : true;
+      const yes = ev.id === 'invite' ? G.tour(s, ev.tid).week - last >= NATIONAL_GAP && s.fatigue < 60 : ev.id === 'callout' ? Math.random() < 0.5 : true;
       G.resolveEvent(s, ev, yes ? 'accept' : 'refuse');
     }
     let tw = G.tournamentThisWeek(s);
@@ -64,12 +65,15 @@ function play(detail) {
     } else {
       let act = 'lesson', topic;
       if (s.overtime) act = 'overtime';
-      else if (s.injury) act = s.stress > 50 ? 'family' : 'rest';
+      else if (s.injury) act = s.stress > 50 ? 'family' : s.injury.weeks > 2 ? 'clinic' : 'rest';
       else if (s.stress > 55) act = 'family';
-      else if (s.fatigue > 45) act = 'rest';
+      else if (s.fatigue > 45 + Math.random() * 15) act = 'rest'; // 조금 무리하기도 한다
       else [act, topic] = chooseSpot(s);
       G.runWeek(s, act, topic);
       used[act] = (used[act] || 0) + 1;
+      if (s.weekLog.fail) fails[s.weekLog.fail] = (fails[s.weekLog.fail] || 0) + 1;
+      if (s.weekLog.feel) feels[s.weekLog.feel]++;
+      moodSum += s.condition; moodN++;
       if (s.weekLog.bonds?.length) { bondTurns++; firstBond = firstBond ?? s.weekLog.week; }
       if (s.weekLog.choice) G.chooseScene(s, turn % 2); // 선택은 번갈아 고른다
     }
@@ -81,7 +85,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
 }
 
 const rs = [];
@@ -96,7 +100,8 @@ console.log(`대회: ${range(rs.map(r => r.tours))} | 경기: ${range(rs.map(r =
 console.log(`최종 종합: ${range(rs.map(r => Math.round(r.overall)))} | 부상: ${range(rs.map(r => r.injuries))} | 달성 목표: ${range(rs.map(r => r.goals))} | 이야기 ${med(rs.map(r => r.stories))} 이정표 ${med(rs.map(r => r.miles))}`);
 const fb = rs.map(r => r.firstBond).filter(Boolean);
 console.log(`호흡 훈련: ${range(rs.map(r => r.bondTurns))}턴 | 첫 호흡 훈련 주: ${fb.length ? range(fb) : '없음'} | 호흡 맞는 사람 ${range(rs.map(r => r.bonded))}명`);
-console.log(`칸 사용 중앙값: ${['lesson', 'gym', 'practice', 'club', 'home', 'rest', 'family'].map(k => `${k} ${med(rs.map(r => r.used[k] || 0))}`).join(', ')} | 칸 레벨 예: ${rs[0].lv}`);
+console.log(`칸 사용 중앙값: ${['lesson', 'gym', 'practice', 'club', 'home', 'rest', 'family', 'clinic'].map(k => `${k} ${med(rs.map(r => r.used[k] || 0))}`).join(', ')} | 칸 레벨 예: ${rs[0].lv}`);
+console.log(`실패: ${range(rs.map(r => r.failN))}턴 | 연습한 대로 나옴 ${med(rs.map(r => r.feels.good))} 안 나옴 ${med(rs.map(r => r.feels.bad))} | 평균 기분 ${(rs.reduce((a, r) => a + r.mood, 0) / rs.length).toFixed(2)}`);
 console.log(`엔딩: ${count('ending')}`);
 for (const q of PROFILE) console.log(`${q.key} 승급 주 중앙값: ` + q.options.map(o => { const w = rs.filter(r => r[q.key] === o.id && r.promoted).map(r => r.promoted); return `${o.id} ${w.length ? med(w) : '-'}`; }).join(', '));
 const min = med(rs.map(r => r.watched)) * 3 + med(rs.map(r => r.turns)) * 0.5 + 60;

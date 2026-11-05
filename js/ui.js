@@ -1,17 +1,18 @@
 // 화면 — 타이틀, 인트로, 주간 행동, 결과, 메신저, 대회·랭킹, 능력치, 대회/경기, 엔딩
 import * as G from './game.js';
 import {
-  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, TRAIN_SPOTS, BOND_AT, REST_RESULTS, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
+  STAT_GROUPS, STAT_NAME, GROUP_BY_ID, ACT, TRAIN_SPOTS, BOND_AT, REST_RESULTS, OUTINGS, CONDS, LESSONS, BIG_STATS, INTRO_SCENES, PROFILE, DAY_NAMES, PARTNERS, PARTNER,
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, TEMPO_OPTS, SHOT_NAME } from './sim.js';
 import { MatchView, webglOK } from './match3d.js';
 import { portraitURL, heroURL, sceneURL, PLAYER_LOOK, oppLook } from './art.js';
-import { HOME_LINES, STATE_LINES, LOCK_LINES } from './scenes.js';
+import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD } from './scenes.js';
+import { CHECKS } from './checks.js';
 
 const app = document.getElementById('app');
 let S = null;
-const V = { screen: 'title', train: false, tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null, step: 0, wipe: false, evtDone: null, turnWord: null };
+const V = { check: location.search.includes('check'), screen: 'title', train: false, tab: null, thread: null, sheet: null, scene: 0, detail: false, profile: null, pick: null, note: null, step: 0, wipe: false, evtDone: null, turnWord: null };
 let M = null; // 경기 진행 상태
 let introTimer = null;
 
@@ -78,7 +79,7 @@ function runFx() {
 
 // ── 타이틀 ────────────────────────────────────────────────
 const SCREENS = {
-  title: () => `
+  title: () => V.check ? checkListHTML() : `
     <div class="screen title" data-a="titleStart">
       <div class="logo"><div class="ball">🎾</div><h1>테니스 선수<br>키우기</h1><p>개나리에서 국화까지, 직장인 3년 육성기</p></div>
       ${portrait('me', 'smile', 'title-pt')}
@@ -129,7 +130,7 @@ const SCREENS = {
     const place = tw ? 'tour' : S.overtime ? 'overtime' : pick;
     const pose = POSE_OF[place] || (S.injury || S.slump || S.fatigue >= 60 ? 'sad' : S.condition > 0 ? 'cheer' : 'ready');
     const pv = pick && pick !== 'tour' ? G.previewAction(S, pick) : null;
-    const riskPct = pv && ACT[pick].risk ? Math.round(pv.injury * 100) : null;
+    const riskPct = pv && ACT[pick].risk ? Math.round(pv.fail * 100) : null;
     const title = tw ? `🏆 ${tw.t.name} · 파트너 ${PARTNER[tw.entry.partner].name}` : S.overtime ? '💼 마감 야근' : pick === 'tour' ? `🏆 ${G.openTournament(S).name}` : pick ? actTitle(pick, pv.topic) : training ? '🎾 무슨 훈련을 할까' : '';
     const bubble = pick ? pickInfo() : V.note ? `<div class="say"><span>${esc(V.note)}</span></div>` : `<div class="say">${say.who !== 'me' ? portrait(say.who, 'smile', 'pt xs') : ''}<span>${esc(say.text)}</span></div>`;
     return `
@@ -145,7 +146,7 @@ const SCREENS = {
           <button class="sidebtn" data-a="go" data-s="msg" aria-label="메신저">💬${G.unread(S) ? `<i>${G.unread(S)}</i>` : ''}</button>
         </div>
         ${bubble}
-        ${riskPct !== null ? `<div class="risk lv${riskPct < 5 ? 0 : riskPct < 15 ? 1 : 2}"><small>부상 위험</small><b>${riskPct}%</b></div>` : ''}
+        ${riskPct !== null ? `<div class="risk lv${riskPct < 5 ? 0 : riskPct < 15 ? 1 : 2}"><small>실패 위험</small><b>${riskPct}%</b></div>` : ''}
       </div>
       <div class="homepanel">
         ${statRow(pv ? Object.fromEntries(pv.gains) : {}, true)}
@@ -161,17 +162,19 @@ const SCREENS = {
     const L = S.weekLog, steps = resultSteps(L), step = steps[Math.min(V.step, steps.length - 1)];
     const done = step === 'result', after = done || step === 'rank';
     const rest = REST_RESULTS.find(r => r.id === L.rest);
-    const pose = step === 'mile' || step === 'rank' || step === 'bond' ? 'cheer' : rest && step !== 'desc' ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
+    const outing = OUTINGS.find(o => o.id === L.outing);
+    const pose = L.fail && step !== 'desc' ? 'sad' : step === 'mile' || step === 'rank' || step === 'bond' ? 'cheer' : rest && step !== 'desc' ? REST_POSE[rest.id] : POSE_OF[L.act] || 'ready';
     const fatigue0 = S.fatigue - L.fatigue;
     const big = done ? bigResult(L) : null, ranks = step === 'rank' ? rankUps(L) : [];
     const moving = step === 'desc' || step === 'talk';
     return `
     <div class="screen home ${step === 'choice' ? 'askmode' : ''} ${done ? 'hopping' : ''}" ${step === 'choice' ? '' : 'data-a="resnext"'}>
-      ${bgHTML(SCENE_OF[L.act] || 'home', weekInfo(L.week), rest?.id === 'poor' && step !== 'desc' ? 'dim' : '')}
-      ${hudHTML(false, after ? { fatigue: done ? fatigue0 : S.fatigue, ...(done ? { to: S.fatigue } : {}) } : { fatigue: fatigue0, cond: L.cond0 })}
+      ${bgHTML(OUTING_SCENE[L.outing] || SCENE_OF[L.act] || 'home', weekInfo(L.week), (rest?.id === 'poor' || L.fail) && step !== 'desc' ? 'dim' : '')}
+      ${hudHTML(false, after ? { fatigue: done ? fatigue0 : S.fatigue, ...(done ? { to: S.fatigue } : {}) } : { fatigue: fatigue0, cond: L.cond0, conds: L.conds0, injury: L.injury0 })}
       <div class="hero">
         ${moving ? actorHTML(L, pose) : heroHTML(pose, LOOK_OF[L.act])}
-        ${done && rest ? `<div class="ribbon evt"><small>${ACT.rest.icon} ${ACT.rest.name}</small><b>${esc(rest.name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
+        ${done && (rest || outing) ? `<div class="ribbon evt"><small>${ACT[L.act].icon} ${ACT[L.act].name}</small><b>${esc((rest || outing).name)}</b></div>` : `<div class="ribbon">${esc(actTitle(L.act, L.topic))}</div>`}
+        ${step === 'fail' ? `<div class="bigword bad">${esc(FAIL_WORD[L.fail])}</div>` : ''}
         ${step === 'mile' ? `<div class="bigword good"><small>★ 처음 해낸 순간</small>${esc(L.mile.title)}</div>` : ''}
         ${step === 'bond' ? `<div class="bigword good"><small>${esc(namesOf(L.bonds))}</small>호흡 훈련!</div>` : ''}
         ${done && stampWord(L) ? `<div class="stamp">${esc(stampWord(L))}</div>` : ''}
@@ -267,7 +270,7 @@ const SCREENS = {
     return `<div class="screen tour">
       <div class="tour-head ${tr.type}"><small>${tr.type === 'national' ? '전국대회' : '비전국대회'} · ${tr.div}부 · 본선 ${tr.draw}강</small><h2>${esc(tr.name)}</h2>
       <p>${tr.seed ? `시드 ${tr.seed}번${tr.bye ? ' · 예선 면제' : ''}` : '노시드'}</p></div>
-      <div class="vs">${portrait('me', 'focus', 'pt')}${portrait(tr.partner, 'smile', 'pt')}<div><b>${esc(S.name)} · ${esc(PARTNER[tr.partner].name)}</b><small>콤비 ${Math.round(S.partners[tr.partner].combo)} · 컨디션 ${COND[S.condition + 2]}${tr.spare ? ' · 예비 라켓' : ''}${G.hasBond(S, tr.partner) ? ' · <span class="pos">호흡이 맞는다</span>' : ''}</small></div></div>
+      <div class="vs">${portrait('me', 'focus', 'pt')}${portrait(tr.partner, 'smile', 'pt')}<div><b>${esc(S.name)} · ${esc(PARTNER[tr.partner].name)}</b><small>콤비 ${Math.round(S.partners[tr.partner].combo)} · 컨디션 ${COND[S.condition + 2]}${tr.spare ? ' · 예비 라켓' : ''}${G.hasBond(S, tr.partner) ? ' · <span class="pos">호흡이 맞는다</span>' : ''}${G.condList(S).map(c => ` · ${esc(c.name)}`).join('')}</small></div></div>
       ${opps.length ? `<div class="card"><h3>예선 상대 (1승이면 본선)</h3>${opps.map(o => oppRow(o)).join('')}</div>` : `<div class="card"><p>상위 시드라 예선 없이 본선부터 시작합니다.</p></div>`}
       ${planHTML(opps[0] || G.currentOpponent(tr))}
       <div class="actions"><button class="btn primary big" data-a="match">${opps.length ? '첫 경기 시작 ▶' : '본선 시작 ▶'}</button></div>
@@ -330,7 +333,7 @@ const SCREENS = {
     const promo = tr.final === 'W' && tr.type === 'national' && tr.div === '개나리';
     return `<div class="screen tour">
       <div class="tour-head ${tr.type}"><small>${esc(tr.name)} · ${tr.div}부</small><h2>${STAGE_NAME[tr.final]}${tr.final === 'W' ? ' 🏆' : ''}</h2></div>
-      <div class="vs">${portrait('me', tr.final === 'W' ? 'joy' : ['F', 'SF'].includes(tr.final) ? 'smile' : 'cry', 'pt')}${portrait(tr.partner, tr.final === 'W' ? 'joy' : 'smile', 'pt')}<div><b>랭킹 포인트 +${tr.pts}</b><small>피로 +${tr.fatigue}, 실전 경험으로 멘탈·전술·대처 상승</small></div></div>
+      <div class="vs">${portrait('me', tr.final === 'W' ? 'joy' : ['F', 'SF'].includes(tr.final) ? 'smile' : 'cry', 'pt')}${portrait(tr.partner, tr.final === 'W' ? 'joy' : 'smile', 'pt')}<div><b>랭킹 포인트 +${tr.pts}</b><small>피로 +${tr.fatigue}, 실전 경험으로 멘탈·전술·대처 상승${tr.moodLine ? `<br>${esc(tr.moodLine)}` : ''}</small></div></div>
       <div class="scenecard"><p>${esc(tr.scene)}</p></div>
       ${promo ? `<div class="alert good big">🌼 국화 승급! 이제 국화부 대회에만 나갑니다.</div>` : ''}
       <div class="card">${tr.log.map(logRow).join('')}</div>
@@ -356,12 +359,13 @@ function logRow(l) { return `<div class="resrow"><span>${l.stage}</span><b>${esc
 function oppRow(o) { return `<div class="opp">${portrait(`opp:${o.seed % 997}:0`, 'focus', 'pt sm')}${portrait(`opp:${o.seed % 997}:1`, 'base', 'pt sm')}<div><b>${esc(o.names.join(' · '))}</b><small>${esc(o.club)} · ${esc(o.archName)} · ${grade(o.rating)}급</small></div></div>`; }
 
 // 주간 화면 조각
-const SCENE_OF = { lesson: 'court', gym: 'gym', practice: 'wall', club: 'club', home: 'room', rest: 'room', family: 'cafe', tour: 'venue', overtime: 'office' };
-const POSE_OF = { lesson: 'fh', gym: 'stretch', practice: 'bh', club: 'volley', home: 'stretch', rest: 'relax', family: 'relax', tour: 'serve', overtime: 'tired' };
+const SCENE_OF = { lesson: 'court', gym: 'gym', practice: 'wall', club: 'club', home: 'room', rest: 'room', family: 'cafe', clinic: 'clinic', tour: 'venue', overtime: 'office' };
+const OUTING_SCENE = { trip: 'sea', play: 'cafe', home: 'room' };
+const POSE_OF = { lesson: 'fh', gym: 'stretch', practice: 'bh', club: 'volley', home: 'stretch', rest: 'relax', family: 'relax', clinic: 'relax', tour: 'serve', overtime: 'tired' };
 const REST_POSE = { poor: 'tired', fine: 'relax', deep: 'stretch' };
 // 코트 밖에서는 옷이 다르다 (임시 그림)
 const OFF_COURT = { band: PLAYER_LOOK.hair };
-const LOOK_OF = { gym: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#e86a8a' }, home: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, rest: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, family: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#f3b94f' }, overtime: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#5b6b84' } };
+const LOOK_OF = { clinic: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, gym: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#e86a8a' }, home: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, rest: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#a9c7ea' }, family: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#f3b94f' }, overtime: { ...PLAYER_LOOK, ...OFF_COURT, outfit: '#5b6b84' } };
 const BTN_ROWS = [['rest', 'train', 'skill'], ['clinic', 'family', 'tour']];
 const namesOf = ids => ids.map(id => PARTNER[id].name).join(', ');
 const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '좋음'], ['↑', '최고']];
@@ -370,7 +374,7 @@ function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding
 function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">`; }
 // ── 결과 단계: 설명 → (가끔) 선택 → 대사 → 결과 ─────────────
 function resultSteps(L) {
-  return [L.desc && 'desc', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', L.bonds?.length && 'bond', 'result', rankUps(L).length && 'rank'].filter(Boolean);
+  return [L.desc && 'desc', L.fail && 'fail', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', L.bonds?.length && 'bond', 'result', rankUps(L).length && 'rank'].filter(Boolean);
 }
 // 이번 턴에 등급이 오른 능력치
 function rankUps(L) {
@@ -381,14 +385,16 @@ function rankUps(L) {
 // 결과 단계의 도장. 쉬는 행동에는 찍지 않는다.
 function stampWord(L) {
   if (!ACT[L.act].train) return '';
+  if (L.fail) return '';
   if (L.bonds?.length) return '호흡 훈련!';
+  if (L.feel === 'good') return '잘 나왔다!';
+  if (L.feel === 'bad') return '안 나왔다…';
   if (S.slump) return '그럭저럭…';
-  if ((L.cond0 ?? 0) >= 2) return '대성공!';
   return { lesson: '성공!', gym: '운동 완료!', practice: '연습 완료!', club: '좋은 게임!', home: '오늘도 완료!' }[L.act];
 }
 // 행동 중의 움직임 (임시 그림): 테니스는 두 자세가 번갈아 나오고 공이 오간다
 const SWING = { lesson: ['fh', 'bh'], gym: ['stretch', 'tired'], practice: ['bh', 'fh'], club: ['volley', 'fh'], home: ['stretch', 'relax'] };
-const FLOAT = { rest: 'Z', family: '♥', overtime: '…' };
+const FLOAT = { rest: 'Z', family: '♥', clinic: '+', overtime: '…' };
 function actorHTML(L, pose) {
   const pair = SWING[L.act], fl = FLOAT[L.act], look = LOOK_OF[L.act] || PLAYER_LOOK;
   if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}`;
@@ -427,6 +433,7 @@ function stepDialog(step, L) {
     const s = speech(L.mile.text);
     return `<div class="dialog"><div><p>${esc(L.mile.text)}</p>${foot}</div></div>`;
   }
+  if (step === 'fail') return `<div class="dialog"><div><p>${esc(L.failLine)}</p>${foot}</div></div>`;
   if (step === 'bond') return `<div class="dialog">${portrait(L.bonds[0], 'joy', 'pt sm')}<div><p>${esc(L.bondLine)}</p>${foot}</div></div>`;
   if (step === 'rank') return `<div class="dialog"><div><ul class="reslines">${rankUps(L).map(r => `<li>${esc(r.name)} 등급이 <b class="up">${r.from}</b>에서 <b class="up">${r.to}</b>로 올랐다.</li>`).join('')}</ul>${foot}</div></div>`;
   return `<div class="dialog"><div><ul class="reslines">${resultLines(L).map(x => `<li>${x}</li>`).join('')}</ul>${foot}</div></div>`;
@@ -434,6 +441,7 @@ function stepDialog(step, L) {
 // ── 이벤트: 팝업이 아니라 전체 화면. 선택지에는 효과를 쓰지 않고, 고른 뒤에 드러낸다 ──
 // [배경, 자세, 분위기(good·bad면 큰 글자)]
 const EVENT_LOOK = {
+  callout: ['club', 'ready', ''], yipsOn: ['court', 'sad', 'bad'],
   deadline: ['office', 'tired', 'bad'], dinner: ['office', 'ready', ''], boss: ['office', 'ready', ''], string: ['court', 'sad', 'bad'],
   wedding: ['cafe', 'relax', ''], secretary: ['club', 'ready', ''], coachMove: ['court', 'sad', 'bad'], injury: ['room', 'sad', 'bad'],
   slump: ['court', 'sad', 'bad'], secret: ['court', 'cheer', 'good'], promotion: ['venue', 'cheer', 'good'], rival: ['venue', 'ready', 'bad'],
@@ -484,15 +492,23 @@ function eventLines(s0) {
 }
 // 받침에 맞는 주격 조사: 네트가, 멘탈이
 const withSubj = name => { const c = name.charCodeAt(name.length - 1) - 0xAC00; return name + (c >= 0 && c % 28 ? '이' : '가'); };
-// 결과 글: 변화마다 한 줄
+// 결과 글: 가장 중요한 변화부터 짧게. 능력치는 위쪽 줄에 모두 보이고, 기분은 띠로 보인다.
 function resultLines(L) {
-  const out = Object.entries(L.gains).filter(([, g]) => g >= 0.5).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, g]) => `${withSubj(BIG_NAME[id])} <b class="up">${Math.round(g)}</b> 올랐다.`);
+  const out = [], on = L.condOn || [], off = L.condOff || [];
+  if (L.healed) out.push(`${withSubj(L.healed)} 나았다.`);
+  else if (L.act === 'clinic') out.push('치료를 받았다. 곧 나을 것 같다.');
+  // 되는 줄 알았다가 안 되는 순간은 한 줄로 보여 준다
+  if (on.includes('doubt') && off.includes('sure')) out.push(`"${esc(CONDS.sure.name)}"가 "<b class="down">${esc(CONDS.doubt.name)}</b>"로 바뀌었다.`);
+  else {
+    for (const c of on) out.push(`"<b class="${CONDS[c].kind === 'good' ? 'up' : 'down'}">${esc(CONDS[c].name)}</b>" 상태가 됐다.`);
+    for (const c of off) out.push(`"${esc(CONDS[c].name)}" 상태가 풀렸다.`);
+  }
+  for (const [id, g] of Object.entries(L.gains).filter(([, v]) => v >= 0.5).sort((x, y) => y[1] - x[1]).slice(0, 2)) out.push(`${withSubj(BIG_NAME[id])} <b class="up">${Math.round(g)}</b> 올랐다.`);
   const f = Math.round(-L.fatigue), st = Math.round(L.stress);
   if (f >= 1) out.push(`체력이 <b class="up">${f}</b> 회복됐다.`);
   if (f <= -1) out.push(`체력이 <b class="down">${-f}</b> 줄었다.`);
-  if (st <= -1) out.push(`스트레스가 <b class="up">${-st}</b> 줄었다.`);
-  if (st >= 1) out.push(`스트레스가 <b class="down">${st}</b> 늘었다.`);
-  if (L.mood) out.push(L.mood < 0 ? '기분이 가라앉았다.' : '기분이 좋아졌다.');
+  if (st <= -5) out.push(`스트레스가 <b class="up">${-st}</b> 줄었다.`);
+  if (st >= 5) out.push(`스트레스가 <b class="down">${st}</b> 늘었다.`);
   if (L.people?.length) out.push(`${esc(withJosa(namesOf(L.people)))} 더 가까워졌다.`);
   if (L.spotUp) out.push(`${withSubj(ACT[L.act].name)} <b class="up">Lv${L.spotUp}</b>로 올랐다.`);
   if (!out.length) out.push(L.act === 'rest' ? '체력은 이미 가득하다.' : '별다른 변화는 없었다.');
@@ -500,7 +516,8 @@ function resultLines(L) {
 }
 // 결과 단계의 큰 숫자: 쉬는 행동은 체력, 테니스는 가장 많이 오른 능력치
 function bigResult(L) {
-  if (L.act === 'rest' || L.act === 'family') { const n = Math.round(-L.fatigue); return n >= 1 ? { n, label: '체력' } : null; }
+  if (L.act === 'family') { const n = Math.round(-L.stress); return n >= 1 ? { n, label: '마음 비우기' } : null; }
+  if (L.act === 'rest' || L.act === 'clinic') { const n = Math.round(-L.fatigue); return n >= 1 ? { n, label: '체력' } : null; }
   const top = Object.entries(L.gains).sort((x, y) => y[1] - x[1])[0];
   return top && top[1] >= 0.5 ? { n: Math.round(top[1]), label: BIG_NAME[top[0]] } : null;
 }
@@ -517,6 +534,8 @@ function hudHTML(gear = true, view = {}) {
   const nextT = Object.entries(S.entries).map(([tid]) => G.tour(S, tid)).filter(t => t.week > S.week).sort((a, b) => a.week - b.week)[0];
   const cond = view.cond ?? S.condition;
   const [arrow, word] = MOOD[cond + 2];
+  const shown = view.conds ? view.conds.map(id => CONDS[id]) : G.condList(S), hurtName = view.conds ? view.injury : S.injury?.name;
+  const chips = [...shown.map(c => `<span class="cchip ${c.kind}">${esc(c.name)}</span>`), hurtName ? `<span class="cchip bad">${esc(hurtName)}</span>` : '', S.slump ? '<span class="cchip bad">슬럼프</span>' : ''].join('');
   return `<div class="uhud">
     <div class="hudtop"><span class="yr">${wi.label}</span><span class="badge div-${S.division}">${S.division === '국화' ? '🌼' : '🌱'} ${S.division}</span>${nextT ? `<span class="yr">📅 ${nextT.week - S.week}주 뒤 ${esc(nextT.name)}</span>` : ''}</div>
     ${gear ? `<button class="gearbtn" data-a="settings" aria-label="설정">⚙️</button>` : ''}
@@ -527,6 +546,7 @@ function hudHTML(gear = true, view = {}) {
         <div class="energy"><small>체력</small><div class="ebar"><i style="width:${Math.round(view.fatigue ?? S.fatigue)}%" ${view.to === undefined ? '' : `data-to="${Math.round(view.to)}"`}></i></div><span class="mood m${cond + 2}">${arrow} ${word}</span></div>
       </div>
     </div>
+    ${chips ? `<div class="condchips">${chips}</div>` : ''}
   </div>`;
 }
 // 큰 능력치 한 줄. plus에 값이 있으면 위에 +숫자가 뜬다
@@ -547,8 +567,13 @@ function gameButton(id) {
     const glow = can && !S.injury && openSpots().some(a => G.bondsAt(S, a.id).length);
     return `<button class="gbtn g-train ${can ? '' : 'off'} ${glow ? 'hot' : ''}" data-a="${can ? 'train' : 'nope'}" data-id="train"><span class="gi">${MAIN_BTN.train.icon}</span><b>${MAIN_BTN.train.name}</b></button>`;
   }
-  // 기술과 병원은 다음 묶음에서 열린다
-  if (id === 'skill' || id === 'clinic') return `<button class="gbtn g-${id} off" data-a="nope" data-id="${id}"><span class="gi">${MAIN_BTN[id].icon}</span><span class="lock">🔒</span><b>${MAIN_BTN[id].name}</b></button>`;
+  // 기술은 다음 묶음에서 열린다
+  if (id === 'skill') return `<button class="gbtn g-skill off" data-a="nope" data-id="skill"><span class="gi">${MAIN_BTN.skill.icon}</span><span class="lock">🔒</span><b>${MAIN_BTN.skill.name}</b></button>`;
+  // 병원은 아플 때만 열린다
+  if (id === 'clinic') {
+    const can = G.clinicOpen(S), on = V.pick === 'clinic';
+    return `<button class="gbtn g-clinic ${on ? 'on' : ''} ${can ? '' : 'off'} ${can && !on ? 'hot' : ''}" data-a="${can ? 'act' : 'nope'}" data-id="clinic"><span class="gi">${MAIN_BTN.clinic.icon}</span>${can ? '' : '<span class="lock">🔒</span>'}<b>${on ? '이걸로 ▶' : MAIN_BTN.clinic.name}</b></button>`;
+  }
   const isTour = id === 'tour', open = isTour && G.openTournament(S);
   const a = MAIN_BTN[id] || ACT[id];
   const locked = isTour && !open;
@@ -572,7 +597,7 @@ function trainGrid() {
 // 설정. 지우기 전에 한 번 더 묻는다
 function settingsHTML() {
   if (V.sheet === 'restart') return `<div class="overlay ev"><div class="sheet event"><h3>맨 처음부터 할까요?</h3><p>지금까지의 기록이 모두 사라지고 되돌릴 수 없어요.</p><div class="choices"><button class="btn" data-a="cancelsheet">계속 할게요</button><button class="btn danger" data-a="restart">처음부터 하기</button></div></div></div>`;
-  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1"><h3>설정</h3><button class="btn danger" data-a="restartAsk">맨 처음부터 하기</button><p class="hint">타이틀 화면으로 돌아가 이름을 정하는 것부터 다시 시작합니다.</p><button class="btn" data-a="cancelsheet">닫기</button></div></div>`;
+  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1"><h3>설정</h3>${V.check ? '<button class="btn primary" data-a="checkhome">확인할 장면 목록으로</button>' : ''}<button class="btn danger" data-a="restartAsk">맨 처음부터 하기</button><p class="hint">타이틀 화면으로 돌아가 이름을 정하는 것부터 다시 시작합니다.</p><button class="btn" data-a="cancelsheet">닫기</button></div></div>`;
 }
 // 못 고르는 버튼을 눌렀을 때 하는 혼잣말
 function nopeLine(id) {
@@ -589,6 +614,10 @@ function homeLine(tw) {
   if (S.injury) return { who: 'me', text: STATE_LINES.injury.replace('{name}', S.injury.name) };
   if (tw) return { who: 'me', text: STATE_LINES.entered.replace('{name}', tw.t.name) };
   if (S.overtime) return { who: 'me', text: STATE_LINES.overtime };
+  if (G.hasCond(S, 'doubt')) return { who: 'me', text: STATE_LINES.doubt };
+  if (G.hasCond(S, 'yips')) return { who: 'me', text: STATE_LINES.yips };
+  if (G.hasCond(S, 'sore')) return { who: 'me', text: STATE_LINES.sore };
+  if (G.hasCond(S, 'sure')) return { who: 'me', text: STATE_LINES.sure };
   if (S.stress >= 50) return { who: 'me', text: STATE_LINES.stressed };
   if (S.slump) return { who: 'me', text: STATE_LINES.slump };
   if (open) return { who: 'me', text: STATE_LINES.open.replace('{name}', open.name) };
@@ -611,7 +640,8 @@ function pickInfo() {
     home: () => '집에서 몸을 풀어요. 혼자 하지만 거의 안 지쳐요.',
     club: () => '클럽 사람들과 게임해요. 실전 감각이 붙어요.',
     rest: () => '오늘은 쉬어요. 잘 자면 체력이 크게 회복돼요.',
-    family: () => '가족·친구를 만나요. 스트레스가 풀려요.',
+    family: () => '어디론가 놀러 가요. 마음이 비워져요.',
+    clinic: () => S.injury ? `${S.injury.name}, 치료를 받아요. 더 빨리 나아요.` : '물리치료를 받아요. 쑤시는 게 풀려요.',
   }[V.pick]();
   const tire = p.fatigue >= 16 ? '많이 지쳐요.' : p.fatigue > 2 ? '조금 지쳐요.' : '';
   const fc = bonds.length ? `${withJosa(namesOf(bonds))} 호흡이 맞아요!` : people.length ? `${withJosa(namesOf(people))} 같이 해요.` : '';
@@ -664,6 +694,20 @@ function planHTML(opp) {
   </div>`;
 }
 
+// 확인 링크(?check)의 첫 화면. 플레이 순서대로 장면을 바로 연다.
+function checkListHTML() {
+  let group = '';
+  const rows = CHECKS.map((c, i) => {
+    const head = c.group !== group ? `<h3>${esc(c.group)}</h3>` : '';
+    group = c.group;
+    return `${head}<button class="lessonrow" data-a="checkgo" data-i="${i}"><b>${esc(c.label)}</b><small>${esc(c.hint)}</small></button>`;
+  }).join('');
+  return `<div class="screen stats"><header class="topbar"><div class="wk">확인할 장면</div><div class="sub">플레이 순서대로</div></header>
+    <p class="hint">눌러서 그 장면으로 바로 갑니다. 실제 저장에는 영향이 없어요. 돌아오려면 ⚙️ 설정을 누르세요.</p>
+    <div class="checklist">${rows}</div>
+  </div>`;
+}
+
 function bubble(m) {
   return `<div class="bub">${portrait(m.from, 'smile', 'pt xs')}<div><p>${esc(m.text)}</p><small class="when">${weekInfo(m.week).label}</small></div></div>`;
 }
@@ -708,6 +752,14 @@ async function onClick(e) {
   if (stop && t.dataset.a.startsWith('close')) return;
   const a = t.dataset.a, d = t.dataset;
   switch (a) {
+    case 'checkgo': {
+      S = G.newGame('확인', { job: 'sales', past: 'sport', why: 'friend' });
+      CHECKS[+d.i].make(S);
+      S.phase = 'plan'; V.screen = 'week'; V.sheet = null; V.pick = null; V.note = null; V.train = false; V.wipe = false;
+      G.save(S);
+      break;
+    }
+    case 'checkhome': V.sheet = null; V.screen = 'title'; break;
     case 'titleStart':
       if (S && !S.ending) { V.screen = S.tournament ? (S.tournament.finished ? 'tourResult' : 'between') : S.phase === 'result' ? 'result' : 'week'; break; }
       showScene(0); return;
@@ -760,6 +812,7 @@ async function onClick(e) {
       G.resolveEvent(S, ev, d.c);
       G.save(S);
       const lines = eventLines(s0);
+      if (S.eventNote) { lines.unshift(esc(S.eventNote)); S.eventNote = null; G.save(S); }
       if (lines.length) V.evtDone = { look, title: v.title, lines };
       else V.wipe = true;
       break;

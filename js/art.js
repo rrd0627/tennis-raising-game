@@ -201,7 +201,7 @@ export function heroURL(look, pose = 'ready') {
 
 // ── 주간 화면 배경 (임시 그림) ────────────────────────────
 // 실제 아트가 들어오면 art/manifest.json 의 bg[kind] 경로를 쓴다.
-// kind: home | court | wall | club | room | cafe | venue | office | gym
+// kind: home | court | wall | club | room | cafe | venue | office | gym | sea | clinic
 const BG_W = 540, BG_H = 1170;
 const SEASON_KEY = { 봄: 'spring', 여름: 'summer', 가을: 'autumn', 겨울: 'winter' };
 const SKY = { spring: ['#7cc8f2', '#dff3ff'], summer: ['#3fa9ee', '#c6ebff'], autumn: ['#79aedb', '#f8e6cc'], winter: ['#a7bdd3', '#edf2f6'] };
@@ -414,6 +414,28 @@ const SCENES = {
     ctx.fillStyle = '#3a4048'; ctx.fillRect(350, 470, 150, 30); ctx.fillRect(366, 500, 16, 150); ctx.fillRect(468, 500, 16, 150);
     ctx.fillStyle = '#e8456b'; ctx.fillRect(340, 448, 170, 22);
     ctx.fillStyle = '#39414b'; ctx.fillRect(420, 330, 10, 118); ctx.fillStyle = '#2f353c'; ctx.fillRect(388, 322, 74, 12);
+  },
+  // 여행: 바다
+  sea(ctx, season, r) {
+    paintSky(ctx, 560, ...SKY[season], r);
+    const g = ctx.createLinearGradient(0, 520, 0, 800); g.addColorStop(0, '#2f8fd0'); g.addColorStop(1, '#86d6e4');
+    ctx.fillStyle = g; ctx.fillRect(0, 520, BG_W, 280);
+    ctx.strokeStyle = 'rgba(255,255,255,.65)'; ctx.lineWidth = 3;
+    for (let i = 0; i < 16; i++) { const x = r() * BG_W, y = 545 + r() * 240, w = 26 + r() * 50; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + w / 2, y - 7, x + w, y); ctx.stroke(); }
+    ctx.fillStyle = '#f2e2b8'; ctx.fillRect(0, 800, BG_W, BG_H - 800);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, 812); for (let x = 0; x <= BG_W; x += 45) ctx.quadraticCurveTo(x + 22, 790 + (x % 90 ? 14 : -4), x + 45, 812); ctx.lineTo(BG_W, 800); ctx.lineTo(0, 800); ctx.closePath(); ctx.fill();
+  },
+  // 병원: 물리치료실
+  clinic(ctx) {
+    const g = ctx.createLinearGradient(0, 0, 0, 680); g.addColorStop(0, '#e9f4f1'); g.addColorStop(1, '#d4e8e3');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, BG_W, 680);
+    ctx.fillStyle = '#fff'; ctx.fillRect(330, 110, 170, 170); ctx.strokeStyle = '#a9c4bd'; ctx.lineWidth = 6; ctx.strokeRect(330, 110, 170, 170);
+    ctx.fillStyle = '#e8456b'; ctx.fillRect(398, 140, 34, 110); ctx.fillRect(360, 178, 110, 34);
+    ctx.fillStyle = '#b9d5ce'; for (const x of [30, 170]) ctx.fillRect(x, 90, 110, 330);
+    ctx.fillStyle = '#c8d6d8'; ctx.fillRect(0, 680, BG_W, BG_H - 680);
+    ctx.fillStyle = '#8fb5ad'; ctx.fillRect(30, 520, 300, 26); ctx.fillRect(46, 546, 16, 134); ctx.fillRect(298, 546, 16, 134);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(30, 480, 300, 44, 14); ctx.fill();
+    ctx.fillStyle = '#6b7a84'; ctx.fillRect(400, 430, 90, 150); ctx.fillStyle = '#9fe0c8'; ctx.fillRect(414, 446, 62, 44);
   },
   // 야근: 밤 사무실
   office(ctx) {

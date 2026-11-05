@@ -248,6 +248,14 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 @keyframes hotbtn { 50% { box-shadow: 0 0 0 2px var(--d), 0 4px 0 2px var(--d), 0 0 18px 6px #ffd84d; } }
 .gbtn.on { z-index: 2; transform: translateY(-7px) scale(1.06); box-shadow: 0 0 0 3px #ffc91f, 0 4px 0 3px #d69a00, 0 10px 16px rgba(0, 0, 0, .35); animation: none; }
 
+/* 몸과 마음 상태 */
+.condchips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cchip { color: #fff; font-size: 10.5px; font-weight: 800; border: 1.5px solid #fff; border-radius: 99px; padding: 1px 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); white-space: nowrap; }
+.cchip.good { background: #ff7f45; }
+.cchip.bad { background: #4f6fb5; }
+.checklist { display: flex; flex-direction: column; gap: 6px; padding: 0 12px 20px; }
+.checklist h3 { margin: 10px 0 2px; font-size: 14px; }
+
 /* 훈련 칸: 칸마다 와 있는 사람과 친밀도가 위에 뜬다 */
 .tgrid { display: flex; align-items: flex-end; gap: 5px; }
 .tback { flex: none; width: 26px; height: 62px; border-radius: 12px; background: rgba(255, 255, 255, .95); color: #3d4a43; font-size: 22px; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }

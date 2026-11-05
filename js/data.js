@@ -61,6 +61,7 @@ export const ACTIONS = [
   { id: 'home', name: '홈트', icon: '🧘', train: true, unlock: 'home', mile: 'physical', groups: { physical: 0.35 }, stats: { flex: 1.2, stamina: 0.3 }, fatigue: 2, stress: -2 },
   { id: 'rest', name: '휴식', icon: '😴', fatigue: -45, stress: -8 },
   { id: 'family', name: '가족·친구', icon: '🏠', fatigue: -10, stress: -30 },
+  { id: 'clinic', name: '병원', icon: '🏥', fatigue: -20, stress: -3 },
   { id: 'overtime', name: '야근', icon: '💼', fatigue: 10, stress: 10, work: 4 },
 ];
 export const TRAIN_SPOTS = ACTIONS.filter(a => a.train).map(a => a.id);
@@ -75,6 +76,22 @@ export const REST_RESULTS = [
   { id: 'fine', name: '개운하다', rate: 0.55, fatigue: -45, stress: -8, mood: 0 },
   { id: 'deep', name: '푹 잤다!', rate: 0.25, fatigue: -65, stress: -12, mood: 1 },
 ];
+
+// 쉬는 날 어디로 가는지. 마음을 비워 내는 효과가 있다. 평균은 가족·친구의 기본값과 거의 같다.
+export const OUTINGS = [
+  { id: 'trip', name: '훌쩍 여행을 다녀왔다', rate: 0.3, fatigue: -5, stress: -40, mood: 2 },
+  { id: 'play', name: '친구들과 신나게 놀았다', rate: 0.5, fatigue: -10, stress: -30, mood: 1 },
+  { id: 'home', name: '본가에서 쉬다 왔다', rate: 0.2, fatigue: -18, stress: -20, mood: 1 },
+];
+
+// 몸과 마음의 상태. turns: 지속 턴, k: 훈련 효과 배수.
+export const CONDS = {
+  sure: { name: '이제 좀 되는지도?', kind: 'good', turns: 3, k: 1.1 },
+  light: { name: '몸이 가볍다', kind: 'good', turns: 2 },
+  doubt: { name: '왜 이렇게 어렵지?', kind: 'bad', turns: 4, k: 0.9 },
+  yips: { name: '입스', kind: 'bad', turns: 6 },
+  sore: { name: '온몸이 쑤신다', kind: 'bad', turns: 3 },
+};
 
 // 레슨 내용. 처음엔 코치가 정하고, 경기에서 약점을 깨달으면 직접 고를 수 있게 된다.
 export const LESSONS = {
