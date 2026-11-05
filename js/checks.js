@@ -43,4 +43,12 @@ export const CHECKS = [
   { group: '4. 첫 대회 뒤 (기술)', label: '치다 보니 자연스럽게 알게 된 턴', hint: '훈련 → 벽치기를 고르세요.', make: s => { ready(s); s.lastSpot = 'practice'; s.force = { hint: 'drop' }; } },
   { group: '4. 첫 대회 뒤 (기술)', label: '경험으로 기술 배우기', hint: '기술 버튼을 누르세요. 배워도 턴은 그대로예요.', make: s => { ready(s); s.hints = { drop: 2, smash: 1, read: 1 }; s.exp = 220; } },
   { group: '4. 첫 대회 뒤 (기술)', label: '기술을 모두 배운 뒤 경기', hint: '경기를 시작하고 중계로 보세요. 기술이 통하면 이름이 크게 떠요. 끝나면 쓴 기술 횟수가 나와요.', make: (s, G) => { ready(s); strong(s, 48); s.skills = { drop: 2, smash: 2, swing: 2, read: 2 }; s.hints = { drop: 2, smash: 2, swing: 2, read: 2 }; G.checkTour(s, 'local'); return 'tourIntro'; } },
+
+  { group: '5. 3년의 뼈대', label: '정체기: 늘지를 않는다', hint: '코치의 말 다음, 위쪽에 상태가 붙고 훈련의 오를 수치가 줄어요.', make: s => { ready(s); s.conds.plateau = 99; s.flags.plateauSeen = true; s.pendingEvents = [{ id: 'plateau' }]; } },
+  { group: '5. 3년의 뼈대', label: '어느 순간 한 계단 오른다', hint: '다음 턴부터 공이 달라 보이는 상태가 붙고, 훈련의 오를 수치가 커져요.', make: s => { ready(s); s.conds.boost = 4; s.stair.n = 1; s.hints.read = 1; s.pendingEvents = [{ id: 'stair', n: 1, skill: 'read', line: '백 번 쳐도 안 되던 게 오늘 됐다. 한 계단 올라간 것 같다.' }]; } },
+  { group: '5. 3년의 뼈대', label: '목표를 놓쳤다, 한 번 더', hint: '한 번 더 해 보면 기한이 늘어나요. 그만두면 판이 끝나요.', make: s => { ready(s, 51); s.goalIdx = 2; s.goalsDone = ['first', 'first_win']; s.pendingEvents = [{ id: 'goalMiss', goal: 'local_qf' }]; } },
+  { group: '5. 3년의 뼈대', label: '기회를 다 쓰고 놓쳤다', hint: '라켓을 내려놓으면 최종 평가가 나와요.', make: s => { ready(s, 51); s.goalIdx = 2; s.goalsDone = ['first', 'first_win']; s.retries = 0; s.pendingEvents = [{ id: 'goalMiss', goal: 'local_qf' }]; } },
+  { group: '5. 3년의 뼈대', label: '마지막 무대: 국화부 전국대회 예선', hint: '같이 나갈 사람을 고르고 시작하세요. 지면 판이 끝나요.', make: s => { ready(s, 147); strong(s, 72); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.partners.hana.aff = 85; s.partners.hana.storyStep = 2; s.flags.firstWin = 9; } },
+  { group: '5. 3년의 뼈대', label: '국화부 전국대회 결승전', hint: '마지막 한 경기예요. 이기면 축하 자리 뒤에 최종 평가가 나와요.', make: (s, G) => { ready(s, 155); strong(s, 76); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.skills = { drop: 2, smash: 1, swing: 1, read: 2 }; G.checkTour(s, 'national', null, 'hard', 3); return 'tourIntro'; } },
+  { group: '5. 3년의 뼈대', label: '결승전 우승 뒤 축하 자리와 최종 평가', hint: '화면을 눌러 끝까지 넘기세요.', make: (s, G) => { ready(s, 155); strong(s, 78); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.skills = { drop: 2, smash: 2, swing: 1, read: 2 }; G.checkTour(s, 'national', 'FW', 'hard', 3); return 'tourResult'; } },
 ];

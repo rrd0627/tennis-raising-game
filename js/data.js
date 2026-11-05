@@ -105,7 +105,11 @@ export const CONDS = {
   doubt: { name: '왜 이렇게 어렵지?', kind: 'bad', turns: 4, k: 0.9 },
   yips: { name: '입스', kind: 'bad', turns: 6 },
   sore: { name: '온몸이 쑤신다', kind: 'bad', turns: 3 },
+  // 실력은 고르게 늘지 않는다. 정체 구간을 지나 어느 순간 계단처럼 는다.
+  plateau: { name: '요즘 늘지를 않는다', kind: 'bad', turns: 99, k: 0.7 },
+  boost: { name: '공이 달라 보인다', kind: 'good', turns: 4, k: 1.35 },
 };
+export const STAIR = { firstAt: 8, normalTurns: 6, jump: 2.2, fill: { lesson: 10, practice: 8, club: 12, gym: 5, home: 3 }, fillGood: 5, fillMatch: 6 };
 
 // 레슨 내용. 처음엔 코치가 정하고, 경기에서 약점을 깨달으면 직접 고를 수 있게 된다.
 export const LESSONS = {
@@ -127,14 +131,17 @@ export const BASIC_LESSONS = ['stroke', 'net', 'serve', 'physical', 'mental'];
 
 export const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일'];
 
-// 시나리오 목표. by 주까지 달성한다.
+// 시나리오 목표. by 주까지 못 하면 판이 끝날 수 있다. 재도전 기회는 RETRIES번, 한 번에 retryWeeks주를 더 준다.
 export const GOALS = [
-  { id: 'first', by: 13, text: '1년차 봄까지 첫 대회 나가 보기' },
-  { id: 'local_qf', by: 51, text: '1년차 안에 비전국대회 8강' },
-  { id: 'promote', by: 104, text: '2년차 말까지 개나리부 전국대회 우승' },
-  { id: 'promote_late', by: 156, text: '3년차 말까지 개나리부 전국대회 우승' },
-  { id: 'champion', by: 156, text: '3년차 말까지 국화부 대회 우승' },
+  { id: 'first', by: 13, text: '첫 대회 나가 보기' },
+  { id: 'first_win', by: 33, text: '대회에서 첫 승 거두기' },
+  { id: 'local_qf', by: 71, text: '비전국대회 8강' },
+  { id: 'mid16', by: 87, text: '전국대회 16강 또는 비전국대회 4강' },
+  { id: 'mid_top', by: 103, text: '비전국대회 결승 또는 전국대회 8강' },
+  { id: 'promote', by: 123, max: 143, retryWeeks: 10, text: '개나리부 전국대회 우승' },
+  { id: 'final', by: 155, text: '국화부 전국대회 결승전 우승' },
 ];
+export const RETRIES = 3, RETRY_WEEKS = 12;
 
 // 레슨 첫날 코치와의 대화. 고른 답에 따라 시작 능력치와 관계가 달라진다.
 // grow: 잘 늘어나는 큰 능력치(+10%). fam: 처음부터 어느 정도 겪어 본 상대의 공.
@@ -224,6 +231,12 @@ export const CLUB_NAMES = ['해솔클럽', '은빛클럽', '푸른숲TC', '달�
 const LOCAL_NAMES = ['해솔구청장배', '은빛시장배', '푸른숲 클럽연합배', '달빛구 친선대회', '한강 새봄배', '산들 단풍배', '라온 시민배', '청솔배', '다온 우정배', '노을 생활체육대회', '은하 구민배', '바람개비 친선배'];
 const NATIONAL_NAMES = ['전국 은하수배', '전국 바람개비배', '전국 한빛배', '전국 노을배', '연맹회장배 전국대회', '전국 매화배', '전국 단풍배', '전국 해오름배', '전국 미리내배'];
 export const NATIONAL_WEEKS = [9, 19, 29, 37, 45];
+// 마지막 6턴: 국화부 전국대회. 예선, 본선, 결승전을 차례로 이겨야 한다.
+export const FINALE_TOURS = [
+  { id: 'final1', week: 147, day: 5, type: 'national', surface: 'hard', draw: 4, finale: 1, name: '국화부 전국대회 예선' },
+  { id: 'final2', week: 151, day: 5, type: 'national', surface: 'hard', draw: 4, finale: 2, name: '국화부 전국대회 본선' },
+  { id: 'final3', week: 155, day: 6, type: 'national', surface: 'hard', draw: 2, finale: 3, name: '국화부 전국대회 결승전' },
+];
 // 코트 재질. 내가 치던 코트(하드)와 다르면 낯설다.
 export const SURFACES = { hard: '하드', clay: '클레이', turf: '인조잔디' };
 export const HOME_SURFACE = 'hard';
@@ -238,6 +251,7 @@ export function buildCalendar(rng, seasons = 3) {
     let ln = 0, nn = 0;
     for (let w = 1; w <= 51; w += 2) { // 1턴 = 2주
       const abs = s * 52 + w;
+      if (abs >= 145) continue; // 마지막 6턴은 피날레만 있다
       const winter = w >= 47 || w <= 2;
       if (NATIONAL_WEEKS.includes(w)) {
         list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', surface: pickSurface(rng, 'national'), draw: rng() < 0.35 ? 128 : 64, name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
@@ -246,6 +260,7 @@ export function buildCalendar(rng, seasons = 3) {
       }
     }
   }
+  if (seasons === 3) list.push(...FINALE_TOURS.map(t => ({ ...t })));
   return list;
 }
 
@@ -256,17 +271,17 @@ export const POINTS = {
 // 대회에서 남는 것: 경험, 인맥, 상품 (우마무스메의 SP, 팬, 신발·꽃장식 자리)
 export const TOUR_EXP = {
   local: { W: 60, F: 44, SF: 34, QF: 26, R16: 20, R32: 16, G: 12 },
-  national: { W: 110, F: 85, SF: 65, QF: 50, R16: 40, R32: 32, R64: 26, R128: 22, G: 16 },
+  national: { W: 110, F: 85, SF: 65, QF: 50, R16: 40, R32: 32, R64: 26, R128: 22, G: 16, FP: 60, FG: 30, FS: 45, FF: 90, FW: 150 },
 };
 export const TOUR_FAME = {
   local: { W: 12, F: 8, SF: 5, QF: 3, R16: 1, R32: 1, G: 0 },
-  national: { W: 30, F: 18, SF: 12, QF: 8, R16: 4, R32: 2, R64: 1, R128: 1, G: 0 },
+  national: { W: 30, F: 18, SF: 12, QF: 8, R16: 4, R32: 2, R64: 1, R128: 1, G: 0, FP: 10, FG: 2, FS: 6, FF: 20, FW: 40 },
 };
 export const PRIZES = {
-  W: ['새 라켓', '테니스 가방'], F: ['테니스화 교환권', '스트링 세트'], SF: ['스트링 세트', '공 한 박스'], QF: ['공 한 박스', '오버그립 묶음'],
+  FW: ['국화부 전국대회 트로피'], FF: ['준우승 트로피'], FP: ['기념 수건'], W: ['새 라켓', '테니스 가방'], F: ['테니스화 교환권', '스트링 세트'], SF: ['스트링 세트', '공 한 박스'], QF: ['공 한 박스', '오버그립 묶음'],
   rest: ['대회 수건', '공 한 캔', '양말'],
 };
-export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', R32: '32강', R64: '64강', R128: '128강', G: '예선 탈락' };
+export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', R32: '32강', R64: '64강', R128: '128강', G: '예선 탈락', FP: '통과', FG: '예선 탈락', FS: '본선 탈락', FF: '결승전 준우승', FW: '국화부 전국대회 우승' };
 
 export const SEASON_NAMES = ['봄', '여름', '가을', '겨울'];
 export function weekInfo(week) {
@@ -277,6 +292,12 @@ export function weekInfo(week) {
   return { season, w, quarter: SEASON_NAMES[q], month, label: `${season}년차 ${SEASON_NAMES[q]} · ${w}주` };
 }
 
+// 최종 평가. 능력치 점수와 기술 점수의 합. 위에서부터 at 이상이면 그 등급이다.
+export const RANKS = [
+  { name: 'SS', at: 10000 }, { name: 'S', at: 8500 }, { name: 'A', at: 7000 }, { name: 'B', at: 5500 },
+  { name: 'C', at: 4000 }, { name: 'D', at: 2800 }, { name: 'E', at: 1800 }, { name: 'F', at: 0 },
+];
+
 export const COACH_SECRETS = [
   { at: 30, id: 'sv', name: '서브 앤 발리', text: '서브 넣고 첫 발리까지 한 호흡이야. 해 봐.', stats: { first_serve: 3, fh_volley: 3, half_volley: 3 }, unlock: 'serve_volley' },
   { at: 60, id: 'lobnet', name: '로브 후 네트 점령', text: '로브 띄우고 둘이 같이 올라가. 그게 복식이야.', stats: { topspin_lob: 4, positioning: 3, smash: 2 }, unlock: 'lob_net' },
@@ -284,7 +305,8 @@ export const COACH_SECRETS = [
 ];
 
 export const ENDINGS = [
-  { id: 'queen', name: '국화부의 여왕', text: '국화부 전국대회 우승, 그리고 랭킹 1위. 이제 다들 당신을 보고 테니스를 시작한다.' },
+  { id: 'queen', name: '국화부의 여왕', text: '국화부 전국대회 결승전 우승. 이제 다들 당신을 보고 테니스를 시작한다.' },
+  { id: 'runner', name: '결승전의 사람', text: '국화부 전국대회 결승전까지 갔다. 마지막 공 하나가 오래 기억날 것 같다.' },
   { id: 'gukwha_champ', name: '국화부 우승자', text: '국화부 시상대 맨 위. 개나리 시절 첫 레슨이 아득하다.' },
   { id: 'gukwha', name: '국화가 된 사람', text: '개나리를 졸업하고 국화가 되었다. 우승은 아직이지만, 다음 시즌이 기다려진다.' },
   { id: 'local_hero', name: '비전국의 강자', text: '동네 대회는 다 휩쓸었다. 전국대회만 나가면… 왜일까?' },
@@ -295,5 +317,6 @@ export const ENDINGS = [
   { id: 'warrior', name: '주말의 전사', text: '평일엔 일, 주말엔 코트. 둘 다 놓치지 않았다.' },
   { id: 'injury', name: '부상 은퇴', text: '몸이 먼저 신호를 보냈다. 라켓은 잠시 벽에 걸어 둔다.' },
   { id: 'burnout', name: '번아웃', text: '너무 달렸다. 지금은 쉬는 게 먼저다.' },
+  { id: 'quit', name: '라켓을 내려놓았다', text: '한동안 늘지 않는 구간이 길었다. 목표는 멀고 너무 어려웠다. 라켓 가방은 현관 옆에 세워 두었다.' },
   { id: 'love', name: '그냥 테니스가 좋아', text: '성적이 뭐 어때. 오늘도 코트에 나간다.' },
 ];
