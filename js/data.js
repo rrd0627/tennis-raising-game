@@ -109,7 +109,7 @@ export const CONDS = {
   plateau: { name: '요즘 늘지를 않는다', kind: 'bad', turns: 99, k: 0.7 },
   boost: { name: '공이 달라 보인다', kind: 'good', turns: 4, k: 1.35 },
 };
-export const STAIR = { firstAt: 8, normalTurns: 6, jump: 2.2, fill: { lesson: 10, practice: 8, club: 12, gym: 5, home: 3 }, fillGood: 5, fillMatch: 6 };
+export const STAIR = { firstAt: 14, normalTurns: 6, jump: 2.2, fill: { lesson: 10, practice: 8, club: 12, gym: 5, home: 3 }, fillGood: 5, fillMatch: 6 };
 
 // 레슨 내용. 처음엔 코치가 정하고, 경기에서 약점을 깨달으면 직접 고를 수 있게 된다.
 export const LESSONS = {
@@ -131,18 +131,6 @@ export const BASIC_LESSONS = ['stroke', 'net', 'serve', 'physical', 'mental'];
 
 export const DAY_NAMES = ['월', '화', '수', '목', '금', '토', '일'];
 
-// 시나리오 목표. by 주까지 못 하면 판이 끝날 수 있다. 재도전 기회는 RETRIES번, 한 번에 retryWeeks주를 더 준다.
-export const GOALS = [
-  { id: 'first', by: 13, text: '첫 대회 나가 보기' },
-  { id: 'first_win', by: 33, text: '대회에서 첫 승 거두기' },
-  { id: 'local_qf', by: 71, text: '비전국대회 8강' },
-  { id: 'mid16', by: 87, text: '전국대회 16강 또는 비전국대회 4강' },
-  { id: 'mid_top', by: 103, text: '비전국대회 결승 또는 전국대회 8강' },
-  { id: 'promote', by: 123, max: 143, retryWeeks: 10, text: '개나리부 전국대회 우승' },
-  { id: 'final', by: 155, text: '국화부 전국대회 결승전 우승' },
-];
-export const RETRIES = 3, RETRY_WEEKS = 12;
-
 // 레슨 첫날 코치와의 대화. 고른 답에 따라 시작 능력치와 관계가 달라진다.
 // grow: 잘 늘어나는 큰 능력치(+10%). fam: 처음부터 어느 정도 겪어 본 상대의 공.
 // stats: 능력치 보정, aff: 파트너 친밀도, reply: 코치의 반응. job은 야근 장면과 마감 이벤트 글도 바꾼다.
@@ -160,11 +148,11 @@ export const PROFILE = [
   {
     key: 'past', ask: '운동은 좀 해 보셨어요?', options: [
       { id: 'none', name: '숨쉬기 운동뿐이에요', stats: { resilience: 5, focus: 3 }, confidence: -5, reply: '괜찮아요. 오히려 나쁜 버릇이 없어서 좋아요.' },
-      { id: 'sport', grow: 'physical', fam: { power: 20 }, name: '학창 시절 운동부요', stats: { stamina: 7, speed: 6, first_step: 5, power: 4 }, reply: '오, 몸은 기억하고 있을 거예요.' },
-      { id: 'badminton', grow: 'net', fam: { net: 25 }, name: '배드민턴 동호회요', stats: { smash: 8, fh_volley: 5, first_step: 5, speed: 4 }, reply: '손목 쓰는 버릇만 고치면 되겠네요.' },
-      { id: 'tabletennis', grow: 'stroke', fam: { slice: 25 }, name: '탁구장 단골이에요', stats: { fh_slice: 6, bh_slice: 6, first_step: 5, c_slice: 5 }, reply: '회전은 이미 아시겠네요. 공이 좀 커졌다고 생각하세요.' },
-      { id: 'yoga', grow: 'mental', fam: { moon: 10 }, name: '요가·필라테스요', stats: { flex: 12, composure: 5, focus: 5 }, reply: '유연하면 잘 안 다쳐요. 큰 장점이에요.' },
-      { id: 'running', grow: 'physical', fam: { wall: 15 }, name: '주말마다 달려요', stats: { stamina: 12, resilience: 6, speed: 3 }, reply: '테니스는 뛰는 게 반이에요. 자신 있으시겠네요.' },
+      { id: 'sport', grow: 'physical', fam: { attack: 20 }, name: '학창 시절 운동부요', stats: { stamina: 7, speed: 6, first_step: 5, power: 4 }, reply: '오, 몸은 기억하고 있을 거예요.' },
+      { id: 'badminton', grow: 'net', fam: { smash: 25 }, name: '배드민턴 동호회요', stats: { smash: 8, fh_volley: 5, first_step: 5, speed: 4 }, reply: '손목 쓰는 버릇만 고치면 되겠네요.' },
+      { id: 'tabletennis', grow: 'stroke', fam: { control: 25 }, name: '탁구장 단골이에요', stats: { fh_slice: 6, bh_slice: 6, first_step: 5, c_slice: 5 }, reply: '회전은 이미 아시겠네요. 공이 좀 커졌다고 생각하세요.' },
+      { id: 'yoga', grow: 'mental', fam: { defense: 10 }, name: '요가·필라테스요', stats: { flex: 12, composure: 5, focus: 5 }, reply: '유연하면 잘 안 다쳐요. 큰 장점이에요.' },
+      { id: 'running', grow: 'physical', fam: { speed: 15 }, name: '주말마다 달려요', stats: { stamina: 12, resilience: 6, speed: 3 }, reply: '테니스는 뛰는 게 반이에요. 자신 있으시겠네요.' },
     ],
   },
   {
@@ -192,77 +180,137 @@ export const INTRO_SCENES = [
 
 // ── 파트너 (여자 복식) ─────────────────────────────────────
 // spec: 특기 칸. spots: 칸마다 나타나는 가중치(없으면 안 나타남). gives: 같이 훈련하면 더 느는 능력치. 홈트는 집에서 혼자 한다.
-// teaches: 알려 줄 수 있는 기술.
+// teaches: 알려 줄 수 있는 기술. region: 사는 곳, job: 생활(office 회사원, shop 자영업, home 주부, student 학생), court: 좋아하는 코트, ambition: 큰 대회 욕심(0~1).
 export const PARTNERS = [
-  { id: 'hana', spec: 'practice', spots: { practice: 5, lesson: 3, club: 1, gym: 1 }, gives: { comm: 0.5, resilience: 0.5 }, name: '김하나', arch: '테니스 입문 동기', style: '올라운드', div: '개나리', level: 17, growth: 0.32, aff: 25, known: true,
+  { id: 'hana', region: 'capital', job: 'office', court: 'hard', ambition: 0.4, spec: 'practice', spots: { practice: 5, lesson: 3, club: 1, gym: 1 }, gives: { comm: 0.5, resilience: 0.5 }, name: '김하나', arch: '테니스 입문 동기', style: '육각형', div: '개나리', level: 17, growth: 0.32, aff: 25, known: true,
     bias: {}, color: { hair: '#5a3a2a', outfit: '#ffb3c7' }, line: '우리 같이 크는 거야!' },
-  { id: 'sunhee', teaches: ['drop', 'read'], spec: 'club', spots: { club: 5, practice: 2 }, gives: { def_lob: 0.5, topspin_lob: 0.4, bh_slice: 0.4, c_lob: 0.3 }, name: '박선희', arch: '클럽 고인물 선배', style: '로브·슬라이스 수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
+  { id: 'sunhee', region: 'capital', job: 'home', court: 'clay', ambition: 0.2, teaches: ['drop', 'read'], spec: 'club', spots: { club: 5, practice: 2 }, gives: { def_lob: 0.5, topspin_lob: 0.4, bh_slice: 0.4, c_lob: 0.3 }, name: '박선희', arch: '클럽 고인물 선배', style: '수비형', div: '개나리', level: 40, growth: 0.04, aff: 12, known: true,
     bias: { def_lob: 18, topspin_lob: 14, fh_slice: 14, bh_slice: 16, c_lob: 10, power: -12, first_serve: -10 }, color: { hair: '#2b2b2b', outfit: '#9ad0a8' }, line: '공은 넘기기만 하면 돼~' },
-  { id: 'sumin', spec: 'gym', spots: { gym: 5, lesson: 2, practice: 2, club: 1 }, gives: { drive: 0.6, stamina: 0.3 }, name: '이수민', arch: '같은 회사 동기', style: '올라운드', div: '개나리', level: 22, growth: 0.16, aff: 30, known: true,
+  { id: 'sumin', region: 'capital', job: 'office', court: 'hard', ambition: 0.6, spec: 'gym', spots: { gym: 5, lesson: 2, practice: 2, club: 1 }, gives: { drive: 0.6, stamina: 0.3 }, name: '이수민', arch: '같은 회사 동기', style: '육각형', div: '개나리', level: 22, growth: 0.16, aff: 30, known: true,
     bias: {}, color: { hair: '#7a4b2a', outfit: '#a8c8ff' }, line: '팀장님 몰래 연습 가자.' },
-  { id: 'daeun', teaches: ['swing', 'smash'], spec: 'club', spots: { club: 5, practice: 2, lesson: 1 }, gives: { fh_volley: 0.5, bh_volley: 0.4, poach: 0.5 }, name: '정다은', arch: '전위 장인', style: '포치·발리형 전위', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
+  { id: 'daeun', region: 'capital', job: 'shop', court: 'turf', ambition: 0.6, teaches: ['swing', 'smash'], spec: 'club', spots: { club: 5, practice: 2, lesson: 1 }, gives: { fh_volley: 0.5, bh_volley: 0.4, poach: 0.5 }, name: '정다은', arch: '전위 장인', style: '스매시형', div: '개나리', level: 37, growth: 0.07, aff: 0, known: false, meet: 'club',
     bias: { fh_volley: 16, bh_volley: 14, poach: 20, smash: 10, drive: 10, def_lob: -10 }, color: { hair: '#c0473a', outfit: '#ffd166' }, line: '앞은 내가 다 먹을게.' },
-  { id: 'jiwoo', teaches: ['read'], spec: 'practice', spots: { practice: 5, gym: 2, club: 2 }, gives: { speed: 0.6, first_step: 0.5 }, name: '한지우', arch: '대학생 유망주', style: '스피드형', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
+  { id: 'jiwoo', region: 'chungcheong', job: 'student', court: 'hard', ambition: 0.8, teaches: ['read'], spec: 'practice', spots: { practice: 5, gym: 2, club: 2 }, gives: { speed: 0.6, first_step: 0.5 }, name: '한지우', arch: '대학생 유망주', style: '발 빠른 선수', div: '개나리', level: 26, growth: 0.27, aff: 0, known: false, meet: 'bungae',
     bias: { speed: 18, first_step: 14, stamina: 10, composure: -12 }, color: { hair: '#3a2a5a', outfit: '#b5f0e0' }, line: '언니 저 시험 끝나면 다 나가요!', exams: [15, 16, 41, 42] },
-  { id: 'arah', teaches: ['swing', 'smash'], spec: 'gym', spots: { gym: 5, club: 3, practice: 1 }, gives: { fh_drive: 0.5, power: 0.5, swing_volley: 0.3 }, name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
+  { id: 'arah', region: 'yeongnam', job: 'office', court: 'hard', ambition: 0.9, teaches: ['swing', 'smash'], spec: 'gym', spots: { gym: 5, club: 3, practice: 1 }, gives: { fh_drive: 0.5, power: 0.5, swing_volley: 0.3 }, name: '서아라', arch: '라이벌 팀 이적생', style: '공격형', div: '개나리', level: 44, growth: 0.08, aff: 0, known: false, meet: 'rival',
     bias: { fh_drive: 16, power: 14, swing_volley: 14, composure: -10, comm: -8 }, color: { hair: '#1e1e2a', outfit: '#ff8a5c' }, line: '이길 거면 같이 해.' },
-  { id: 'mikyung', teaches: ['read', 'drop'], spec: 'lesson', spots: { lesson: 5, club: 3 }, gives: { shot_sel: 0.5, positioning: 0.5, composure: 0.4 }, name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '노련한 전술형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
+  { id: 'mikyung', region: 'capital', job: 'home', court: 'clay', ambition: 0.3, teaches: ['read', 'drop'], spec: 'lesson', spots: { lesson: 5, club: 3 }, gives: { shot_sel: 0.5, positioning: 0.5, composure: 0.4 }, name: '오미경', arch: '은퇴 후 복귀한 베테랑', style: '컨트롤형', div: '국화', level: 58, growth: 0, aff: 0, known: false, meet: 'club2',
     bias: { shot_sel: 16, positioning: 16, composure: 18, clutch: 14, speed: -14, stamina: -10 }, color: { hair: '#8a8a8a', outfit: '#c9b6ff' }, line: '급할수록 한 박자 늦게.' },
-  { id: 'yujin', teaches: ['smash', 'swing'], spec: 'lesson', spots: { lesson: 5, gym: 2, club: 2 }, gives: { first_serve: 0.6, power: 0.4, smash: 0.3 }, name: '최유진', arch: '선수 출신 에이스', style: '파워·서브형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
+  { id: 'yujin', region: 'honam', job: 'shop', court: 'hard', ambition: 0.7, teaches: ['smash', 'swing'], spec: 'lesson', spots: { lesson: 5, gym: 2, club: 2 }, gives: { first_serve: 0.6, power: 0.4, smash: 0.3 }, name: '최유진', arch: '선수 출신 에이스', style: '공격형', div: '국화', level: 70, growth: 0.02, aff: 0, known: false, meet: 'national',
     bias: { first_serve: 16, power: 16, fh_drive: 12, smash: 12, composure: -6 }, color: { hair: '#2a2a2a', outfit: '#ffffff' }, line: '국화 오면 연락해.' },
 ];
 export const PARTNER = Object.fromEntries(PARTNERS.map(p => [p.id, p]));
 
-// 상대 팀 성향 (경기 엔진과 '약점 공략'에 사용)
+// 선수의 특징. 경기 엔진, 익숙함, 코치 조언에 쓴다.
 export const OPP_ARCH = [
-  { id: 'moon', name: '문발리형', bias: { moon_volley: 18, topspin_lob: 12, def_lob: 10, c_moon: 8, power: -10, c_power: -12 }, pref: 'moon' },
-  { id: 'slice', name: '슬라이스형', bias: { fh_slice: 16, bh_slice: 18, chip_return: 14, c_slice: 10, c_lob: -12 }, pref: 'slice' },
-  { id: 'power', name: '강타형', bias: { fh_drive: 16, first_serve: 14, power: 16, smash: 10, c_drop: -14, c_slice: -10 }, pref: 'power' },
-  { id: 'net', name: '전위형', bias: { fh_volley: 14, bh_volley: 14, poach: 18, swing_volley: 10, c_lob: -14, c_moon: -10 }, pref: 'dash' },
-  { id: 'wall', name: '수비형', bias: { def_lob: 14, c_power: 10, c_angle: 12, c_body: 12, first_step: 10, fh_drive: -8, smash: -10 }, pref: 'none' },
+  { id: 'allround', name: '육각형', bias: { focus: 4, positioning: 4, comm: 4 }, pref: 'none', plan: 'twoback', formation: 'diag' },
+  { id: 'defense', name: '수비형', bias: { def_lob: 14, c_power: 10, c_angle: 12, c_body: 12, first_step: 10, fh_drive: -8, smash: -10 }, pref: 'none', plan: 'twoback', formation: 'back' },
+  { id: 'attack', name: '공격형', bias: { fh_drive: 16, first_serve: 14, power: 16, swing_volley: 8, c_drop: -14, c_slice: -10 }, pref: 'power', plan: 'power', formation: 'diag' },
+  { id: 'speed', name: '발 빠른 선수', bias: { speed: 18, first_step: 16, stamina: 10, cover: 8, power: -10 }, pref: 'none', plan: 'twoback', formation: 'diag' },
+  { id: 'smash', name: '스매시형', bias: { smash: 20, fh_volley: 10, swing_volley: 12, poach: 12, def_lob: -10, c_lob: -8 }, pref: 'dash', plan: 'twoup', formation: 'up' },
+  { id: 'control', name: '컨트롤형', bias: { serve_place: 12, depth: 14, angle: 12, dropshot: 12, drop_volley: 10, fh_slice: 12, bh_slice: 12, topspin_lob: 10, power: -12 }, pref: 'slice', plan: 'lob', formation: 'diag' },
 ];
+export const ARCH = Object.fromEntries(OPP_ARCH.map(a => [a.id, a]));
 
-const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '홍'];
-const GIVEN = ['지은', '미영', '수진', '현주', '은정', '소영', '혜진', '민지', '유나', '선영', '정아', '보람', '세라', '다희', '나연', '예린', '희정', '경아', '주희', '수빈', '하린', '아름', '진아', '서연'];
+export const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '홍'];
+export const GIVEN = ['지은', '미영', '수진', '현주', '은정', '소영', '혜진', '민지', '유나', '선영', '정아', '보람', '세라', '다희', '나연', '예린', '희정', '경아', '주희', '수빈', '하린', '아름', '진아', '서연'];
 export function randomName(rng) { return SURNAMES[Math.floor(rng() * SURNAMES.length)] + GIVEN[Math.floor(rng() * GIVEN.length)]; }
 export const CLUB_NAMES = ['해솔클럽', '은빛클럽', '푸른숲TC', '달빛클럽', '바람개비', '노을테니스', '새벽이슬', '한빛클럽', '라온TC', '청솔회', '산들클럽', '다온TC'];
 
-// ── 대회 달력 (가상 대회명) ────────────────────────────────
-const LOCAL_NAMES = ['해솔구청장배', '은빛시장배', '푸른숲 클럽연합배', '달빛구 친선대회', '한강 새봄배', '산들 단풍배', '라온 시민배', '청솔배', '다온 우정배', '노을 생활체육대회', '은하 구민배', '바람개비 친선배'];
-const NATIONAL_NAMES = ['전국 은하수배', '전국 바람개비배', '전국 한빛배', '전국 노을배', '연맹회장배 전국대회', '전국 매화배', '전국 단풍배', '전국 해오름배', '전국 미리내배'];
-export const NATIONAL_WEEKS = [9, 19, 29, 37, 45];
-// 마지막 6턴: 국화부 전국대회. 예선, 본선, 결승전을 차례로 이겨야 한다.
-export const FINALE_TOURS = [
-  { id: 'final1', week: 147, day: 5, type: 'national', surface: 'hard', draw: 4, finale: 1, name: '국화부 전국대회 예선' },
-  { id: 'final2', week: 151, day: 5, type: 'national', surface: 'hard', draw: 4, finale: 2, name: '국화부 전국대회 본선' },
-  { id: 'final3', week: 155, day: 6, type: 'national', surface: 'hard', draw: 2, finale: 3, name: '국화부 전국대회 결승전' },
-];
+// ── 사는 곳, 시간, 대회 레벨 ───────────────────────────────
+export const REGIONS = { capital: '수도권', gangwon: '강원', chungcheong: '충청', honam: '호남', yeongnam: '영남' };
+const NEAR = { capital: ['gangwon', 'chungcheong'], gangwon: ['capital', 'chungcheong'], chungcheong: ['capital', 'gangwon', 'honam', 'yeongnam'], honam: ['chungcheong', 'yeongnam'], yeongnam: ['chungcheong', 'honam'] };
+export const regionGap = (a, b) => (a === b ? 0 : NEAR[a].includes(b) ? 1 : 2); // 0 같은 곳, 1 가까움, 2 멀다
+export const HOME_REGION = 'capital';
+export const TIMES = { weekend: '주말', night: '평일 저녁', weekday: '평일 낮' };
+// adj: 상대 수준 보정, pts: 랭킹 포인트 배율, want: 이 대회에 주로 나오는 선수 수준(개나리, 국화)
+export const LEVELS = {
+  1: { name: '친선', adj: -9, pts: 0.5, want: [24, 50] }, 2: { name: '지역', adj: -5, pts: 1, want: [34, 58] },
+  3: { name: '광역', adj: -3, pts: 1.5, want: [38, 62] }, 4: { name: '전국', adj: 1, pts: 1, want: [44, 68] },
+};
+export const PRIZE_NAME = ['없음', '작음', '보통', '큼'];
 // 코트 재질. 내가 치던 코트(하드)와 다르면 낯설다.
 export const SURFACES = { hard: '하드', clay: '클레이', turf: '인조잔디' };
 export const HOME_SURFACE = 'hard';
-function pickSurface(rng, type) {
-  const x = rng();
-  return type === 'national' ? (x < 0.5 ? 'hard' : x < 0.8 ? 'turf' : 'clay') : (x < 0.35 ? 'hard' : x < 0.75 ? 'turf' : 'clay');
+
+// ── 대회 달력: 해마다 같은 대회가 같은 때 열린다 ─────────────
+// w: 그해의 주, region: 사는 곳, surface: 코트, time: 시간, level: 레벨, draw: 규모(본선), prize: 상금 수준
+export const TOURS = [
+  { id: 'haesol', name: '해솔구 친선대회', w: 7, region: 'capital', surface: 'hard', time: 'weekend', level: 1, draw: 16, prize: 0 },
+  { id: 'n_eunha', name: '전국 은하수배', w: 9, region: 'yeongnam', surface: 'hard', time: 'weekend', level: 4, draw: 64, prize: 2 },
+  { id: 'eunbit', name: '은빛시장배', w: 13, region: 'capital', surface: 'turf', time: 'weekend', level: 2, draw: 32, prize: 1 },
+  { id: 'pureun', name: '푸른숲 클럽연합배', w: 17, region: 'chungcheong', surface: 'clay', time: 'weekend', level: 2, draw: 32, prize: 1 },
+  { id: 'sinrok', name: '신록 평일 리그', w: 17, region: 'capital', surface: 'hard', time: 'weekday', level: 1, draw: 16, prize: 0 },
+  { id: 'n_baram', name: '전국 바람개비배', w: 19, region: 'honam', surface: 'turf', time: 'weekend', level: 4, draw: 64, prize: 2 },
+  { id: 'dalbit', name: '달빛구 친선대회', w: 23, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16, prize: 0 },
+  { id: 'hangang', name: '한강 여름배', w: 25, region: 'capital', surface: 'turf', time: 'weekend', level: 3, draw: 64, prize: 2 },
+  { id: 'n_hanbit', name: '전국 한빛배', w: 29, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128, prize: 3 },
+  { id: 'sandeul', name: '산들 단풍배', w: 33, region: 'gangwon', surface: 'clay', time: 'weekend', level: 2, draw: 32, prize: 1 },
+  { id: 'raon', name: '라온 시민배', w: 33, region: 'capital', surface: 'hard', time: 'weekday', level: 2, draw: 16, prize: 1 },
+  { id: 'n_noeul', name: '전국 노을배', w: 37, region: 'yeongnam', surface: 'clay', time: 'weekend', level: 4, draw: 64, prize: 2 },
+  { id: 'cheongsol', name: '청솔배', w: 39, region: 'honam', surface: 'turf', time: 'weekend', level: 3, draw: 64, prize: 2 },
+  { id: 'daon', name: '다온 우정배', w: 41, region: 'capital', surface: 'hard', time: 'night', level: 1, draw: 16, prize: 0 },
+  { id: 'noeulcity', name: '노을 생활체육대회', w: 43, region: 'chungcheong', surface: 'hard', time: 'weekend', level: 2, draw: 32, prize: 1 },
+  { id: 'n_yeonmaeng', name: '연맹회장배 전국대회', w: 45, region: 'capital', surface: 'hard', time: 'weekend', level: 4, draw: 128, prize: 3 },
+];
+// 마지막 6턴: 국화부 전국대회. 예선, 본선, 결승전을 차례로 이겨야 한다.
+export const FINALE_TOURS = [
+  { id: 'final1', base: 'final1', week: 147, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 4, finale: 1, name: '국화부 전국대회 예선' },
+  { id: 'final2', base: 'final2', week: 151, day: 5, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 4, finale: 2, name: '국화부 전국대회 본선' },
+  { id: 'final3', base: 'final3', week: 155, day: 6, type: 'national', region: 'capital', surface: 'hard', time: 'weekend', level: 4, prize: 3, draw: 2, finale: 3, name: '국화부 전국대회 결승전' },
+];
+export function buildCalendar() {
+  const list = [];
+  for (let y = 1; y <= 3; y++) for (const t of TOURS) {
+    const week = (y - 1) * 52 + t.w;
+    if (week >= 145) continue; // 마지막 6턴은 피날레만 있다
+    list.push({ ...t, id: `${t.id}_${y}`, base: t.id, year: y, week, type: t.level === 4 ? 'national' : 'local', day: t.time === 'weekend' ? 5 : 2 });
+  }
+  list.push(...FINALE_TOURS.map(t => ({ ...t, year: 3 })));
+  return list.sort((a, b) => a.week - b.week);
 }
 
-export function buildCalendar(rng, seasons = 3) {
-  const list = [];
-  for (let s = 0; s < seasons; s++) {
-    let ln = 0, nn = 0;
-    for (let w = 1; w <= 51; w += 2) { // 1턴 = 2주
-      const abs = s * 52 + w;
-      if (abs >= 145) continue; // 마지막 6턴은 피날레만 있다
-      const winter = w >= 47 || w <= 2;
-      if (NATIONAL_WEEKS.includes(w)) {
-        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', surface: pickSurface(rng, 'national'), draw: rng() < 0.35 ? 128 : 64, name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
-      } else if (!winter && abs >= 7 && (rng() < 0.3 || abs === 7)) { // 첫 대회는 4턴째(7주)의 비전국대회
-        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', surface: abs === 7 ? HOME_SURFACE : pickSurface(rng, 'local'), draw: 32, name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
-      }
+// 시나리오 목표: 정해진 대회에서 몇 강 안에 들어야 한다. 지면 그 경기를 다시 할 기회가 RETRIES번 있고, 그래도 안 되면 판이 끝난다.
+// need: enter 나가기만, win1 1승, 그 밖에는 도달해야 할 단계.
+const goalAt = (id, tour, year, need, text) => ({ id, tid: `${tour}_${year}`, week: (year - 1) * 52 + TOURS.find(t => t.id === tour).w, need, text });
+export const GOALS = [
+  goalAt('first', 'haesol', 1, 'enter', '해솔구 친선대회 나가 보기'),
+  goalAt('first_win', 'dalbit', 1, 'win1', '달빛구 친선대회에서 1승'),
+  goalAt('y1_main', 'daon', 1, 'R16', '다온 우정배 본선 진출'),
+  goalAt('y2_16a', 'eunbit', 2, 'R16', '은빛시장배 16강'),
+  goalAt('y2_16', 'hangang', 2, 'R16', '한강 여름배 16강'),
+  goalAt('y2_top', 'cheongsol', 2, 'QF', '청솔배 8강'),
+  goalAt('y3_sf', 'eunbit', 3, 'SF', '은빛시장배 4강'),
+  goalAt('promote', 'n_noeul', 3, 'W', '개나리부 전국대회 우승 (늦어도 전국 노을배)'),
+  { id: 'final', tid: 'final3', week: 155, need: 'FW', text: '국화부 전국대회 결승전 우승' },
+];
+export const RETRIES = 3;
+export const STAGE_RANK = { G: 0, R128: 1, R64: 2, R32: 3, R16: 4, QF: 5, SF: 6, F: 7, W: 8 };
+
+// ── 선수풀: 판이 바뀌어도 같은 사람들이다 ─────────────────
+function makePlayers() {
+  let seed = 20261105;
+  const r = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const pick = (table) => { let x = r() * table.reduce((a, [, w]) => a + w, 0); for (const [v, w] of table) if ((x -= w) < 0) return v; return table[0][0]; };
+  const taken = new Set(PARTNERS.map(p => p.name)), list = [];
+  const nameOf = () => { for (;;) { const n = SURNAMES[Math.floor(r() * SURNAMES.length)] + GIVEN[Math.floor(r() * GIVEN.length)]; if (!taken.has(n)) { taken.add(n); return n; } } };
+  const add = (div, n, lo, hi, grow) => {
+    for (let i = 0; i < n; i++) {
+      list.push({
+        id: `p${list.length}`, name: nameOf(), div, level: Math.round(lo + (hi - lo) * Math.pow(r(), 1.15)), growth: grow * (0.5 + r()),
+        style: pick([['allround', 2], ['defense', 2], ['attack', 2], ['speed', 2], ['smash', 2], ['control', 2]]),
+        region: pick([['capital', 5], ['chungcheong', 2], ['yeongnam', 2], ['honam', 1.5], ['gangwon', 1]]),
+        job: pick([['office', 5], ['shop', 2], ['home', 2], ['student', 1]]),
+        court: pick([['hard', 2], ['turf', 2], ['clay', 1]]),
+        ambition: r(), club: CLUB_NAMES[Math.floor(r() * CLUB_NAMES.length)],
+      });
     }
-  }
-  if (seasons === 3) list.push(...FINALE_TOURS.map(t => ({ ...t })));
+  };
+  add('개나리', 120, 16, 56, 1.5);
+  add('국화', 80, 46, 82, 0.6);
   return list;
 }
+export const PLAYERS = makePlayers();
 
 export const POINTS = {
   local: { W: 100, F: 60, SF: 35, QF: 20, R16: 12, R32: 8, G: 5 },

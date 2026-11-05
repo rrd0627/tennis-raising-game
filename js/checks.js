@@ -1,10 +1,12 @@
 // 확인 링크(?check)에 나오는 장면들. 플레이어가 만나는 순서대로 적는다.
 // make(s): 새 게임 상태를 그 장면으로 맞춘다. force: 다음 행동의 결과를 정해 둔다.
+import { GOALS } from './data.js';
 const ready = (s, week = 45) => {
   s.week = week;
   s.unlocked = { practice: true, club: true, home: true, gym: true };
   s.storiesDone = ['club_visit', 'join_club', 'first_ache', 'sumin_gym'];
-  s.goalIdx = 1; s.goalsDone = ['first'];
+  s.goalIdx = Math.max(0, GOALS.findIndex(g => g.week >= week)); s.goalsDone = GOALS.slice(0, s.goalIdx).map(g => g.id);
+  s.flags.firstWin = 7; s.results = [{ week: 7, tid: 'haesol_1', name: '해솔구 친선대회', type: 'local', div: '개나리', stage: 'R16', partner: 'hana', wins: 1 }];
   s.fatigue = 20; s.stress = 20;
   for (const id of ['daeun', 'jiwoo']) { s.partners[id].known = true; s.partners[id].aff = 20; }
   s.faces = { lesson: ['sumin'], gym: [], practice: ['jiwoo'], club: ['sunhee', 'daeun'], home: [] };
@@ -30,8 +32,8 @@ export const CHECKS = [
   { group: '2. 몸과 마음 (3주차부터)', label: '되는 줄 알았는데 안 나온 턴', hint: '훈련 → 클럽 게임을 고르세요. "이제 좀 되는지도?"가 "왜 이렇게 어렵지?"로 바뀌어요.', make: s => { ready(s); s.lastSpot = 'club'; s.conds.sure = 3; s.condition = 1; s.force = { feel: 'bad' }; } },
   { group: '2. 몸과 마음 (3주차부터)', label: '여행으로 마음 비우기', hint: '가족·친구를 고르세요. 위쪽의 나쁜 상태가 풀려요.', make: s => { ready(s); s.conds.doubt = 3; s.conds.yips = 4; s.stress = 60; s.condition = -1; s.force = { outing: 'trip' }; } },
 
-  { group: '3. 첫 대회 (7주차)', label: '낯선 코트와 낯선 상대', hint: '오늘의 환경과 작전 4개를 보세요. 경기를 해 봐도 돼요.', make: (s, G) => { ready(s); strong(s); const tr = G.checkTour(s, 'local', null, 'clay'); const o = tr.group.opps[0]; if (o) { o.arch = 'slice'; o.archName = '슬라이스형'; } return 'tourIntro'; } },
-  { group: '3. 첫 대회 (7주차)', label: '강타형을 끈질기게 뒤집기', hint: '로브로 천천히를 고르고 시작하세요. 초반에 밀리다 뒤집으면 큰 글자가 떠요. 결과는 매번 달라요.', make: (s, G) => { ready(s); strong(s, 48); const tr = G.checkTour(s, 'local'); for (const o of [...tr.group.opps, ...tr.ko]) { o.arch = 'power'; o.archName = '강타형'; o.rating = 45; } return 'tourIntro'; } },
+  { group: '3. 첫 대회 (7주차)', label: '낯선 코트와 낯선 상대', hint: '오늘의 환경과 작전 4개를 보세요. 경기를 해 봐도 돼요.', make: (s, G) => { ready(s); strong(s); const tr = G.checkTour(s, 'local', null, 'clay'); const o = tr.group.opps[0]; if (o) { o.arch = 'control'; o.archName = '컨트롤형'; o.styles = ['컨트롤형']; } return 'tourIntro'; } },
+  { group: '3. 첫 대회 (7주차)', label: '공격형을 끈질기게 뒤집기', hint: '로브로 천천히를 고르고 시작하세요. 초반에 밀리다 뒤집으면 큰 글자가 떠요. 결과는 매번 달라요.', make: (s, G) => { ready(s); strong(s, 48); const tr = G.checkTour(s, 'local'); for (const o of [...tr.group.opps, ...tr.ko]) { o.pids = null; o.arch = 'attack'; o.archName = '공격형'; o.styles = ['공격형']; o.rating = 45; } return 'tourIntro'; } },
   { group: '3. 첫 대회 (7주차)', label: '우승 뒤 축하 자리', hint: '화면을 눌러 넘기세요. 결과, 축하 자리, 대회에서 남은 것 순서예요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'W'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '4강 입상 뒤 축하 자리', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'SF'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '예선 탈락 뒤', hint: '축하 자리 없이 지나가요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
@@ -46,9 +48,15 @@ export const CHECKS = [
 
   { group: '5. 3년의 뼈대', label: '정체기: 늘지를 않는다', hint: '코치의 말 다음, 위쪽에 상태가 붙고 훈련의 오를 수치가 줄어요.', make: s => { ready(s); s.conds.plateau = 99; s.flags.plateauSeen = true; s.pendingEvents = [{ id: 'plateau' }]; } },
   { group: '5. 3년의 뼈대', label: '어느 순간 한 계단 오른다', hint: '다음 턴부터 공이 달라 보이는 상태가 붙고, 훈련의 오를 수치가 커져요.', make: s => { ready(s); s.conds.boost = 4; s.stair.n = 1; s.hints.read = 1; s.pendingEvents = [{ id: 'stair', n: 1, skill: 'read', line: '백 번 쳐도 안 되던 게 오늘 됐다. 한 계단 올라간 것 같다.' }]; } },
-  { group: '5. 3년의 뼈대', label: '목표를 놓쳤다, 한 번 더', hint: '한 번 더 해 보면 기한이 늘어나요. 그만두면 판이 끝나요.', make: s => { ready(s, 51); s.goalIdx = 2; s.goalsDone = ['first', 'first_win']; s.pendingEvents = [{ id: 'goalMiss', goal: 'local_qf' }]; } },
-  { group: '5. 3년의 뼈대', label: '기회를 다 쓰고 놓쳤다', hint: '라켓을 내려놓으면 최종 평가가 나와요.', make: s => { ready(s, 51); s.goalIdx = 2; s.goalsDone = ['first', 'first_win']; s.retries = 0; s.pendingEvents = [{ id: 'goalMiss', goal: 'local_qf' }]; } },
+  { group: '5. 3년의 뼈대', label: '목표 대회에서 졌다: 그 경기만 다시', hint: '한 번 더 하면 같은 상대와 다시 해요. 기회는 3번이에요.', make: (s, G) => { ready(s, 41); strong(s, 40); const tr = G.checkTour(s, 'local', null, null, null, 'daon_1'); tr.stage = 'ko'; tr.retryAsk = { opp: tr.ko[0].names.join(' · '), games: [4, 6] }; return 'tourRetry'; } },
+  { group: '5. 3년의 뼈대', label: '기회를 다 쓰고 졌다: 판이 끝난다', hint: '받아들이면 결과를 지나 최종 평가가 나와요.', make: (s, G) => { ready(s, 41); strong(s, 40); s.retries = 0; const tr = G.checkTour(s, 'local', null, null, null, 'daon_1'); tr.stage = 'ko'; tr.retryAsk = { opp: tr.ko[0].names.join(' · '), games: [2, 6] }; return 'tourRetry'; } },
   { group: '5. 3년의 뼈대', label: '마지막 무대: 국화부 전국대회 예선', hint: '같이 나갈 사람을 고르고 시작하세요. 지면 판이 끝나요.', make: s => { ready(s, 147); strong(s, 72); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.partners.hana.aff = 85; s.partners.hana.storyStep = 2; s.flags.firstWin = 9; } },
   { group: '5. 3년의 뼈대', label: '국화부 전국대회 결승전', hint: '마지막 한 경기예요. 이기면 축하 자리 뒤에 최종 평가가 나와요.', make: (s, G) => { ready(s, 155); strong(s, 76); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.skills = { drop: 2, smash: 1, swing: 1, read: 2 }; G.checkTour(s, 'national', null, 'hard', 3); return 'tourIntro'; } },
   { group: '5. 3년의 뼈대', label: '결승전 우승 뒤 축하 자리와 최종 평가', hint: '화면을 눌러 끝까지 넘기세요.', make: (s, G) => { ready(s, 155); strong(s, 78); s.division = '국화'; s.goalIdx = 6; s.partners.hana.div = '국화'; s.skills = { drop: 2, smash: 2, swing: 1, read: 2 }; G.checkTour(s, 'national', 'FW', 'hard', 3); return 'tourResult'; } },
+
+  { group: '6. 대회와 선수', label: '목표 대회가 있는 턴', hint: '이 턴에는 대회만 나갈 수 있어요. 파트너부터 구하세요.', make: s => { ready(s, 41); strong(s, 38); } },
+  { group: '6. 대회와 선수', label: '같은 턴에 대회가 두 개', hint: '대회 버튼을 누르면 두 대회의 특징을 비교할 수 있어요. 평일 낮 대회는 회사원 파트너가 거절해요.', make: s => { ready(s, 33); } },
+  { group: '6. 대회와 선수', label: '달력에서 미리 파트너 구하기', hint: '위쪽 🏆 → 대회 달력 → 대회를 누르세요.', make: s => { ready(s, 45); } },
+  { group: '6. 대회와 선수', label: '파트너를 못 구한 목표 대회', hint: '코치에게 부탁하면 기회를 하나 써요. 그만두면 판이 끝나요.', make: s => { ready(s, 41); s.pendingEvents = [{ id: 'noPartner', tid: 'daon_1' }]; } },
+  { group: '6. 대회와 선수', label: '같은 선수를 또 만났다', hint: '대회 첫 화면의 상대 줄에 전적이 나와요. 같은 대회 같은 사람은 판이 바뀌어도 같아요.', make: (s, G) => { ready(s); strong(s, 40); const tr = G.checkTour(s, 'local'); const o = tr.group.opps[0]; if (o?.pids) s.h2h[o.pids[0]] = { w: 1, l: 2 }; return 'tourIntro'; } },
 ];

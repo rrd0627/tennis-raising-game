@@ -52,5 +52,5 @@ runSkill('기술 없음', {});
 for (const [k, n] of [['drop', '드롭'], ['smash', '스매시'], ['swing', '스윙발리'], ['read', '예측 수비']]) { runSkill(`${n} ○`, { [k]: 1 }); runSkill(`${n} ◎`, { [k]: 2 }); }
 runSkill('전부 ○', { drop: 1, smash: 1, swing: 1, read: 1 });
 runSkill('전부 ◎', { drop: 2, smash: 2, swing: 2, read: 2 });
-console.log('--- 강타형 상대 (40 vs 40)');
-for (const p of PLAN_OPTS) runPlan(p.name, p.id, 40, 1500, 'power');
+console.log('--- 공격형 상대 (40 vs 40)');
+for (const p of PLAN_OPTS) runPlan(p.name, p.id, 40, 1500, 'attack');

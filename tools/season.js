@@ -7,7 +7,7 @@ const PLANS = { power: { formation: 'diag', shot: 'power', tempo: 'attack' }, tw
 
 const RUNS = +process.argv[2] || 30;
 const planWins = { power: [0, 0], twoup: [0, 0], twoback: [0, 0], lob: [0, 0] };
-const NATIONAL_GAP = 6, LOCAL_GAP = 10; // 출전 간격(주). 두 달에 한 번쯤을 적정선으로 본다
+const NATIONAL_GAP = 6, LOCAL_GAP = 12; // 출전 간격(주). 두 달에 한 번쯤을 적정선으로 본다
 
 // 깨달은 레슨이 있으면 가장 약한 쪽을, 없으면 코치에게 맡긴다
 function chooseLesson(s) {
@@ -39,7 +39,8 @@ function play(detail) {
   const s = G.newGame('테스트', randomProfile());
   let matches = 0, watched = 0, wins = 0, last = -99, turn = 0, bondTurns = 0, firstBond = null;
   let firstSkill = null;
-  const misses = [];
+  const misses = [], reached = {};
+  let noPartner = 0;
   const used = {}, fails = {}, feels = { good: 0, bad: 0 };
   let moodSum = 0, moodN = 0;
   const out = [];
@@ -48,18 +49,20 @@ function play(detail) {
     while (s.pendingEvents.length) {
       const ev = s.pendingEvents.shift();
       const yes = ev.id === 'invite' ? G.tour(s, ev.tid).week - last >= NATIONAL_GAP && s.fatigue < 60 : ev.id === 'callout' ? Math.random() < 0.5 : true;
-      if (ev.id === 'goalMiss') misses.push(ev.goal);
-      G.resolveEvent(s, ev, yes ? 'accept' : 'refuse');
+      if (ev.id === 'noPartner') noPartner++;
+      G.resolveEvent(s, ev, ev.id === 'noPartner' ? (s.retries > 0 ? 'accept' : 'refuse') : yes ? 'accept' : 'refuse');
       if (s.ending) break;
     }
     if (s.ending) break;
     for (const id of Object.keys(SKILLS)) while (G.canBuySkill(s, id)) { G.buySkill(s, id); firstSkill = firstSkill ?? s.week; }
     let tw = G.tournamentThisWeek(s);
-    const open = G.openTournament(s);
-    if (!tw && open && (open.finale || (!s.injury && !s.overtime && s.fatigue < 60 && s.week - last >= (open.type === 'national' ? NATIONAL_GAP : LOCAL_GAP)))) {
+    const forced = G.goalTourNow(s);
+    const open = forced || G.openTournament(s);
+    if (!tw && open && (forced || (!s.injury && !s.overtime && s.fatigue < 60 && s.week - last >= (open.type === 'national' ? NATIONAL_GAP : LOCAL_GAP)))) {
       const cands = PARTNERS.filter(p => !G.partnerAvailable(s, p.id, s.week)).sort((a, b) => s.partners[b.id].level - s.partners[a.id].level);
       for (const p of cands) { if (G.askPartner(s, open.id, p.id).ok) break; }
       tw = G.tournamentThisWeek(s);
+      if (!tw && forced) { s.pendingEvents.push({ id: 'noPartner', tid: forced.id }); continue; }
     }
     if (tw) {
       const tr = G.startTournament(s, tw.t.id);
@@ -70,13 +73,13 @@ function play(detail) {
       while (!tr.finished) {
         if (!G.isAutoRound(tr)) watched++;
         const sim = G.playAutoMatch(s, tr);
+        if (tr.retryAsk) { misses.push(tr.goal); G.retryMatch(s, tr, s.retries > 0); continue; }
         matches++; if (sim.winner === 0) wins++;
         planWins[planId][0] += sim.winner === 0 ? 1 : 0; planWins[planId][1]++;
       }
       s.tournament = null;
     } else {
       let act = 'lesson', topic;
-      if (open && open.finale) throw new Error('마지막 무대를 건너뜀');
       if (s.overtime) act = 'overtime';
       else if (s.injury) act = s.stress > 50 ? 'family' : s.injury.weeks > 2 ? 'clinic' : 'rest';
       else if (s.stress > 55) act = 'family';
@@ -98,7 +101,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, misses, quit: !!s.ending.quit, quitWeek: s.ending.quit ? s.week : null, finale: s.finaleResult, rank: s.ending.rank.letter, score: s.ending.rank.score, stairs: s.stair.n, retries: s.retries, firstSkill, tiers: Object.values(s.skills).reduce((a, b) => a + b, 0), hints: Object.values(s.hints).reduce((a, b) => a + b, 0), exp: s.exp, fame: s.fame, prizes: s.prizes.length, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, misses, noPartner, quit: !!s.ending.quit, quitWeek: s.ending.quit ? s.week : null, finale: s.finaleResult, rank: s.ending.rank.letter, score: s.ending.rank.score, stairs: s.stair.n, retries: s.retries, firstSkill, tiers: Object.values(s.skills).reduce((a, b) => a + b, 0), hints: Object.values(s.hints).reduce((a, b) => a + b, 0), exp: s.exp, fame: s.fame, prizes: s.prizes.length, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
 }
 
 const rs = [];
@@ -118,7 +121,7 @@ console.log(`실패: ${range(rs.map(r => r.failN))}턴 | 연습한 대로 나옴
 console.log(`기술 단계 ${range(rs.map(r => r.tiers))} / 8 | 힌트 ${med(rs.map(r => r.hints))}개 | 첫 기술 주 ${range(rs.map(r => r.firstSkill ?? 999))}`);
 console.log(`경험 ${med(rs.map(r => Math.round(r.exp)))} 인맥 ${med(rs.map(r => Math.round(r.fame)))} 상품 ${med(rs.map(r => r.prizes))}개 | 작전별 승률: ${Object.entries(planWins).map(([k, [w, n]]) => `${k} ${(w / Math.max(1, n) * 100).toFixed(0)}%`).join(', ')}`);
 const missBy = {}; rs.forEach(r => r.misses.forEach(g => { missBy[g] = (missBy[g] || 0) + 1; }));
-console.log(`판 종료(그만둠) ${rs.filter(r => r.quit).length}/${RUNS} | 놓친 목표: ${Object.entries(missBy).map(([k, v]) => `${k} ${v}`).join(', ') || '없음'} | 남은 기회 중앙값 ${med(rs.map(r => r.retries))}`);
+console.log(`파트너 못 구함 ${rs.reduce((a, r) => a + r.noPartner, 0)}번 | 판 종료(그만둠) ${rs.filter(r => r.quit).length}/${RUNS} | 다시 한 경기: ${Object.entries(missBy).map(([k, v]) => `${k} ${v}`).join(', ') || '없음'} | 남은 기회 중앙값 ${med(rs.map(r => r.retries))}`);
 console.log(`마지막 무대: ${count('finale')} | 계단 ${range(rs.map(r => r.stairs))}번`);
 console.log(`최종 평가: ${count('rank')} | 점수 ${range(rs.map(r => r.score))}`);
 console.log(`엔딩: ${count('ending')}`);

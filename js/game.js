@@ -1,7 +1,7 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAIR, RETRIES, RETRY_WEEKS, RANKS, FINALE_TOURS, SKILLS, SKILL_PRICE, EXP_OF, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
-  OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAIR, RETRIES, RANKS, SKILLS, SKILL_PRICE, EXP_OF, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  OPP_ARCH, ARCH, PLAYERS, REGIONS, LEVELS, regionGap, HOME_REGION, STAGE_RANK, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
 import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES, HINT_LINES, STAIR_LINES } from './scenes.js';
 import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, gauss } from './sim.js';
@@ -41,7 +41,7 @@ export function newGame(name, profile = {}) {
     goalIdx: 0, goalsDone: [],
     injuries: 0, highStressWeeks: 0, flags: {}, unlocks: [], secretsGot: [], choices: null,
     pendingEvents: [], weekLog: null, ending: null, conds: {},
-    fam: { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } }, growBig: {}, exp: 0, fame: 0, prizes: [], skills: {}, hints: {}, hintAt: {}, retries: RETRIES, goalExtra: {}, stair: { left: STAIR.firstAt, fill: 0, n: 0 }, finaleResult: null, goalVer: 2,
+    fam: { surface: { hard: 45, turf: 15, clay: 10 }, opp: { allround: 10, defense: 10, attack: 10, speed: 10, smash: 10, control: 10 } }, h2h: {}, growBig: {}, exp: 0, fame: 0, prizes: [], skills: {}, hints: {}, hintAt: {}, retries: RETRIES, stair: { left: STAIR.firstAt, fill: 0, n: 0 }, finaleResult: null, goalVer: 3,
   };
   const rng = rngOf(state);
   for (const id of ALL_STATS) state.stats[id] = Math.round(14 + rng() * 10);
@@ -56,7 +56,7 @@ export function newGame(name, profile = {}) {
     for (const [pid, v] of Object.entries(o.aff || {})) state.partners[pid].aff += v;
     state.stress += o.stress || 0; state.confidence += o.confidence || 0; state.work += o.work || 0; state.club += o.club || 0;
   }
-  state.calendar = buildCalendar(rng, 3);
+  state.calendar = buildCalendar();
   for (const div of ['개나리', '국화']) {
     state.npc[div] = {};
     for (const type of ['national', 'local']) {
@@ -82,20 +82,21 @@ function migrate(s) {
   s.lastSpot = s.lastSpot || 'lesson';
   s.faces = Object.fromEntries(TRAIN_SPOTS.map(id => { const f = s.faces?.[id]; return [id, Array.isArray(f) ? f : f ? [f] : []]; }));
   s.conds = s.conds || {};
-  s.fam = s.fam || { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } };
+  s.fam = s.fam || { surface: { hard: 45, turf: 15, clay: 10 }, opp: {} };
+  if (s.fam.opp.allround === undefined) s.fam.opp = { allround: 10, defense: 10, attack: 10, speed: 10, smash: 10, control: 10 };
+  s.h2h = s.h2h || {};
   s.skills = s.skills || {}; s.hints = s.hints || {}; s.hintAt = s.hintAt || {};
-  s.retries = s.retries ?? RETRIES; s.goalExtra = s.goalExtra || {}; s.stair = s.stair || { left: STAIR.firstAt, fill: 0, n: 0 };
-  // 목표와 달력이 바뀌기 전 저장: 이미 한 목표는 넘기고, 기한이 지난 목표는 시간을 더 주고, 마지막 무대를 넣는다
-  if (s.goalVer !== 2) {
-    s.goalVer = 2; s.goalIdx = 0; s.goalsDone = [];
-    while (GOALS[s.goalIdx] && goalDone(s, GOALS[s.goalIdx].id)) s.goalsDone.push(GOALS[s.goalIdx++].id);
-    const g = GOALS[s.goalIdx];
-    if (g && g.by < s.week + 12) s.goalExtra[g.id] = s.week + 12 - g.by;
-    s.calendar = (s.calendar || []).filter(t => t.week < 145);
-    s.calendar.push(...FINALE_TOURS.map(t => ({ ...t })));
+  s.retries = s.retries ?? RETRIES; s.stair = s.stair || { left: STAIR.firstAt, fill: 0, n: 0 };
+  // 달력과 목표가 고정되기 전 저장: 달력을 새로 만들고, 이미 지난 목표는 넘긴다
+  if (s.goalVer !== 3) {
+    s.goalVer = 3; s.entries = {}; s.asked = {}; s.tournament = s.tournament?.finished ? s.tournament : null;
+    s.calendar = buildCalendar();
+    s.goalIdx = GOALS.findIndex(g => g.week >= s.week);
+    if (s.goalIdx < 0) s.goalIdx = GOALS.length - 1;
+    s.goalsDone = GOALS.slice(0, s.goalIdx).map(g => g.id);
+    s.pendingEvents = (s.pendingEvents || []).filter(e => !['goalMiss', 'invite'].includes(e.id));
   }
   s.growBig = s.growBig || {}; s.exp = s.exp || 0; s.fame = s.fame || 0; s.prizes = s.prizes || [];
-  for (const t of s.calendar || []) if (!t.surface) t.surface = ['hard', 'turf', 'clay'][hashStr(t.id) % 3];
   if (s.yips > 0 && !s.conds.yips) s.conds.yips = 3;
   delete s.yips; delete s.moodNudge;
   return s;
@@ -128,6 +129,53 @@ export function tournamentThisWeek(state) {
   return e ? { t: tour(state, e[0]), entry: e[1] } : null;
 }
 export function openTournament(state) { return state.calendar.find(t => t.week === state.week) || null; }
+export function openTournaments(state) { return state.calendar.filter(t => t.week === state.week); }
+// 이번 턴이 목표 대회인가. 목표 대회가 있는 턴에는 그 대회만 할 수 있다.
+export function isGoalTour(state, t) { return !!t.finale || GOALS[state.goalIdx]?.tid === t.id; }
+export function goalTourNow(state) {
+  const t = openTournaments(state).find(x => isGoalTour(state, x));
+  return t || null;
+}
+// ── 선수풀: 대회 특성에 맞는 선수들이 신청해서 나온다 ───────
+export function levelOfPlayer(p, week) { return p.level + p.growth * week / 52; }
+export function appeal(p, t, level, div) {
+  let v = 0;
+  v += [3, 1, -2][regionGap(p.region, t.region)]; // 사는 곳
+  if (p.court === t.surface) v += 1.5; // 좋아하는 코트
+  if (t.time === 'weekday' && p.job === 'office') v -= 6; // 회사원은 평일 낮에 못 나온다
+  if (t.time === 'weekday' && p.job === 'student') v -= 1;
+  if (t.time === 'night' && p.job === 'home') v -= 1;
+  v -= Math.abs(LEVELS[t.level].want[div === '국화' ? 1 : 0] - level) / 5; // 실력에 맞는 대회
+  v += p.ambition * (t.prize + t.draw / 64); // 상금과 규모
+  return v;
+}
+const entrantCache = new Map();
+export function entrantsOf(t, div) {
+  const key = `${t.id}:${div}`;
+  if (entrantCache.has(key)) return entrantCache.get(key);
+  const rng = mulberry32(hashStr(key));
+  const pool = PLAYERS.filter(p => p.div === div);
+  const scored = pool.map(p => ({ p, v: appeal(p, t, levelOfPlayer(p, t.week), div) + rng() * 2 })).sort((a, b) => b.v - a.v);
+  const players = scored.slice(0, Math.min(pool.length, Math.max(24, t.draw * 2))).map(x => x.p);
+  const teams = [];
+  for (let i = 0; i + 1 < players.length; i += 2) teams.push({ a: players[i], b: players[i + 1], level: (levelOfPlayer(players[i], t.week) + levelOfPlayer(players[i + 1], t.week)) / 2 });
+  entrantCache.set(key, teams);
+  return teams;
+}
+export function topEntrants(t, div, n = 3) { return [...entrantsOf(t, div)].flatMap(x => [x.a, x.b]).sort((x, y) => levelOfPlayer(y, t.week) - levelOfPlayer(x, t.week)).slice(0, n); }
+function hashTeam(team) { return hashStr(team.a.id + team.b.id); }
+function teamOpp(team) {
+  return { names: [team.a.name, team.b.name], pids: [team.a.id, team.b.id], styles: [ARCH[team.a.style].name, ARCH[team.b.style].name], rating: Math.round(team.level), club: team.a.club, arch: team.a.style, archName: ARCH[team.a.style].name, seed: hashTeam(team) };
+}
+// 원하는 수준에 가장 가까운 신청 팀. 같은 대회에서 두 번 만나지 않는다.
+function pickTeam(teams, target, used) {
+  let best = null, bd = 1e9;
+  for (const team of teams) { if (used.has(team)) continue; const d = Math.abs(team.level - target); if (d < bd) { bd = d; best = team; } }
+  best = best || teams[0];
+  used.add(best);
+  return teamOpp(best);
+}
+export function h2hOf(state, opp) { return opp?.pids ? state.h2h?.[opp.pids[0]] || null : null; }
 export function nextTournament(state) { return state.calendar.find(t => t.week > state.week) || null; }
 
 // ── 이번 턴 행동 ──────────────────────────────────────────
@@ -583,10 +631,13 @@ export function partnerAvailable(state, pid, week) {
 }
 export function acceptChance(state, pid, t) {
   if (t.finale) return 1; // 마지막 무대는 같이 나가 준다
+  const def = PARTNER[pid];
   if (!state.results.length && pid === 'hana') return 1; // 첫 대회는 입문 동기가 함께 나가 준다
   const ps = state.partners[pid];
   const me = overall(state.stats);
   let p = 0.4 + ps.aff / 170 + (me - ps.level) / 60 + state.club / 450 + (state.fame || 0) / 300;
+  p += clamp(appeal(def, t, ps.level, ps.div) * 0.04, -0.35, 0.15); // 사는 곳, 시간, 코트, 레벨이 맞아야 나온다
+  if (t.time === 'weekday' && def.job === 'office') p -= 0.5; // 회사원은 평일 낮에 나오기 어렵다
   if (t.type === 'national') p += ps.level > me + 10 ? -0.08 : 0.06;
   return clamp(p, 0.05, 0.95);
 }
@@ -609,14 +660,15 @@ function register(state, t, pid) { state.entries[t.id] = { partner: pid }; }
 // 이번 턴 대회에 지금 같이 나가자고 연락한다. 답은 바로 온다.
 export function askPartner(state, tid, pid) {
   const rng = rngOf(state), t = tour(state, tid), ps = state.partners[pid];
-  state.asked[pid] = state.week;
+  state.asked[`${tid}:${pid}`] = true;
   if (rng() < acceptChance(state, pid, t)) {
     register(state, t, pid);
     addMsg(state, pid, `좋아요! ${t.name} 같이 나가요 🎾`);
     return { ok: true };
   }
   const lines = ['아 이번 주는 선약이 있어요 ㅠㅠ', '이번엔 다른 분이랑 나가기로 했어요. 다음에 해요!', '음… 다음에 하자. 실력 좀 더 늘면!'];
-  const line = ps.level > overall(state.stats) + 12 ? lines[2] : lines[Math.floor(rng() * 2)];
+  const def = PARTNER[pid];
+  const line = t.time === 'weekday' && def.job === 'office' ? '평일 낮은 회사 때문에 못 나가요.' : regionGap(def.region, t.region) === 2 ? '거기까지는 너무 멀어요. 가까운 데로 나가요.' : LEVELS[t.level].want[ps.div === '국화' ? 1 : 0] - ps.level > 10 ? '그 대회는 저한테 너무 커요.' : ps.level > overall(state.stats) + 12 ? lines[2] : lines[Math.floor(rng() * 2)];
   addMsg(state, pid, line);
   return { ok: false, line };
 }
@@ -640,38 +692,52 @@ function genInvites(state, rng) {
 }
 
 // ── 목표 ──────────────────────────────────────────────────
-export function goalBy(state, g) { return g.by + (state.goalExtra?.[g.id] || 0); }
 export function currentGoal(state) {
   const g = GOALS[state.goalIdx];
-  return g ? { ...g, by: goalBy(state, g), left: goalBy(state, g) - state.week + 1 } : null;
+  return g ? { ...g, by: g.week, left: g.week - state.week + 1 } : null;
 }
-function goalDone(state, id) {
-  const hit = (type, stages) => state.results.some(r => r.type === type && stages.includes(r.stage));
-  if (id === 'first') return state.results.length > 0;
-  if (id === 'first_win') return !!state.flags.firstWin;
-  if (id === 'local_qf') return hit('local', ['QF', 'SF', 'F', 'W']);
-  if (id === 'mid16') return hit('local', ['SF', 'F', 'W']) || hit('national', ['R16', 'QF', 'SF', 'F', 'W']);
-  if (id === 'mid_top') return hit('local', ['F', 'W']) || hit('national', ['QF', 'SF', 'F', 'W']);
-  if (id === 'promote') return state.division === '국화';
-  return state.finaleResult === 'FW';
+export function goalMet(g, stage, wins) {
+  if (g.need === 'enter') return true;
+  if (g.need === 'win1') return wins >= 1;
+  if (g.need === 'FW') return stage === 'FW';
+  return (STAGE_RANK[stage] ?? -1) >= STAGE_RANK[g.need];
 }
-// 다시 해 볼 수 있는가. 기회가 남아 있고, 더 준 기한 안에 해낼 수 있어야 한다.
-export function canRetry(state, g) {
-  const add = g.retryWeeks || RETRY_WEEKS, next = goalBy(state, g) + add;
-  return state.retries > 0 && g.id !== 'final' && next <= (g.max || 143) && !state.calendar.every(t => t.week <= state.week + 2 || t.finale);
+function goalDone(state, g) {
+  if (g.id === 'final') return state.finaleResult === 'FW';
+  if (g.id === 'promote') return state.division === '국화';
+  if (state.division === '국화') return true; // 이미 국화가 됐으면 개나리부 목표는 지난다
+  return state.results.some(r => r.tid === g.tid && goalMet(g, r.stage, r.wins || 0));
 }
 function checkGoals(state) {
   for (let g = GOALS[state.goalIdx]; g; g = GOALS[state.goalIdx]) {
-    if (goalDone(state, g.id)) {
-      state.goalIdx++; state.goalsDone.push(g.id);
-      state.confidence += 10; state.coach += 3;
-      state.pendingEvents.push({ id: 'goal', goal: g.id });
-      continue;
-    }
-    // 기한을 넘기면 다시 해 볼지 묻는다. 안 하면 판이 끝난다.
-    if (g.id !== 'final' && state.week + WEEKS_PER_TURN > goalBy(state, g)) state.pendingEvents.push({ id: 'goalMiss', goal: g.id });
-    return;
+    if (!goalDone(state, g)) return;
+    state.goalIdx++; state.goalsDone.push(g.id);
+    state.confidence += 10; state.coach += 3;
+    state.pendingEvents.push({ id: 'goal', goal: g.id });
   }
+}
+// 목표 대회에서 이 경기를 지면 대회가 끝나는가. 끝난다면 어떤 단계로 끝나는가.
+function outIfLost(tr) {
+  if (tr.finale) return { 1: 'FG', 2: 'FS', 3: 'FF' }[tr.finale];
+  if (tr.stage === 'group') return tr.group.results.length === 1 && !tr.group.results[0].won ? 'G' : null;
+  return { 1: 'F', 2: 'SF', 3: 'QF', 4: 'R16', 5: 'R32', 6: 'R64', 7: 'R128' }[tr.koRounds - tr.koRound];
+}
+// 지고 나서 다시 할지 고른다. 다시 하면 같은 상대와 그 경기만 다시 한다. 기분이 조금 오른다.
+export function retryMatch(state, tr, yes) {
+  const ask = tr.retryAsk;
+  tr.retryAsk = null;
+  if (yes && state.retries > 0) {
+    state.retries--;
+    state.condition = clamp(state.condition + 1, -2, 2);
+    return true;
+  }
+  tr.noRetry = true;
+  state.goalFailed = true;
+  const opp = currentOpponent(tr);
+  tr.log.push({ stage: stageLabel(tr), opp: opp.names.join('·'), club: opp.club, arch: opp.archName, won: false, auto: false, games: ask?.games || [0, 6] });
+  tr.matchIdx++;
+  advance(state, tr, false);
+  return false;
 }
 
 // ── 턴 마감 ───────────────────────────────────────────────
@@ -711,8 +777,9 @@ export function endWeek(state) {
   if (state.division === '국화' && !state.partners.mikyung.known && state.club >= 25) { state.partners.mikyung.known = true; state.partners.mikyung.aff = 20; addMsg(state, 'mikyung', '정모에서 봤어요. 국화부 같이 나가 볼래요?'); state.pendingEvents.push({ id: 'meet', pid: 'mikyung' }); }
   checkGoals(state);
   clampStatus(state);
-  // 마지막 무대가 끝나면 판이 끝난다
+  // 마지막 무대가 끝나거나 목표에 실패하면 판이 끝난다
   if (state.finaleResult) { state.ending = evaluateEnding(state); return; }
+  if (state.goalFailed) { state.ending = evaluateEnding(state, true); return; }
 
   state.week += WEEKS_PER_TURN;
   if (state.week > TOTAL_WEEKS) { state.ending = evaluateEnding(state); return; }
@@ -725,7 +792,7 @@ export function endWeek(state) {
   }
   // 부상 중이면 잡아 둔 대회는 기권
   const tw = tournamentThisWeek(state);
-  if (tw && state.injury && !tw.t.finale) {
+  if (tw && state.injury && !isGoalTour(state, tw.t)) {
     state.partners[tw.entry.partner].aff = clamp(state.partners[tw.entry.partner].aff - 3, 0, 100);
     delete state.entries[tw.t.id];
     state.pendingEvents.push({ id: 'withdraw', tname: tw.t.name, pid: tw.entry.partner });
@@ -741,7 +808,7 @@ export function endWeek(state) {
 function rollEvents(state, rng) {
   const wi = weekInfo(state.week);
   const tw = tournamentThisWeek(state);
-  if (openTournament(state)?.finale) return; // 마지막 무대가 있는 턴에는 다른 일이 끼어들지 않는다
+  if (goalTourNow(state)) return; // 목표 대회가 있는 턴에는 다른 일이 끼어들지 않는다
   // 첫 달은 레슨과 첫 대회 이야기에 집중한다
   if (state.week > 8) {
     if (rng() < 0.08 && !tw) state.pendingEvents.push({ id: 'deadline' });
@@ -784,10 +851,10 @@ export function eventView(state, ev) {
     case 'meet': return { who: ev.pid, title: '새로운 인연', text: `${P[ev.pid].name} (${P[ev.pid].arch}): "${P[ev.pid].line}"`, choices: [['ok', '반가워요']] };
     case 'withdraw': return { who: ev.pid, title: '대회 기권', text: `부상으로 ${ev.tname}에 못 나간다고 ${P[ev.pid].name}에게 연락했다. (친밀도 -3)`, choices: [['ok', '확인']] };
     case 'goal': { const g = GOALS.find(x => x.id === ev.goal); return { who: 'coach', title: '목표 달성!', text: `코치: "${g.text}, 해냈어요!" (자신감 +10, 코치 신뢰 +3)`, choices: [['ok', '좋아!']] }; }
-    case 'goalMiss': {
-      const g = GOALS.find(x => x.id === ev.goal);
-      if (!canRetry(state, g)) return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "이번 목표(${g.text})도 못 했네요. 요즘 안 늘죠? 다들 이럴 때 그만둬요. 괜찮아요."`, choices: [['refuse', '라켓을 내려놓는다']] };
-      return { who: 'coach', title: '목표를 놓쳤다', text: `코치: "이번 목표(${g.text})는 못 했어요. 많이 어렵죠? 그래도 한 번 더 해 볼래요?" 남은 기회 ${state.retries}번.`, choices: [['accept', '한 번 더 해 본다'], ['refuse', '여기까지 할래요']] };
+    case 'noPartner': {
+      const t = tour(state, ev.tid);
+      if (state.retries <= 0) return { who: 'coach', title: '파트너를 못 구했다', text: `코치: "${t.name}에 같이 나갈 사람을 못 구했군요. 복식은 혼자 못 나가요. 괜찮아요, 다들 이럴 때 그만둬요."`, choices: [['refuse', '라켓을 내려놓는다']] };
+      return { who: 'coach', title: '파트너를 못 구했다', text: `코치: "${t.name}에 같이 나갈 사람이 없다고요? 제가 한번 부탁해 볼까요?" 남은 기회 ${state.retries}번.`, choices: [['accept', '부탁드려요'], ['refuse', '여기까지 할래요']] };
     }
     case 'plateau': return { who: 'coach', title: '늘지를 않는다', text: '코치: "요즘 늘지를 않죠? 다들 여기서 그만둬요. 계속 치다 보면 어느 순간 계단처럼 확 늘어요."', choices: [['ok', '믿어 볼게요']] };
     case 'stair': return { who: 'me', title: '한 계단 올랐다!', text: ev.line, choices: [['ok', '이 느낌이다']] };
@@ -805,12 +872,15 @@ export function eventView(state, ev) {
 export function resolveEvent(state, ev, choice) {
   const yes = choice === 'accept';
   switch (ev.id) {
-    case 'goalMiss': {
-      const g = GOALS.find(x => x.id === ev.goal);
-      if (yes && canRetry(state, g)) {
+    case 'noPartner': {
+      const t = tour(state, ev.tid);
+      if (yes && state.retries > 0) {
         state.retries--;
-        state.goalExtra[g.id] = (state.goalExtra[g.id] || 0) + (g.retryWeeks || RETRY_WEEKS);
-        state.eventNote = '코치: "좋아요. 같이 한 번 더 해 봐요."';
+        const list = PARTNERS.filter(p => !partnerAvailable(state, p.id, t.week));
+        const pid = (list.sort((a, b) => acceptChance(state, b.id, t) - acceptChance(state, a.id, t))[0] || PARTNER.hana).id;
+        register(state, t, pid);
+        addMsg(state, pid, `코치님 부탁이라… 이번만 같이 나가요.`);
+        state.eventNote = `코치의 부탁으로 ${PARTNER[pid].name}${/[가-힣]/.test(PARTNER[pid].name) ? ' 씨가' : ''} 같이 나가 주기로 했다.`;
       } else state.ending = evaluateEnding(state, true);
       break;
     }
@@ -893,7 +963,7 @@ export function teamSeed(state, t, pid) {
 }
 
 // ── 대회 ─────────────────────────────────────────────────
-const FINALE_RATING = [66, 69, 73];
+const FINALE_RATING = [72, 75, 78];
 const FINALE_ROUND = { 1: ['예선 1회전', '예선 결승'], 2: ['본선 8강', '본선 4강'], 3: ['결승전'] };
 export function startTournament(state, tid) {
   const rng = rngOf(state);
@@ -901,22 +971,23 @@ export function startTournament(state, tid) {
   state.stress += 4; // 대회 주에도 회사는 간다
   state.overtime = false;
   const seed = teamSeed(state, t, e.partner);
-  // 입문기: 1년차 상반기 상대는 약하게 시작해 26주에 걸쳐 원래 수준으로 오른다
-  const ramp = state.division === '개나리' ? clamp((26 - state.week) / 26, 0, 1) * 11 : 0;
-  const mu = (state.division === '국화' ? 63 : 37) + (t.type === 'national' ? (state.division === '국화' ? 3 : 1) : -3) - ramp;
+  // 입문기: 1년차 상대는 약하게 시작해 52주에 걸쳐 원래 수준으로 오른다
+  const ramp = state.division === '개나리' ? clamp((52 - state.week) / 52, 0, 1) * 8 : 0;
+  const mu = (state.division === '국화' ? 63 : 37) + LEVELS[t.level || 2].adj + (t.type === 'national' && state.division === '국화' ? 2 : 0) - ramp;
+  // 사는 곳과 시간: 멀면 더 피곤하고, 평일 낮이면 연차를 써야 한다
+  const gap = regionGap(HOME_REGION, t.region || HOME_REGION);
+  if (gap) state.fatigue = clamp(state.fatigue + gap * 3, 0, 100);
+  if (t.time === 'weekday') state.work = clamp(state.work - 5, 0, 100);
   const bye = t.finale ? true : seed !== null && seed <= 2;
-  const mk = (rating) => {
-    const club = CLUB_NAMES[Math.floor(rng() * CLUB_NAMES.length)];
-    const arch = OPP_ARCH[Math.floor(rng() * OPP_ARCH.length)];
-    return { names: [randomName(rng), randomName(rng)], rating: Math.round(rating), club, arch: arch.id, archName: arch.name, seed: rng() * 1e9 >>> 0 };
-  };
+  const teams = entrantsOf(t, state.division), used = new Set();
+  const mk = rating => pickTeam(teams, rating, used);
   // 예선 2경기에서 1승 이상이면 본선. 본선 상대는 결승에 가까울수록 강하다.
   const groupOpps = bye ? [] : [mk(mu - 3 + gauss(rng) * 6 - (seed ? 3 : 0)), mk(mu - 3 + gauss(rng) * 6 - (seed ? 3 : 0))];
   const koRounds = Math.log2(t.draw);
   const ko = [];
   for (let r = 0; r < koRounds; r++) ko.push(mk(t.finale ? FINALE_RATING[t.finale - 1] + r + gauss(rng) * 2 : Math.max(mu - 6, mu + 7 - 2.5 * (koRounds - r - 1)) + gauss(rng) * 5 + (seed && r === 0 ? -3 : 0)));
   const tr = {
-    tid, name: t.name, type: t.type, finale: t.finale || 0, surface: t.surface || HOME_SURFACE, div: state.division, partner: e.partner, seed, bye, draw: t.draw,
+    tid, name: t.name, type: t.type, level: t.level || 2, region: t.region, time: t.time, goal: isGoalTour(state, t) ? (t.finale ? 'final' : GOALS[state.goalIdx].id) : null, wins: 0, finale: t.finale || 0, surface: t.surface || HOME_SURFACE, div: state.division, partner: e.partner, seed, bye, draw: t.draw,
     group: { opps: groupOpps, results: [] }, ko, koRound: 0, koRounds,
     stage: bye ? 'ko' : 'group', matchIdx: 0, finished: false, final: null, log: [],
   };
@@ -945,10 +1016,18 @@ export function playAutoMatch(state, tr) {
   recordMatch(state, tr, sim, true);
   return sim;
 }
+function playerTeam(opp, week) {
+  const players = opp.pids.map((pid, i) => {
+    const p = PLAYERS.find(x => x.id === pid);
+    return { id: `npc${i}`, name: p.name, stats: makeStats(mulberry32(hashStr(pid)), levelOfPlayer(p, week), ARCH[p.style].bias), conf: 50, condition: 0 };
+  });
+  return { players, arch: ARCH[opp.arch], rating: opp.rating, combo: 30, isHuman: false };
+}
 export function buildTeams(state, tr) {
   const opp = currentOpponent(tr);
   const rng = mulberry32(opp.seed);
-  const npc = makeNpcTeam(rng, opp.rating, opp.names, opp.arch);
+  // 선수풀의 실제 선수들. 같은 사람은 늘 같은 특징으로 나온다.
+  const npc = opp.pids ? playerTeam(opp, state.week) : makeNpcTeam(rng, opp.rating, opp.names, opp.arch);
   npc.players.forEach(p => { p.club = opp.club; });
   const cond = state.condition - (tr.spare ? 1 : 0);
   const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond, skills: { ...(state.skills || {}) } };
@@ -972,6 +1051,13 @@ export function recordMatch(state, tr, sim, auto = false) {
   const won = sim.winner === 0;
   const opp = currentOpponent(tr);
   const me = sim.P[0];
+  // 목표가 걸린 대회에서 이대로 지면 목표를 놓친다: 그 경기를 다시 할지 먼저 묻는다
+  if (!won && tr.goal && !tr.noRetry) {
+    const out = outIfLost(tr), g = GOALS.find(x => x.id === tr.goal);
+    if (out && !goalMet(g, out, tr.wins || 0)) { tr.retryAsk = { opp: opp.names.join(' · '), games: [...sim.games] }; return; }
+  }
+  if (won) tr.wins = (tr.wins || 0) + 1;
+  if (opp.pids) { const h = state.h2h[opp.pids[0]] = state.h2h[opp.pids[0]] || { w: 0, l: 0 }; h[won ? 'w' : 'l']++; }
   addFam(state, 'surface', tr.surface, 6);
   addFam(state, 'opp', opp.arch, 8);
   tr.log.push({ stage: stageLabel(tr), opp: opp.names.join('·'), club: opp.club, arch: opp.archName, won, auto, games: [...sim.games] });
@@ -982,29 +1068,29 @@ export function recordMatch(state, tr, sim, auto = false) {
   ps.combo = clamp(ps.combo + 2, 0, 100); ps.aff = clamp(ps.aff + (won ? 2 : 0), 0, 100);
   tr.matchIdx++;
   learnFrom(state, me, tr);
-  if (tr.stage === 'group') {
-    tr.group.results.push({ won });
-    if (tr.group.results.length === 2) {
-      if (tr.group.results.some(r => r.won)) tr.stage = 'ko'; else finishTournament(state, tr, 'G');
-    }
-  } else {
-    if (!won) {
-      const left = tr.koRounds - tr.koRound;
-      finishTournament(state, tr, tr.finale ? { 1: 'FG', 2: 'FS', 3: 'FF' }[tr.finale] : { 1: 'F', 2: 'SF', 3: 'QF', 4: 'R16', 5: 'R32', 6: 'R64', 7: 'R128' }[left]);
-    } else {
-      tr.koRound++;
-      if (tr.koRound >= tr.koRounds) finishTournament(state, tr, tr.finale === 3 ? 'FW' : tr.finale ? 'FP' : 'W');
-    }
-  }
+  advance(state, tr, won);
   stairFill(state, STAIR.fillMatch);
   if (!tr.finished && !state.flags.rivalMetWeek && tr.type === 'national' && state.division === '개나리') {
     state.flags.rivalMetWeek = state.week;
     state.pendingEvents.push({ id: 'rival', text: won ? '이번엔 운이 좋았네. 다음 대회에서 봐.' : '개나리치곤 괜찮네. 더 올라와.' });
   }
 }
+function advance(state, tr, won) {
+  if (tr.stage === 'group') {
+    tr.group.results.push({ won });
+    if (tr.group.results.length === 2) {
+      if (tr.group.results.some(r => r.won)) tr.stage = 'ko'; else finishTournament(state, tr, 'G');
+    }
+  } else if (!won) {
+    finishTournament(state, tr, outIfLost(tr));
+  } else {
+    tr.koRound++;
+    if (tr.koRound >= tr.koRounds) finishTournament(state, tr, tr.finale === 3 ? 'FW' : tr.finale ? 'FP' : 'W');
+  }
+}
 function finishTournament(state, tr, stage) {
   tr.finished = true; tr.final = stage;
-  const pts = POINTS[tr.type][stage] || 0;
+  const pts = Math.round((POINTS[tr.type][stage] || 0) * (LEVELS[tr.level || 2].pts));
   state.points[tr.div][tr.type].push({ week: state.week, pts, tid: tr.tid });
   tr.pts = pts;
   tr.fatigue = Math.min(30, tr.matchIdx * 4);
@@ -1060,7 +1146,7 @@ function finishTournament(state, tr, stage) {
   for (const gid of ['mental', 'tactics', 'counter']) growGroup(state, gid, Math.min(0.2, 0.05 * tr.matchIdx), 1, rng);
   const ps = state.partners[tr.partner];
   ps.combo = clamp(ps.combo + 3, 0, 100);
-  state.results.push({ week: state.week, tid: tr.tid, name: tr.name, type: tr.type, div: tr.div, stage, partner: tr.partner });
+  state.results.push({ week: state.week, tid: tr.tid, name: tr.name, type: tr.type, div: tr.div, stage, partner: tr.partner, wins: tr.wins || 0 });
   if (stage === 'W') {
     ps.wins++;
     if (tr.div === '개나리') { state.titles[tr.type]++; }
@@ -1108,8 +1194,8 @@ export function evaluateEnding(state, quit = false) {
 }
 
 // 확인 링크 전용: 대회를 바로 시작하거나 결과까지 건너뛴다
-export function checkTour(state, type, stage, surface, finale) {
-  const t = state.calendar.find(x => (finale ? x.finale === finale : x.type === type && x.week >= 9 && !x.finale));
+export function checkTour(state, type, stage, surface, finale, tid) {
+  const t = state.calendar.find(x => (tid ? x.id === tid : finale ? x.finale === finale : x.type === type && x.week >= 9 && !x.finale));
   state.week = t.week;
   if (surface) t.surface = surface;
   state.entries[t.id] = { partner: 'hana' };

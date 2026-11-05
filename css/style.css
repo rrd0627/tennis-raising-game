@@ -278,6 +278,14 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 @keyframes sweep { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
 .trophy { position: absolute; left: 50%; top: 22%; z-index: 3; transform: translateX(-50%); font-size: 62px; line-height: 1; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .35)); pointer-events: none; }
 
+/* 대회 정보 */
+.tourcard { display: flex; flex-direction: column; gap: 5px; }
+.tourcard h3 { margin: 0; font-size: 18px; }
+.tourcard .envrow small { width: auto; }
+.topplayers { font-size: 12.5px; margin: 2px 0; word-break: keep-all; }
+.tag.goal { background: #f0447e; color: #fff; }
+.trow.goalrow { box-shadow: inset 3px 0 0 #f0447e; }
+.trow { cursor: pointer; }
 /* 최종 평가 */
 .rankcard { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .rankcard small { flex-basis: 100%; color: #5b6560; font-weight: 700; }

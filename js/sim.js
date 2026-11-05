@@ -603,8 +603,8 @@ export function aiChoices(sim, ti, rng = Math.random) {
   c.tempo = diff <= -2 ? 'attack' : diff >= 2 ? 'safe' : 'normal';
   const low = ps.find(p => p.gauge < 35);
   c.mental = low ? (rng() < 0.5 ? 'breathe' : 'cheer') : 'keep';
-  c.formation = arch && arch.id === 'net' ? 'up' : arch && arch.id === 'wall' ? 'back' : 'diag';
-  // 상대 성향에 따라 구간별 힘이 다르다. 강타형은 초반에 세고 오래가면 흔들린다.
-  c.plan = arch ? { power: 'power', net: 'twoup', wall: 'twoback', moon: 'lob' }[arch.id] : undefined;
+  c.formation = arch?.formation || 'diag';
+  // 선수 특징에 따라 구간별 힘이 다르다. 공격형은 초반에 세고 오래가면 흔들린다.
+  c.plan = arch?.plan;
   return c;
 }

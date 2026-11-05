@@ -443,6 +443,7 @@ export const STATE_LINES = {
   plateau: '요즘 늘지를 않는다. 이렇게 치는 게 맞나.',
   plateauNear: '요즘 뭔가 잡힐 듯 말 듯하다.',
   boost: '공이 느리게 보인다. 왜 되지?',
+  goalTour: '이번 턴은 {name}. 같이 나갈 사람부터 구해야 한다.',
   finale: '드디어 마지막 무대다. 같이 나갈 사람에게 연락하자.',
   entered: '이번 주는 {name}! 벌써 긴장된다.',
   overtime: '이번 주는 코트 근처에도 못 가겠네.',
