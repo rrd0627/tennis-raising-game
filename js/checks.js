@@ -9,6 +9,8 @@ const ready = (s, week = 45) => {
   for (const id of ['daeun', 'jiwoo']) { s.partners[id].known = true; s.partners[id].aff = 20; }
   s.faces = { lesson: ['sumin'], gym: [], practice: ['jiwoo'], club: ['sunhee', 'daeun'], home: [] };
 };
+// 대회 장면은 실력을 맞춰 둔다
+const strong = (s, v = 45) => { for (const id of Object.keys(s.stats)) s.stats[id] = v; for (const k of Object.keys(s.partners)) s.partners[k].level = Math.max(s.partners[k].level, v); };
 const bonded = (s, id, aff = 85) => { s.partners[id].aff = aff; s.partners[id].storyStep = 2; };
 
 export const CHECKS = [
@@ -27,4 +29,12 @@ export const CHECKS = [
   { group: '2. 몸과 마음 (3주차부터)', label: '연습한 대로 잘 나온 턴', hint: '훈련 → 클럽 게임을 고르세요. 기분이 올라가요.', make: s => { ready(s); s.lastSpot = 'club'; s.force = { feel: 'good' }; } },
   { group: '2. 몸과 마음 (3주차부터)', label: '되는 줄 알았는데 안 나온 턴', hint: '훈련 → 클럽 게임을 고르세요. "이제 좀 되는지도?"가 "왜 이렇게 어렵지?"로 바뀌어요.', make: s => { ready(s); s.lastSpot = 'club'; s.conds.sure = 3; s.condition = 1; s.force = { feel: 'bad' }; } },
   { group: '2. 몸과 마음 (3주차부터)', label: '여행으로 마음 비우기', hint: '가족·친구를 고르세요. 위쪽의 나쁜 상태가 풀려요.', make: s => { ready(s); s.conds.doubt = 3; s.conds.yips = 4; s.stress = 60; s.condition = -1; s.force = { outing: 'trip' }; } },
+
+  { group: '3. 첫 대회 (7주차)', label: '낯선 코트와 낯선 상대', hint: '오늘의 환경과 작전 4개를 보세요. 경기를 해 봐도 돼요.', make: (s, G) => { ready(s); strong(s); const tr = G.checkTour(s, 'local', null, 'clay'); const o = tr.group.opps[0]; if (o) { o.arch = 'slice'; o.archName = '슬라이스형'; } return 'tourIntro'; } },
+  { group: '3. 첫 대회 (7주차)', label: '강타형을 끈질기게 뒤집기', hint: '로브로 천천히를 고르고 시작하세요. 초반에 밀리다 뒤집으면 큰 글자가 떠요. 결과는 매번 달라요.', make: (s, G) => { ready(s); strong(s, 48); const tr = G.checkTour(s, 'local'); for (const o of [...tr.group.opps, ...tr.ko]) { o.arch = 'power'; o.archName = '강타형'; o.rating = 45; } return 'tourIntro'; } },
+  { group: '3. 첫 대회 (7주차)', label: '우승 뒤 축하 자리', hint: '화면을 눌러 넘기세요. 결과, 축하 자리, 대회에서 남은 것 순서예요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'W'); return 'tourResult'; } },
+  { group: '3. 첫 대회 (7주차)', label: '4강 입상 뒤 축하 자리', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'SF'); return 'tourResult'; } },
+  { group: '3. 첫 대회 (7주차)', label: '예선 탈락 뒤', hint: '축하 자리 없이 지나가요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
+  { group: '3. 첫 대회 (7주차)', label: '개나리 전국대회 우승, 국화 승급', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'national', 'W'); return 'tourResult'; } },
+  { group: '3. 첫 대회 (7주차)', label: '입상 뒤 같이 나가자는 연락', hint: '같이 나간다, 거절한다 중에 골라 보세요.', make: s => { ready(s); const t = s.calendar.find(x => x.week > 45); s.pendingEvents = [{ id: 'invite', tid: t.id, pid: 'sunhee', after: { name: '해솔구청장배', stage: 'SF' } }]; } },
 ];

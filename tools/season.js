@@ -3,8 +3,10 @@
 import * as G from '../js/game.js';
 import { MatchSim, quickMatch, aiChoices } from '../js/sim.js';
 import { PARTNERS, BIG_STATS, PROFILE } from '../js/data.js';
+const PLANS = { power: { formation: 'diag', shot: 'power', tempo: 'attack' }, twoup: { formation: 'up', shot: 'dash', tempo: 'normal' }, twoback: { formation: 'back', shot: 'slice', tempo: 'normal' }, lob: { formation: 'diag', shot: 'moon', tempo: 'safe' } };
 
 const RUNS = +process.argv[2] || 30;
+const planWins = { power: [0, 0], twoup: [0, 0], twoback: [0, 0], lob: [0, 0] };
 const NATIONAL_GAP = 6, LOCAL_GAP = 10; // 출전 간격(주). 두 달에 한 번쯤을 적정선으로 본다
 
 // 깨달은 레슨이 있으면 가장 약한 쪽을, 없으면 코치에게 맡긴다
@@ -56,10 +58,14 @@ function play(detail) {
     if (tw) {
       const tr = G.startTournament(s, tw.t.id);
       last = s.week;
+      // 작전은 대회마다 무작위로 고른다. 어느 하나가 크게 앞서는지 본다.
+      const planId = pick(Object.keys(PLANS));
+      s.choices = { attack: 'none', mental: 'keep', ...PLANS[planId], plan: planId };
       while (!tr.finished) {
         if (!G.isAutoRound(tr)) watched++;
         const sim = G.playAutoMatch(s, tr);
         matches++; if (sim.winner === 0) wins++;
+        planWins[planId][0] += sim.winner === 0 ? 1 : 0; planWins[planId][1]++;
       }
       s.tournament = null;
     } else {
@@ -85,7 +91,7 @@ function play(detail) {
     }
   }
   if (detail) console.log(out.join('\n'));
-  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
+  return { job: s.job, past: s.past, why: s.why, promoted: s.promotedWeek || null, matches, watched, wins, tours: s.results.length, overall: G.overall(s.stats), injuries: s.injuries, ending: s.ending.name, goals: s.goalsDone.length, turns: turn, stories: s.storiesDone.length, miles: s.miles.length, bondTurns, firstBond, used, exp: s.exp, fame: s.fame, prizes: s.prizes.length, fails, feels, mood: moodSum / moodN, failN: Object.values(fails).reduce((a, b) => a + b, 0), bonded: PARTNERS.filter(p => G.hasBond(s, p.id)).length, lv: Object.values(s.spots).map(x => x.lv).join('/') };
 }
 
 const rs = [];
@@ -102,6 +108,7 @@ const fb = rs.map(r => r.firstBond).filter(Boolean);
 console.log(`호흡 훈련: ${range(rs.map(r => r.bondTurns))}턴 | 첫 호흡 훈련 주: ${fb.length ? range(fb) : '없음'} | 호흡 맞는 사람 ${range(rs.map(r => r.bonded))}명`);
 console.log(`칸 사용 중앙값: ${['lesson', 'gym', 'practice', 'club', 'home', 'rest', 'family', 'clinic'].map(k => `${k} ${med(rs.map(r => r.used[k] || 0))}`).join(', ')} | 칸 레벨 예: ${rs[0].lv}`);
 console.log(`실패: ${range(rs.map(r => r.failN))}턴 | 연습한 대로 나옴 ${med(rs.map(r => r.feels.good))} 안 나옴 ${med(rs.map(r => r.feels.bad))} | 평균 기분 ${(rs.reduce((a, r) => a + r.mood, 0) / rs.length).toFixed(2)}`);
+console.log(`경험 ${med(rs.map(r => Math.round(r.exp)))} 인맥 ${med(rs.map(r => Math.round(r.fame)))} 상품 ${med(rs.map(r => r.prizes))}개 | 작전별 승률: ${Object.entries(planWins).map(([k, [w, n]]) => `${k} ${(w / Math.max(1, n) * 100).toFixed(0)}%`).join(', ')}`);
 console.log(`엔딩: ${count('ending')}`);
 for (const q of PROFILE) console.log(`${q.key} 승급 주 중앙값: ` + q.options.map(o => { const w = rs.filter(r => r[q.key] === o.id && r.promoted).map(r => r.promoted); return `${o.id} ${w.length ? med(w) : '-'}`; }).join(', '));
 const min = med(rs.map(r => r.watched)) * 3 + med(rs.map(r => r.turns)) * 0.5 + 60;

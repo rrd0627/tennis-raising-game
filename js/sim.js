@@ -17,6 +17,17 @@ export const TUNE = {
   errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72,
   // 작전. err·win: 범실·위너 배율, q: 샷 품질, serve: 퍼스트 서브 성공률. 범실이 위너보다 많아 win을 크게 잡는다
   tempo: { safe: { err: 0.92, win: 0.8, q: -8, serve: 0.03 }, normal: { err: 1, win: 1, q: 0, serve: 0 }, attack: { err: 1.12, win: 1.4, q: 8, serve: -0.03 } },
+  // 작전의 구간별 힘. early는 첫 게임, late는 planGames번째 게임부터. q: 샷 품질, err: 범실 배율, tire: 지치는 속도.
+  // 강타는 초반에 밀어붙이지만 오래가면 실수가 늘고, 끈질기게 버티는 쪽은 후반에 힘이 난다.
+  planGames: 8,
+  plan: {
+    power: { early: { q: 8, err: 0.92 }, late: { q: 2, err: 1.08 }, tire: 1.15 },
+    twoup: { early: { q: 3, err: 1 }, late: { q: 2, err: 1.02 }, tire: 1.05 },
+    twoback: { early: { q: -2, err: 0.98 }, late: { q: 2, err: 0.95 }, tire: 0.95 },
+    lob: { early: { q: -4, err: 1 }, late: { q: 3, err: 0.93 }, tire: 0.9 },
+  },
+  rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
+  gritK: 0.06, // 2게임 이상 뒤질 때 끈질긴 작전에 붙는 힘. 회복탄력성과 스태미나에 비례
 };
 const avg = (...xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
 
@@ -45,7 +56,18 @@ export const CHOICE_DEFS = [
 export const DEFAULT_CHOICES = { attack: 'none', formation: 'diag', shot: 'none', tempo: 'normal', mental: 'keep' };
 export const LOCKED_SHOT_OPTS = ['serve_volley', 'lob_net', 'deep_slice'];
 // 경기 전에 고르는 오늘의 작전. 경기가 시작되면 입력은 없다.
-export const TEMPO_OPTS = [['attack', '공격적으로'], ['normal', '평소대로'], ['safe', '침착하게']];
+export const PLAN_OPTS = [
+  { id: 'power', name: '강타 위주', desc: '초반부터 세게 밀어붙인다. 오래가면 실수가 늘 수 있다.' },
+  { id: 'twoup', name: '둘 다 전위', desc: '둘이 네트로 나가 빨리 끝낸다. 로브에 뒤가 빈다.' },
+  { id: 'twoback', name: '둘 다 후위', desc: '둘 다 뒤에서 끈질기게 넘긴다.' },
+  { id: 'lob', name: '로브로 천천히', desc: '높고 느리게 넘긴다. 상대가 먼저 실수하기를 기다린다.' },
+];
+export const PLAN_SET = {
+  power: { formation: 'diag', shot: 'power', tempo: 'attack' },
+  twoup: { formation: 'up', shot: 'dash', tempo: 'normal' },
+  twoback: { formation: 'back', shot: 'slice', tempo: 'normal' },
+  lob: { formation: 'diag', shot: 'moon', tempo: 'safe' },
+};
 
 // 샷 종류와 코스에 맞는 낙하 지점과 받는 지점. 연출용이고 승패에는 영향을 주지 않는다.
 function landingOf(st, dir, rPos, ra, rz, n, u1, u2) {
@@ -89,7 +111,7 @@ export class MatchSim {
     [teamA, teamB].forEach((t, ti) => t.players.forEach((p, k) => {
       this.P.push({
         ...p, team: ti, slot: k, side: k, gauge: clamp(40 + (p.conf ?? 50) * 0.4, 20, 85), F: opts.startFatigue?.[ti] ?? 0, pos: 'base',
-        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, poachTry: 0, poachWin: 0, assists: 0, counter: {}, shots: {} },
+        rec: { fsIn: 0, fsTot: 0, aces: 0, df: 0, winners: 0, errors: 0, errEarly: 0, errLate: 0, poachTry: 0, poachWin: 0, assists: 0, counter: {}, shots: {} },
       });
     }));
     teamA.choices = { ...DEFAULT_CHOICES, ...(teamA.choices || {}) };
@@ -255,7 +277,10 @@ export class MatchSim {
     const fat = p => p.F;
     const rec = (p, type, k) => { const r = p.rec.shots[type] || (p.rec.shots[type] = { n: 0, win: 0, err: 0 }); r[k]++; };
     const recCounter = (p, c, ok) => { const r = p.rec.counter[c] || (p.rec.counter[c] = { tot: 0, ok: 0 }); r.tot++; if (ok) r.ok++; };
-    const tire = p => { p.F += 0.035 * (1.6 - p.stats.stamina / 100); };
+    const phase = Math.min(1, this.gameNo / TUNE.planGames);
+    const planOf = t => TUNE.plan[t.choices.plan];
+    const planVal = (t, key) => { const pl = planOf(t); return pl ? pl.early[key] + (pl.late[key] - pl.early[key]) * phase : key === 'err' ? 1 : 0; };
+    const tire = p => { p.F += 0.035 * (1.6 - p.stats.stamina / 100) * (planOf(this.teams[p.team])?.tire ?? 1); };
 
     // 서브
     const s = server.stats, r = receiver.stats;
@@ -304,9 +329,11 @@ export class MatchSim {
       const Sc = st === 'return' || st === 'chip_return' ? S : H.stats[COURSE_STAT[dir] || 'cross'];
       const combo = (T.combo || 0) * 0.08;
       let Q = TUNE.statW * S + (1 - TUNE.statW) * Sc + gauss(rng) * TUNE.noise + M(H) * 100 + combo - fat(H) * 0.8 - inc.D * TUNE.qD;
-      Q += tempoOf(T).q;
+      Q += tempoOf(T).q + planVal(T, 'q');
+      // 뒤지고 있어도 끈질기게 버티는 힘
+      if ((T.choices.plan === 'twoback' || T.choices.plan === 'lob') && this.games[1 - H.team] - this.games[H.team] >= 2) Q += Math.max(0, (H.stats.resilience + H.stats.stamina) / 2 - 25) * TUNE.gritK;
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
-      let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0)) * tempoOf(T).err;
+      let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
       err = clamp(err, 0.02, 0.65);
       tire(H);
       const posNow = this.snapshot();
@@ -321,6 +348,7 @@ export class MatchSim {
         const zs2 = this.zSign(H.team);
         const to = isNet ? [from[0] * 0.6, zs2 * 0.3] : [clamp(from[0] * -1.1 + gauss(rng) * 2, -7, 7), -zs2 * (12.8 + rng() * 1.5)];
         H.rec.errors++; rec(H, st, 'err');
+        if (this.gameNo < 5) H.rec.errEarly++; else H.rec.errLate++;
         shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow });
         H.gauge -= 6 * (1 - H.stats.composure / 160);
         const m = this.mate(H); m.gauge -= 2 * (1 - m.stats.composure / 150);
@@ -555,5 +583,7 @@ export function aiChoices(sim, ti, rng = Math.random) {
   const low = ps.find(p => p.gauge < 35);
   c.mental = low ? (rng() < 0.5 ? 'breathe' : 'cheer') : 'keep';
   c.formation = arch && arch.id === 'net' ? 'up' : arch && arch.id === 'wall' ? 'back' : 'diag';
+  // 상대 성향에 따라 구간별 힘이 다르다. 강타형은 초반에 세고 오래가면 흔들린다.
+  c.plan = arch ? { power: 'power', net: 'twoup', wall: 'twoback', moon: 'lob' }[arch.id] : undefined;
   return c;
 }

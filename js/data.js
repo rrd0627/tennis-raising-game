@@ -50,6 +50,9 @@ export const BIG_STATS = [
   { id: 'mental', name: '멘탈', groups: ['mental'] },
 ];
 
+export const STAT_BIG = {};
+for (const b of BIG_STATS) for (const gid of b.groups) for (const [sid] of GROUP_BY_ID[gid].stats) STAT_BIG[sid] = b.id;
+
 // ── 이번 턴에 할 일 (1턴 = 2주) ───────────────────────────
 // train: 훈련 칸. tennis: 코트에서 하는 일(폭염 영향). risk: 부상 위험이 있다. unlock: 이야기가 진행되어야 열린다.
 // mile: 이 칸에서 나올 수 있는 이정표 주제. 대회 출전은 화면에서 따로 처리한다.
@@ -123,26 +126,27 @@ export const GOALS = [
 ];
 
 // 레슨 첫날 코치와의 대화. 고른 답에 따라 시작 능력치와 관계가 달라진다.
+// grow: 잘 늘어나는 큰 능력치(+10%). fam: 처음부터 어느 정도 겪어 본 상대의 공.
 // stats: 능력치 보정, aff: 파트너 친밀도, reply: 코치의 반응. job은 야근 장면과 마감 이벤트 글도 바꾼다.
 export const PROFILE = [
   {
     key: 'job', ask: '회사 다니신다고요? 무슨 일 하세요?', options: [
-      { id: 'sales', name: '영업팀', stats: { comm: 8, drive: 6, stamina: 3 }, work: 5, stress: 5, reply: '영업이면 파트너 구하는 건 걱정 없겠네요.', overtime: '거래처 미팅이 늦게 끝났다. 라켓 가방을 멘 채 명함을 건넸다.', deadline: '팀장: "이번 주 실적 마감이야. 다들 남아."' },
-      { id: 'dev', name: '개발팀', stats: { analysis: 8, shot_sel: 6, focus: 5, stamina: -3 }, reply: '개발자시구나. 머리는 잘 쓰시겠는데 체력이 걱정이네요.', overtime: '배포가 밀렸다. 새벽 코트 대신 새벽 서버를 본다.', deadline: '팀장: "이번 주 배포야. 다들 남아 줘."' },
-      { id: 'design', name: '디자인팀', stats: { dropshot: 7, drop_volley: 6, depth: 5, angle: 4 }, reply: '디자인 하시는 분들이 코스 감각이 좋더라고요.', overtime: '"로고 조금만 더 크게요." 수정이 열두 번째다.', deadline: '팀장: "시안 내일 아침까지래. 미안."' },
-      { id: 'finance', name: '재무팀', stats: { composure: 8, positioning: 5, focus: 4, clutch: 3 }, reply: '숫자 다루는 분들은 실수를 싫어하죠. 테니스는 실수의 스포츠예요.', overtime: '결산 숫자가 안 맞는다. 3원이 어디로 갔을까.', deadline: '팀장: "이번 주 결산이야. 다들 남아."' },
-      { id: 'field', name: '현장·물류팀', stats: { stamina: 8, power: 7, speed: 3 }, reply: '현장에서 일하시면 체력은 제가 걱정 안 해도 되겠네요.', overtime: '물량이 터졌다. 오늘 운동은 이걸로 됐다.', deadline: '팀장: "이번 주 물량 터졌어. 다들 남아."' },
-      { id: 'hr', name: '인사팀', stats: { comm: 6, resilience: 6, cover: 4, composure: 3 }, reply: '사람 상대하는 일이면 복식 잘하시겠는데요?', overtime: '채용 면접이 줄줄이 이어졌다. 웃는 얼굴이 굳었다.', deadline: '팀장: "이번 주 채용 마감이야. 다들 남아."' },
+      { id: 'sales', grow: 'mental', name: '영업팀', stats: { comm: 8, drive: 6, stamina: 3 }, work: 5, stress: 5, reply: '영업이면 파트너 구하는 건 걱정 없겠네요.', overtime: '거래처 미팅이 늦게 끝났다. 라켓 가방을 멘 채 명함을 건넸다.', deadline: '팀장: "이번 주 실적 마감이야. 다들 남아."' },
+      { id: 'dev', grow: 'tactics', name: '개발팀', stats: { analysis: 8, shot_sel: 6, focus: 5, stamina: -3 }, reply: '개발자시구나. 머리는 잘 쓰시겠는데 체력이 걱정이네요.', overtime: '배포가 밀렸다. 새벽 코트 대신 새벽 서버를 본다.', deadline: '팀장: "이번 주 배포야. 다들 남아 줘."' },
+      { id: 'design', grow: 'stroke', name: '디자인팀', stats: { dropshot: 7, drop_volley: 6, depth: 5, angle: 4 }, reply: '디자인 하시는 분들이 코스 감각이 좋더라고요.', overtime: '"로고 조금만 더 크게요." 수정이 열두 번째다.', deadline: '팀장: "시안 내일 아침까지래. 미안."' },
+      { id: 'finance', grow: 'mental', name: '재무팀', stats: { composure: 8, positioning: 5, focus: 4, clutch: 3 }, reply: '숫자 다루는 분들은 실수를 싫어하죠. 테니스는 실수의 스포츠예요.', overtime: '결산 숫자가 안 맞는다. 3원이 어디로 갔을까.', deadline: '팀장: "이번 주 결산이야. 다들 남아."' },
+      { id: 'field', grow: 'physical', name: '현장·물류팀', stats: { stamina: 8, power: 7, speed: 3 }, reply: '현장에서 일하시면 체력은 제가 걱정 안 해도 되겠네요.', overtime: '물량이 터졌다. 오늘 운동은 이걸로 됐다.', deadline: '팀장: "이번 주 물량 터졌어. 다들 남아."' },
+      { id: 'hr', grow: 'tactics', name: '인사팀', stats: { comm: 6, resilience: 6, cover: 4, composure: 3 }, reply: '사람 상대하는 일이면 복식 잘하시겠는데요?', overtime: '채용 면접이 줄줄이 이어졌다. 웃는 얼굴이 굳었다.', deadline: '팀장: "이번 주 채용 마감이야. 다들 남아."' },
     ],
   },
   {
     key: 'past', ask: '운동은 좀 해 보셨어요?', options: [
       { id: 'none', name: '숨쉬기 운동뿐이에요', stats: { resilience: 5, focus: 3 }, confidence: -5, reply: '괜찮아요. 오히려 나쁜 버릇이 없어서 좋아요.' },
-      { id: 'sport', name: '학창 시절 운동부요', stats: { stamina: 7, speed: 6, first_step: 5, power: 4 }, reply: '오, 몸은 기억하고 있을 거예요.' },
-      { id: 'badminton', name: '배드민턴 동호회요', stats: { smash: 8, fh_volley: 5, first_step: 5, speed: 4 }, reply: '손목 쓰는 버릇만 고치면 되겠네요.' },
-      { id: 'tabletennis', name: '탁구장 단골이에요', stats: { fh_slice: 6, bh_slice: 6, first_step: 5, c_slice: 5 }, reply: '회전은 이미 아시겠네요. 공이 좀 커졌다고 생각하세요.' },
-      { id: 'yoga', name: '요가·필라테스요', stats: { flex: 12, composure: 5, focus: 5 }, reply: '유연하면 잘 안 다쳐요. 큰 장점이에요.' },
-      { id: 'running', name: '주말마다 달려요', stats: { stamina: 12, resilience: 6, speed: 3 }, reply: '테니스는 뛰는 게 반이에요. 자신 있으시겠네요.' },
+      { id: 'sport', grow: 'physical', fam: { power: 20 }, name: '학창 시절 운동부요', stats: { stamina: 7, speed: 6, first_step: 5, power: 4 }, reply: '오, 몸은 기억하고 있을 거예요.' },
+      { id: 'badminton', grow: 'net', fam: { net: 25 }, name: '배드민턴 동호회요', stats: { smash: 8, fh_volley: 5, first_step: 5, speed: 4 }, reply: '손목 쓰는 버릇만 고치면 되겠네요.' },
+      { id: 'tabletennis', grow: 'stroke', fam: { slice: 25 }, name: '탁구장 단골이에요', stats: { fh_slice: 6, bh_slice: 6, first_step: 5, c_slice: 5 }, reply: '회전은 이미 아시겠네요. 공이 좀 커졌다고 생각하세요.' },
+      { id: 'yoga', grow: 'mental', fam: { moon: 10 }, name: '요가·필라테스요', stats: { flex: 12, composure: 5, focus: 5 }, reply: '유연하면 잘 안 다쳐요. 큰 장점이에요.' },
+      { id: 'running', grow: 'physical', fam: { wall: 15 }, name: '주말마다 달려요', stats: { stamina: 12, resilience: 6, speed: 3 }, reply: '테니스는 뛰는 게 반이에요. 자신 있으시겠네요.' },
     ],
   },
   {
@@ -208,6 +212,13 @@ export const CLUB_NAMES = ['해솔클럽', '은빛클럽', '푸른숲TC', '달�
 const LOCAL_NAMES = ['해솔구청장배', '은빛시장배', '푸른숲 클럽연합배', '달빛구 친선대회', '한강 새봄배', '산들 단풍배', '라온 시민배', '청솔배', '다온 우정배', '노을 생활체육대회', '은하 구민배', '바람개비 친선배'];
 const NATIONAL_NAMES = ['전국 은하수배', '전국 바람개비배', '전국 한빛배', '전국 노을배', '연맹회장배 전국대회', '전국 매화배', '전국 단풍배', '전국 해오름배', '전국 미리내배'];
 export const NATIONAL_WEEKS = [9, 19, 29, 37, 45];
+// 코트 재질. 내가 치던 코트(하드)와 다르면 낯설다.
+export const SURFACES = { hard: '하드', clay: '클레이', turf: '인조잔디' };
+export const HOME_SURFACE = 'hard';
+function pickSurface(rng, type) {
+  const x = rng();
+  return type === 'national' ? (x < 0.5 ? 'hard' : x < 0.8 ? 'turf' : 'clay') : (x < 0.35 ? 'hard' : x < 0.75 ? 'turf' : 'clay');
+}
 
 export function buildCalendar(rng, seasons = 3) {
   const list = [];
@@ -217,9 +228,9 @@ export function buildCalendar(rng, seasons = 3) {
       const abs = s * 52 + w;
       const winter = w >= 47 || w <= 2;
       if (NATIONAL_WEEKS.includes(w)) {
-        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', draw: rng() < 0.35 ? 128 : 64, name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
+        list.push({ id: `t${abs}n`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'national', surface: pickSurface(rng, 'national'), draw: rng() < 0.35 ? 128 : 64, name: NATIONAL_NAMES[(nn++ + s * 3) % NATIONAL_NAMES.length] });
       } else if (!winter && abs >= 7 && (rng() < 0.3 || abs === 7)) { // 첫 대회는 4턴째(7주)의 비전국대회
-        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', draw: 32, name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
+        list.push({ id: `t${abs}l`, week: abs, day: rng() < 0.5 ? 5 : 6, type: 'local', surface: abs === 7 ? HOME_SURFACE : pickSurface(rng, 'local'), draw: 32, name: LOCAL_NAMES[(ln++ + s * 5) % LOCAL_NAMES.length] });
       }
     }
   }
@@ -229,6 +240,19 @@ export function buildCalendar(rng, seasons = 3) {
 export const POINTS = {
   local: { W: 100, F: 60, SF: 35, QF: 20, R16: 12, R32: 8, G: 5 },
   national: { W: 300, F: 180, SF: 105, QF: 60, R16: 35, R32: 24, R64: 18, R128: 14, G: 10 },
+};
+// 대회에서 남는 것: 경험, 인맥, 상품 (우마무스메의 SP, 팬, 신발·꽃장식 자리)
+export const TOUR_EXP = {
+  local: { W: 40, F: 30, SF: 22, QF: 16, R16: 12, R32: 8, G: 5 },
+  national: { W: 80, F: 60, SF: 45, QF: 32, R16: 24, R32: 18, R64: 14, R128: 10, G: 8 },
+};
+export const TOUR_FAME = {
+  local: { W: 12, F: 8, SF: 5, QF: 3, R16: 1, R32: 1, G: 0 },
+  national: { W: 30, F: 18, SF: 12, QF: 8, R16: 4, R32: 2, R64: 1, R128: 1, G: 0 },
+};
+export const PRIZES = {
+  W: ['새 라켓', '테니스 가방'], F: ['테니스화 교환권', '스트링 세트'], SF: ['스트링 세트', '공 한 박스'], QF: ['공 한 박스', '오버그립 묶음'],
+  rest: ['대회 수건', '공 한 캔', '양말'],
 };
 export const STAGE_NAME = { W: '우승', F: '준우승', SF: '4강', QF: '8강', R16: '16강', R32: '32강', R64: '64강', R128: '128강', G: '예선 탈락' };
 

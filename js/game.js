@@ -1,6 +1,6 @@
 // 육성 루프 — 2주 1턴 행동 선택, 깨달음과 레슨, 장면·이야기, 피로·부상, 파트너, 대회·랭킹·승급, 목표, 엔딩 (기획 문서 3·6·8·9·12장)
 import {
-  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
+  ALL_STATS, BIG_STATS, GROUP_BY_ID, ACT, ACTIONS, OUTINGS, CONDS, STAT_BIG, SURFACES, HOME_SURFACE, TOUR_EXP, TOUR_FAME, PRIZES, TRAIN_SPOTS, SPOT_USES_PER_LV, SPOT_MAX_LV, BOND_AT, REST_RESULTS, LESSONS, BASIC_LESSONS, PARTNERS, PARTNER, GOALS, PROFILE,
   OPP_ARCH, randomName, CLUB_NAMES, buildCalendar, POINTS, STAGE_NAME, weekInfo, COACH_SECRETS, ENDINGS, DAY_NAMES,
 } from './data.js';
 import { SCENES, DESC_LINES, DESC_SEASON, CHOICE_SCENES, MILESTONES, STORIES, PERSON_STORIES, BOND_TRAIN_LINES, REALIZE_LINES, TOUR_LINES, DESC_OUTING, FEEL_LINES, FAIL_LINES } from './scenes.js';
@@ -41,6 +41,7 @@ export function newGame(name, profile = {}) {
     goalIdx: 0, goalsDone: [],
     injuries: 0, highStressWeeks: 0, flags: {}, unlocks: [], secretsGot: [], choices: null,
     pendingEvents: [], weekLog: null, ending: null, conds: {},
+    fam: { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } }, growBig: {}, exp: 0, fame: 0, prizes: [],
   };
   const rng = rngOf(state);
   for (const id of ALL_STATS) state.stats[id] = Math.round(14 + rng() * 10);
@@ -49,6 +50,8 @@ export function newGame(name, profile = {}) {
     const o = q.options.find(x => x.id === profile[q.key]);
     if (!o) continue;
     state[q.key] = o.id;
+    if (o.grow) state.growBig[o.grow] = (state.growBig[o.grow] || 1) + 0.1;
+    for (const [k, v] of Object.entries(o.fam || {})) state.fam.opp[k] += v;
     for (const [id, v] of Object.entries(o.stats || {})) state.stats[id] = clamp(state.stats[id] + v, 5, 45);
     for (const [pid, v] of Object.entries(o.aff || {})) state.partners[pid].aff += v;
     state.stress += o.stress || 0; state.confidence += o.confidence || 0; state.work += o.work || 0; state.club += o.club || 0;
@@ -79,6 +82,9 @@ function migrate(s) {
   s.lastSpot = s.lastSpot || 'lesson';
   s.faces = Object.fromEntries(TRAIN_SPOTS.map(id => { const f = s.faces?.[id]; return [id, Array.isArray(f) ? f : f ? [f] : []]; }));
   s.conds = s.conds || {};
+  s.fam = s.fam || { surface: { hard: 45, turf: 15, clay: 10 }, opp: { moon: 10, slice: 10, power: 10, net: 10, wall: 10 } };
+  s.growBig = s.growBig || {}; s.exp = s.exp || 0; s.fame = s.fame || 0; s.prizes = s.prizes || [];
+  for (const t of s.calendar || []) if (!t.surface) t.surface = ['hard', 'turf', 'clay'][hashStr(t.id) % 3];
   if (s.yips > 0 && !s.conds.yips) s.conds.yips = 3;
   delete s.yips; delete s.moodNudge;
   return s;
@@ -226,16 +232,18 @@ export function previewAction(state, id, topic) {
   const fx = effectOf(state, id, t), K = actionK(state, id), plan = growthPlan(state, id, fx), gains = [];
   for (const big of BIG_STATS) {
     let sum = 0;
-    for (const sid of bigIds(big)) if (plan[sid]) sum += GROWTH * plan[sid] * K * (1 - state.stats[sid] / 160);
+    for (const sid of bigIds(big)) if (plan[sid]) sum += GROWTH * plan[sid] * K * growRate(state, sid) * (1 - state.stats[sid] / 160);
     if (sum > 0) gains.push([big.id, sum / bigIds(big).length]);
   }
   gains.sort((x, y) => y[1] - x[1]);
   return { gains, topic: t, fail: failChance(state, a), fatigue: fatigueOf(state, a, fx), stress: fx.stress + BOND_STRESS * bondsAt(state, id).length };
 }
 
+// 시작할 때 답한 프로필에 따라 잘 늘어나는 쪽이 있다
+function growRate(state, sid) { return state.growBig?.[STAT_BIG[sid]] || 1; }
 function growStat(state, sid, amt, K, rng) {
   const v = state.stats[sid];
-  state.stats[sid] = clamp(v + GROWTH * amt * K * (1 - v / 160) * (0.6 + rng() * 0.8), 1, 99);
+  state.stats[sid] = clamp(v + GROWTH * amt * K * growRate(state, sid) * (1 - v / 160) * (0.6 + rng() * 0.8), 1, 99);
 }
 function growGroup(state, gid, amt, K, rng) { for (const [sid] of GROUP_BY_ID[gid].stats) growStat(state, sid, amt, K, rng); }
 
@@ -321,6 +329,9 @@ export function runWeek(state, id, topic) {
   state.work += a.work || 0;
   state.overtime = false;
   if (a.tennis) state.club += id === 'club' ? 1 : 0.25;
+  // 치던 코트는 더 익숙해지고, 클럽 게임에서는 여러 공을 겪는다
+  if (a.tennis) addFam(state, 'surface', HOME_SURFACE, 1);
+  if (id === 'club') addFam(state, 'opp', OPP_ARCH[Math.floor(rng() * OPP_ARCH.length)].id, 2);
   if (id === 'club' && rng() < 0.3) meetCheck(state, rng() < 0.5 ? 'club' : 'bungae', rng);
   if (id === 'rest' && state.injury) state.injury.weeks -= WEEKS_PER_TURN;
   clampStatus(state);
@@ -494,9 +505,24 @@ export function acceptChance(state, pid, t) {
   if (!state.results.length && pid === 'hana') return 1; // 첫 대회는 입문 동기가 함께 나가 준다
   const ps = state.partners[pid];
   const me = overall(state.stats);
-  let p = 0.4 + ps.aff / 170 + (me - ps.level) / 60 + state.club / 450;
+  let p = 0.4 + ps.aff / 170 + (me - ps.level) / 60 + state.club / 450 + (state.fame || 0) / 300;
   if (t.type === 'national') p += ps.level > me + 10 ? -0.08 : 0.06;
   return clamp(p, 0.05, 0.95);
+}
+// ── 낯선 환경 ─────────────────────────────────────────────
+// 실력과 별개로, 내가 하던 환경과 다르면 잘 안 된다. 코트 재질과 상대의 공. 겪을수록 익숙해진다.
+export function famOf(state, kind, id) { return state.fam[kind][id] ?? 0; }
+function addFam(state, kind, id, n) { state.fam[kind][id] = clamp(famOf(state, kind, id) + n * (1 - famOf(state, kind, id) / 120), 0, 100); }
+const famDelta = v => (v - 60) * 0.05; // 10이면 -2.5, 60이면 0, 100이면 +2
+export function envOf(state, tr, opp) {
+  return { surface: tr.surface, surfaceName: SURFACES[tr.surface], surfaceFam: famOf(state, 'surface', tr.surface), arch: opp.arch, archName: opp.archName, oppFam: famOf(state, 'opp', opp.arch) };
+}
+export function famStats() { return ['cross', 'positioning', 'shot_sel', 'analysis']; }
+function applyEnv(state, tr, opp, stats) {
+  const dS = famDelta(famOf(state, 'surface', tr.surface)) * 0.8, dO = famDelta(famOf(state, 'opp', opp.arch)) * 1.6;
+  for (const sid of ALL_STATS) stats[sid] = clamp(stats[sid] + dS, 1, 99);
+  for (const [sid] of GROUP_BY_ID.counter.stats) stats[sid] = clamp(stats[sid] + dO, 1, 99);
+  for (const sid of famStats()) stats[sid] = clamp(stats[sid] + dO, 1, 99);
 }
 function register(state, t, pid) { state.entries[t.id] = { partner: pid }; }
 // 이번 턴 대회에 지금 같이 나가자고 연락한다. 답은 바로 온다.
@@ -514,17 +540,17 @@ export function askPartner(state, tid, pid) {
   return { ok: false, line };
 }
 function genInvites(state, rng) {
-  if (!state.results.length || Object.keys(state.entries).some(tid => tour(state, tid)?.week >= state.week)) return;
+  if (!state.results.length || state.pendingEvents.some(e => e.id === 'invite') || Object.keys(state.entries).some(tid => tour(state, tid)?.week >= state.week)) return;
   const me = overall(state.stats);
   const upcoming = state.calendar.filter(t => t.week > state.week && t.week <= state.week + 6);
   const recent = state.results.slice(-3).reduce((a, r) => a + (['W', 'F', 'SF'].includes(r.stage) ? 1 : 0), 0);
   for (const t of upcoming) for (const p of PARTNERS) {
     if (partnerAvailable(state, p.id, t.week)) continue;
-    if (state.partners[p.id].level > me + 12) continue; // 한참 위 고수는 먼저 부르지 않는다
+    if (state.partners[p.id].level > me + 12 + (state.fame || 0) / 10) continue; // 한참 위 고수는 먼저 부르지 않는다. 이름이 알려지면 달라진다
     const key = `${t.id}:${p.id}`;
     if (state.invited.includes(key)) continue;
     const ps = state.partners[p.id];
-    if (rng() < 0.6 * (0.04 + ps.aff / 700 + state.club / 600 + recent * 0.04)) {
+    if (rng() < 0.6 * (0.04 + ps.aff / 700 + state.club / 600 + recent * 0.04) * (1 + (state.fame || 0) / 60)) {
       state.invited.push(key);
       state.pendingEvents.push({ id: 'invite', tid: t.id, pid: p.id });
       return;
@@ -657,7 +683,8 @@ export function eventView(state, ev) {
     case 'rival': return { who: 'arah', title: '라이벌 등장', text: `${P.arah.name}: "${ev.text || '다음엔 안 봐줘.'}"`, choices: [['ok', '…두고 보자']] };
     case 'invite': {
       const t = tour(state, ev.tid), p = P[ev.pid];
-      return { who: ev.pid, title: `${p.name}의 대회 초대`, text: `"${weekInfo(t.week).label.split(' · ')[1]} ${t.name}(${t.type === 'national' ? '전국대회' : '비전국대회'}) ${state.division}부 같이 나갈래요?"`, choices: [['accept', '같이 나간다'], ['refuse', '이번엔 거절한다']] };
+      const seen = ev.after ? `${ev.after.name} ${STAGE_NAME[ev.after.stage]} 봤어요! ` : '';
+      return { who: ev.pid, title: `${p.name}의 대회 초대`, text: `"${seen}${weekInfo(t.week).label.split(' · ')[1]} ${t.name}(${t.type === 'national' ? '전국대회' : '비전국대회'}) ${state.division}부 같이 나갈래요?"`, choices: [['accept', '같이 나간다'], ['refuse', '이번엔 거절한다']] };
     }
     case 'meet': return { who: ev.pid, title: '새로운 인연', text: `${P[ev.pid].name} (${P[ev.pid].arch}): "${P[ev.pid].line}"`, choices: [['ok', '반가워요']] };
     case 'withdraw': return { who: ev.pid, title: '대회 기권', text: `부상으로 ${ev.tname}에 못 나간다고 ${P[ev.pid].name}에게 연락했다. (친밀도 -3)`, choices: [['ok', '확인']] };
@@ -775,7 +802,7 @@ export function startTournament(state, tid) {
   const ko = [];
   for (let r = 0; r < koRounds; r++) ko.push(mk(Math.max(mu - 6, mu + 7 - 2.5 * (koRounds - r - 1)) + gauss(rng) * 5 + (seed && r === 0 ? -3 : 0)));
   const tr = {
-    tid, name: t.name, type: t.type, div: state.division, partner: e.partner, seed, bye, draw: t.draw,
+    tid, name: t.name, type: t.type, surface: t.surface || HOME_SURFACE, div: state.division, partner: e.partner, seed, bye, draw: t.draw,
     group: { opps: groupOpps, results: [] }, ko, koRound: 0, koRounds,
     stage: bye ? 'ko' : 'group', matchIdx: 0, finished: false, final: null, log: [],
   };
@@ -810,6 +837,7 @@ export function buildTeams(state, tr) {
   npc.players.forEach(p => { p.club = opp.club; });
   const cond = state.condition - (tr.spare ? 1 : 0);
   const me = { id: 'me', name: state.name, stats: { ...state.stats }, conf: state.confidence, condition: cond };
+  applyEnv(state, tr, opp, me.stats);
   if (hasCond(state, 'yips')) me.stats.second_serve = Math.max(5, me.stats.second_serve - 8);
   if (hasCond(state, 'sure')) me.conf = Math.min(100, me.conf + 6);
   if (hasCond(state, 'doubt')) me.conf = Math.max(0, me.conf - 8);
@@ -829,6 +857,8 @@ export function recordMatch(state, tr, sim, auto = false) {
   const won = sim.winner === 0;
   const opp = currentOpponent(tr);
   const me = sim.P[0];
+  addFam(state, 'surface', tr.surface, 6);
+  addFam(state, 'opp', opp.arch, 8);
   tr.log.push({ stage: stageLabel(tr), opp: opp.names.join('·'), club: opp.club, arch: opp.archName, won, auto, games: [...sim.games] });
   if (me.rec.df >= 5) { if (!hasCond(state, 'yips')) state.pendingEvents.push({ id: 'yipsOn' }); state.conds.yips = CONDS.yips.turns; }
   if (won && !state.flags.firstWin) state.flags.firstWin = state.week;
@@ -872,6 +902,30 @@ function finishTournament(state, tr, stage) {
   if (moved > 0) { delete state.conds.doubt; state.conds.sure = CONDS.sure.turns; }
   if (moved < 0) { delete state.conds.sure; state.conds.doubt = CONDS.doubt.turns; }
   if (tr.matchIdx >= 4) state.conds.sore = CONDS.sore.turns;
+  // 대회에서 남는 것: 경험, 인맥, 상품
+  const rngP = rngOf(state), prizePool = PRIZES[stage] || PRIZES.rest, prize = prizePool[Math.floor(rngP() * prizePool.length)];
+  const exp = TOUR_EXP[tr.type][stage] || 0, fame = TOUR_FAME[tr.type][stage] || 0;
+  state.exp = (state.exp || 0) + exp; state.fame = (state.fame || 0) + fame;
+  state.prizes.push({ name: prize, tname: tr.name, week: state.week, stage });
+  tr.rewards = { exp, fame, prize };
+  // 입상하면 같이 나가고 싶어 하는 사람이 생긴다
+  if (['W', 'F', 'SF', 'QF'].includes(stage) && !(stage === 'W' && tr.type === 'national' && tr.div === '개나리')) {
+    const next = state.calendar.find(t => t.week > state.week && t.week <= state.week + 12);
+    const fans = next ? PARTNERS.filter(p => p.id !== tr.partner && !partnerAvailable(state, p.id, next.week) && !state.invited.includes(`${next.id}:${p.id}`)) : [];
+    if (fans.length) {
+      const p = fans[Math.floor(rngP() * fans.length)];
+      state.invited.push(`${next.id}:${p.id}`);
+      state.pendingEvents.push({ id: 'invite', tid: next.id, pid: p.id, after: { name: tr.name, stage } });
+    }
+    // 모르던 사람이 먼저 연락해 오기도 한다
+    const stranger = PARTNERS.find(p => !state.partners[p.id].known && (p.meet === 'club' || p.meet === 'bungae'));
+    if (stranger && rngP() < 0.5) {
+      const ps2 = state.partners[stranger.id];
+      ps2.known = true; ps2.aff = 15;
+      addMsg(state, stranger.id, `대회에서 봤어요! ${stranger.name}이에요. ${stranger.line}`);
+      state.pendingEvents.push({ id: 'meet', pid: stranger.id });
+    }
+  }
   state.stress = clamp(state.stress + (stage === 'W' ? -15 : stage === 'G' ? 6 : 0), 0, 100);
   state.club = clamp(state.club + (stage === 'W' ? 8 : stage === 'F' ? 5 : stage === 'SF' ? 3 : 1), 0, 100);
   // 실전 경험
@@ -915,6 +969,17 @@ export function evaluateEnding(state) {
   else if (state.work >= 65 && overall(state.stats) >= 50) id = 'warrior';
   const e = ENDINGS.find(x => x.id === id);
   return { ...e, partner: partnerEnd ? PARTNER[partnerEnd.id].name : null };
+}
+
+// 확인 링크 전용: 대회를 바로 시작하거나 결과까지 건너뛴다
+export function checkTour(state, type, stage, surface) {
+  const t = state.calendar.find(x => x.type === type && x.week >= 9);
+  state.week = t.week;
+  if (surface) t.surface = surface;
+  state.entries[t.id] = { partner: 'hana' };
+  const tr = startTournament(state, t.id);
+  if (stage) { tr.matchIdx = 4; tr.log.push({ stage: stage === 'G' ? '예선' : '결승', opp: '상대 팀', club: '', arch: '', won: stage === 'W', auto: true, games: stage === 'W' ? [6, 4] : [4, 6] }); finishTournament(state, tr, stage); }
+  return tr;
 }
 
 export { STAGE_NAME, DAY_NAMES };

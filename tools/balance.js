@@ -1,5 +1,5 @@
 // 밸런스 테스트: 능력치 차이별 승률과 경기 통계
-import { MatchSim, makeNpcTeam, quickMatch, mulberry32, aiChoices } from '../js/sim.js';
+import { MatchSim, makeNpcTeam, quickMatch, mulberry32, aiChoices, PLAN_OPTS, PLAN_SET } from '../js/sim.js';
 const rng = mulberry32(42);
 function run(ra, rb, n = 1500) {
   let wins = 0, games = 0, pts = 0, shots = 0, aces = 0, df = 0, fsIn = 0, fsTot = 0, win = 0, err = 0, poach = 0;
@@ -15,23 +15,26 @@ function run(ra, rb, n = 1500) {
 for (const [a, b] of [[40, 40], [45, 40], [50, 40], [55, 40], [60, 40], [30, 20], [75, 65], [70, 50]]) run(a, b);
 
 // 경기 전 작전별 같은 실력끼리 승률. 어느 하나가 지나치게 높으면 안 된다.
-function runTempo(name, tempo, r = 40, n = 1500) {
-  let wins = 0, errs = 0, shots = 0;
+function runPlan(name, plan, r = 40, n = 1500, oppArch) {
+  let wins = 0, errs = 0, shots = 0, comeback = 0;
   for (let i = 0; i < n; i++) {
-    const A = makeNpcTeam(rng, r, ['A1', 'A2']), B = makeNpcTeam(rng, r, ['B1', 'B2']);
+    const A = makeNpcTeam(rng, r, ['A1', 'A2']), B = makeNpcTeam(rng, r, ['B1', 'B2'], oppArch);
     const sim = new MatchSim(A, B, { rng });
-    A.choices.tempo = tempo;
+    Object.assign(A.choices, PLAN_SET[plan], { plan });
+    let minDiff = 0;
+    sim.teams[1].choices = aiChoices(sim, 1, rng);
     while (!sim.over) {
       sim.playGame();
+      minDiff = Math.min(minDiff, sim.games[0] - sim.games[1]);
       sim.teams[1].choices = aiChoices(sim, 1, rng);
     }
-    if (sim.winner === 0) wins++;
+    if (sim.winner === 0) { wins++; if (minDiff <= -2) comeback++; }
     const rec = sim.P[0].rec;
     errs += rec.errors; shots += Object.values(rec.shots).reduce((a, s) => a + s.n + s.err, 0);
   }
-  console.log(`${name}: 승률 ${(wins / n * 100).toFixed(1)}% | 범실률 ${(errs / shots * 100).toFixed(1)}%`);
+  console.log(`${name}: 승률 ${(wins / n * 100).toFixed(1)}% | 범실률 ${(errs / shots * 100).toFixed(1)}% | 2게임 뒤지다 역전 ${(comeback / n * 100).toFixed(1)}%`);
 }
 console.log('--- 경기 전 작전 (40 vs 40, 상대는 점수에 따라 바꿈)');
-runTempo('공격적으로', 'attack');
-runTempo('평소대로', 'normal');
-runTempo('침착하게', 'safe');
+for (const p of PLAN_OPTS) runPlan(p.name, p.id);
+console.log('--- 강타형 상대 (40 vs 40)');
+for (const p of PLAN_OPTS) runPlan(p.name, p.id, 40, 1500, 'power');
