@@ -347,7 +347,7 @@ const SCREENS = {
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
         <div class="cmt" id="cmt"></div>
-        <div class="speedo" id="speedo"></div>
+        <div class="shotcard" id="shotcard"></div>
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
@@ -1086,7 +1086,7 @@ async function runMatch() {
       const prevScore = pi ? g.points[pi - 1].score : '0 - 0';
       await M.view.playPoint(pt, {
         onCutin: cutin,
-        onShot: (s, i) => { rallyTick(s, i, pt); speedo(s); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
+        onShot: (s, i) => { rallyTick(s, i, pt); shotCard(s); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
         onNetCord: () => say(CMT_TEXT.netCordLine()),
       });
       say(CMT_TEXT.afterPoint(pt, M.cmt));
@@ -1213,12 +1213,18 @@ function crowd(pt) {
     setTimeout(() => el.remove(), 1600);
   }
 }
-// 서브 속도
-function speedo(s) {
-  const el = document.getElementById('speedo');
-  if (!el || !(s.type === 'serve' || s.type === 'serve2') || !(s.res === 'in' || s.res === 'ace')) return;
-  el.textContent = `서브 ${Math.round((s.v || 20) * 3.6 * 1.12)}km/h`;
-  el.className = 'speedo'; void el.offsetWidth; el.className = 'speedo show';
+// 샷 카드: 칠 때마다 누가 무슨 샷을, 얼마나 빠르게(km/h), 얼마나 정확하게(%) 쳤는지와 쓰인 능력치(등급)
+let shotTimer = null;
+function shotCard(s) {
+  const el = document.getElementById('shotcard');
+  if (!el || !s.info || M?.skipGame) return;
+  const us = s.h < 2, kmh = Math.round((s.v || 16) * 3.6 * 1.12), a = s.info.acc;
+  el.innerHTML = `<div class="sc-head"><b>${esc(M.sim.P[s.h].name)}</b><span>${esc(SHOT_NAME[s.type] || '')}</span></div>
+    <div class="sc-nums"><em>${kmh}<small>km/h</small></em><div class="sc-acc"><small>정확도</small><div class="bar"><i style="width:${a}%"></i></div><b>${a}%</b></div></div>
+    <div class="sc-use">${s.info.use.map(([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`).join('')}</div>`;
+  el.className = `shotcard ${us ? 'us' : 'them'}`; void el.offsetWidth; el.className = `shotcard ${us ? 'us' : 'them'} show`;
+  clearTimeout(shotTimer);
+  shotTimer = setTimeout(() => el.classList.remove('show'), 2600 / (M?.speed || 1));
 }
 // 경기 전 VS 화면. 눌러서 넘길 수 있다
 async function vsSplash(tr, opp, st) {

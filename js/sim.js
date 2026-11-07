@@ -89,6 +89,20 @@ const STAT_OF_SHOT = t => (t === 'serve' ? 'first_serve' : t === 'serve2' ? 'sec
 const POWER_SHOTS = new Set(['serve', 'smash', 'fh_drive', 'bh_drive', 'passing', 'return', 'swing_volley']);
 // 샷으로 득점했을 때 쓴 능력치들: 그 샷, 코스, 강한 샷이면 파워
 const shotStats = (st, dir) => [STAT_OF_SHOT(st), COURSE_STAT[dir], POWER_SHOTS.has(st) ? 'power' : null].filter(Boolean);
+// 이 샷에 쓰인 능력치(중계의 샷 카드용): 샷, 코스, 공 빠르기(파워), 큰 포인트면 압박감 내성
+function shotUse(st, dir, forceBh, pressure) {
+  const ids = st === 'return' ? ['return', forceBh ? 'bh_drive' : 'fh_drive']
+    : st === 'passing' ? ['passing', 'fh_drive', COURSE_STAT[dir]]
+    : st === 'chip_return' ? ['chip_return'] : [STAT_OF_SHOT(st), COURSE_STAT[dir]];
+  if (POWER_SHOTS.has(st)) ids.push('power');   // 강하게 치는 샷은 파워가 공 빠르기를 정한다
+  if (pressure) ids.push('clutch');
+  return [...new Set(ids.filter(id => id && STAT_NAME[id]))];
+}
+// 샷 카드에 보일 것: acc(정확도 %), use([[능력치 이름, 등급], ...])
+const shotInfo = (p, ids, acc) => ({ acc: Math.round(clamp(acc, 3, 99)), use: ids.map(id => [STAT_NAME[id], grade(p.stats[id] ?? 0)]) });
+// 랠리 샷의 품질(Q) → 정확도. 중간값 쯤이 70%대
+const accOfQ = Q => 70 + (Q - QMID) * 0.7;
+const QMID = 40;
 function addCall(P, shot, p, ids, end = false) {
   if (!shot || !p) return;
   const id = ids.reduce((a, b) => ((p.stats[b] ?? 0) > (p.stats[a] ?? 0) ? b : a));
@@ -459,6 +473,8 @@ export class MatchSim {
 
     // 서브
     const s = server.stats, r = receiver.stats;
+    // 서브 품질(중계의 샷 카드용): 퍼스트는 서브와 코스, 세컨은 세컨 서브와 코스
+    const sq1 = 0.6 * s.first_serve + 0.4 * s.serve_place + M(server) * 100, sq2 = 0.7 * s.second_serve + 0.3 * s.serve_place + M(server) * 100;
     server.rec.fsTot++;
     const pin = clamp(0.47 + s.first_serve / 230 + M(server) * 0.8 - fat(server) / 300 + tempoOf(sT).serve, 0.35, 0.9);
     let first = rng() < pin;
@@ -479,7 +495,7 @@ export class MatchSim {
         const w = unit(serverPos, B), to = [B[0] + w[0] * 6, B[1] + w[1] * 6];
         const ft = flightTime(serverPos, to, B, v);
         const plan = []; plan[ri] = missAt(ri, [B[0] + w[0] * 3, B[1] + w[1] * 3], ft, clamp((55 - r.c_power) * 0.0015, -0.03, 0.08));
-        shots.push({ h: si, type: 'serve', from: serverPos, bounce: B, to, res: 'ace', pos: pos0, v: r2(v), mv: move(plan, ft), victim: ri });
+        shots.push({ h: si, type: 'serve', from: serverPos, bounce: B, to, res: 'ace', pos: pos0, v: r2(v), mv: move(plan, ft), victim: ri, info: shotInfo(server, ['first_serve', 'serve_place', 'power'], Math.max(90, sq1 * 0.5 + 50)) });
         addCall(this.P, shots[shots.length - 1], server, ['first_serve', 'serve_place', 'power']);
         return this.finish(shots, server.team, 'ace', server, ctx);
       }
@@ -487,13 +503,13 @@ export class MatchSim {
       recCounter(receiver, 'c_power', true);
     } else {
       const fb = fault(), fv = 21 + s.first_serve * 0.09;
-      shots.push({ h: si, type: 'serve', from: serverPos, bounce: fb, to: fb, res: 'fault', pos: pos0, v: r2(fv), mv: move(letGo(serverPos, fb, flightTime(serverPos, fb, null, fv), receiver.team), 0) });
+      shots.push({ h: si, type: 'serve', from: serverPos, bounce: fb, to: fb, res: 'fault', pos: pos0, v: r2(fv), info: shotInfo(server, ['first_serve', 'serve_place', 'power'], sq1 * 0.45), mv: move(letGo(serverPos, fb, flightTime(serverPos, fb, null, fv), receiver.team), 0) });
       const pin2 = clamp(0.80 + s.second_serve / 600 + M(server) - fat(server) / 400, 0.72, 0.97);
       if (rng() >= pin2) {
         server.rec.df++;
         server.gauge -= 8 * (1 - server.stats.composure / 170);
         const fb2 = fault(), fv2 = 15 + s.second_serve * 0.05;
-        shots.push({ h: si, type: 'serve2', from: serverPos, bounce: fb2, to: fb2, res: 'df', pos: pos0, v: r2(fv2), mv: move(letGo(serverPos, fb2, flightTime(serverPos, fb2, null, fv2), receiver.team), 0) });
+        shots.push({ h: si, type: 'serve2', from: serverPos, bounce: fb2, to: fb2, res: 'df', pos: pos0, v: r2(fv2), info: shotInfo(server, ['second_serve', 'serve_place'], sq2 * 0.45), mv: move(letGo(serverPos, fb2, flightTime(serverPos, fb2, null, fv2), receiver.team), 0) });
         return this.finish(shots, receiver.team, 'df', server, ctx);
       }
       type = 'serve2';
@@ -512,7 +528,8 @@ export class MatchSim {
       if (svMove) server.pos = 'net';
       const plan = []; plan[ri] = runAt(ri, C, ft, t0, kind);
       if (svMove) { const [x, z] = this.homeOf(server); plan[si] = { x, z, t0: 0.3, v: body[si].top, k: 'back' }; }
-      shots.push({ h: si, type, from: serverPos, bounce: svcBounce, to: C, res: 'in', pos: pos0, v: r2(v), mv: move(follow(plan, C[0]), ft) });
+      shots.push({ h: si, type, from: serverPos, bounce: svcBounce, to: C, res: 'in', pos: pos0, v: r2(v), mv: move(follow(plan, C[0]), ft),
+        info: type === 'serve' ? shotInfo(server, ['first_serve', 'serve_place', 'power'], 45 + sq1 * 0.5) : shotInfo(server, ['second_serve', 'serve_place'], 50 + sq2 * 0.4) });
     }
     tire(server);
 
@@ -533,6 +550,7 @@ export class MatchSim {
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
       let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) * TUNE.skill.risk[skillLv] + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
       err = clamp(err, 0.02, 0.65);
+      const info = shotInfo(H, shotUse(st, dir, inc.forceBh, pressure), accOfQ(Q));
       tire(H);
       const posNow = this.snapshot();
       const hi = this.P.indexOf(H);
@@ -552,7 +570,7 @@ export class MatchSim {
         if (this.gameNo < 5) H.rec.errEarly++; else H.rec.errLate++;
         // 상대는 받을 것처럼 가다가 멈춘다. 걸리는 공은 가려던 쪽으로, 나가는 공은 떨어지는 곳 쪽으로
         const ev = this.ballV(H, st, Q), aim = isNet ? [clamp(-from[0] * 0.6, -4.5, 4.5), -zs2 * 8] : to;
-        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), mv: move(letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team), 0) });
+        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team), 0) });
         if (inc.D >= 45 && inc.from && inc.from.team !== H.team) addCall(this.P, shots[shots.length - 1], inc.from, shotStats(inc.type, prev?.dir), true);
         H.gauge -= 6 * (1 - H.stats.composure / 160);
         const m = this.mate(H); m.gauge -= 2 * (1 - m.stats.composure / 150);
@@ -577,7 +595,7 @@ export class MatchSim {
           const v = this.ballV(H, st, Q), out = [0, -this.zSign(H.team) * 12.5], ft = flightTime(from, out, to, v);
           const plan = [];
           for (const o of os) { const j = this.P.indexOf(o); plan[j] = { ...missAt(j, [0, to[1] * 1.3], ft), k: 'confuse' }; }
-          shots.push({ h: hi, type: st, dir, from, bounce: to, to: out, res: 'center', pos: posNow, v: r2(v), mv: move(plan, ft) });
+          shots.push({ h: hi, type: st, dir, from, bounce: to, to: out, res: 'center', pos: posNow, v: r2(v), mv: move(plan, ft), info });
           return this.finish(shots, H.team, 'center', H, ctx);
         }
       }
@@ -598,7 +616,7 @@ export class MatchSim {
           const plan1 = [];
           plan1[ni] = { x: contact[0], z: contact[1], t0: 0.05, v: Math.max(body[ni].top, Math.hypot(contact[0] - at[ni][0], contact[1] - at[ni][1]) / Math.max(0.2, ft1 - 0.12)), k: 'poach' };
           pushLvl(R.team, 1);
-          const poachShot = { h: hi, type: st, dir, from, to: contact, bounce: null, res: 'in', pos: posNow, v: r2(v1), mv: move(follow(plan1, contact[0]), ft1) };
+          const poachShot = { h: hi, type: st, dir, from, to: contact, bounce: null, res: 'in', pos: posNow, v: r2(v1), info, mv: move(follow(plan1, contact[0]), ft1) };
           if (rng() < pw) {
             Rmate.rec.poachWin++; Rmate.rec.winners++; rec(Rmate, 'fh_volley', 'n'); rec(Rmate, 'fh_volley', 'win');
             shots.push(poachShot);
@@ -609,7 +627,7 @@ export class MatchSim {
             const hs = this.P.filter(q => q.team === H.team).map(q => this.P.indexOf(q));
             const vi = hs.reduce((a, b) => (Math.hypot(at[a][0] - land[0], at[a][1] - land[1]) <= Math.hypot(at[b][0] - land[0], at[b][1] - land[1]) ? a : b));
             const plan2 = []; plan2[vi] = missAt(vi, land, ft2);
-            shots.push({ h: ni, type: 'fh_volley', dir: 'body', from: contact, bounce: land, to: out2, res: 'poach', pos: p2, v: r2(v2), mv: move(plan2, ft2), victim: vi });
+            shots.push({ h: ni, type: 'fh_volley', dir: 'body', from: contact, bounce: land, to: out2, res: 'poach', pos: p2, v: r2(v2), info: shotInfo(Rmate, ['fh_volley', 'poach', 'power'], 92), mv: move(plan2, ft2), victim: vi });
             addCall(this.P, shots[shots.length - 1], Rmate, ['poach', 'fh_volley']);
             Rmate.gauge += 5;
             return this.finish(shots, R.team, 'poach', Rmate, ctx);
@@ -656,7 +674,7 @@ export class MatchSim {
         const ft = flightTime(from, out, land, v);
         const plan = []; plan[Ri] = missAt(Ri, sp.C, ft);
         pushLvl(H.team, 1);
-        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, skill: skillLv ? skillKey : undefined, v: r2(v), mv: move(follow(plan, land[0]), ft) });
+        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, info: { ...info, acc: Math.max(info.acc, 88) }, skill: skillLv ? skillKey : undefined, v: r2(v), mv: move(follow(plan, land[0]), ft) });
         addCall(this.P, shots[shots.length - 1], H, shotStats(st, dir));
         if (counter) recCounter(R, counter, false);
         return this.finish(shots, H.team, 'win', H, ctx);
@@ -670,7 +688,7 @@ export class MatchSim {
       const late = clamp((55 - (counter ? R.stats[counter] : 55)) * 0.0015, -0.03, 0.08) - readLv * 0.05;
       const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2), v, st);
       if (lob && R.pos === 'net') R.pos = 'base';
-      const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v) };
+      const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v) };
       shots.push(shot);
       // 이동
       const wasNet = H.pos === 'net';

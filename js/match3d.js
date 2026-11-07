@@ -201,7 +201,8 @@ export class MatchView {
       const frames = await sdFrames(info.charId || `npc${i}`, info.look, i < 2 ? 'back' : 'front');
       const tex = {};
       for (const [k, cnv] of Object.entries(frames)) tex[k] = this.canvasTex(cnv);
-      const mat = new THREE.SpriteMaterial({ map: tex.ready, transparent: true });
+      // alphaTest: 그림의 빈 곳이 뒤에 있는 것(발밑 고리, 그림자)을 가리지 않게
+      const mat = new THREE.SpriteMaterial({ map: tex.ready, transparent: true, alphaTest: 0.08 });
       const sp = new THREE.Sprite(mat);
       sp.center.set(0.5, 0.02);
       const k = frames.real ? 2.5 : 2.0;
@@ -210,7 +211,10 @@ export class MatchView {
       const shadow = this.blob(0.38, 0.26);
       const emote = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
       emote.scale.set(0.7, 0.7, 1); emote.visible = false; this.scene.add(emote);
-      list.push({ sp, tex, shadow, emote, x: 0, z: i < 2 ? 11 : -11, tx: 0, tz: i < 2 ? 11 : -11, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      // 첫 포인트 전(VS 화면, 소개 해설 동안)에도 복식 자리에 서 있게: 한 명은 뒤, 한 명은 네트 앞, 좌우로 갈라서
+      const zs = i < 2 ? 1 : -1, xs = zs * (i % 2 === 0 ? 1 : -1);
+      const x0 = xs * (i % 2 === 0 ? 2.8 : 2.3), z0 = zs * (i % 2 === 0 ? 11.2 : 3.6);
+      list.push({ sp, tex, shadow, emote, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.players = list;
     this.emoteTex = {};
