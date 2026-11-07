@@ -1065,7 +1065,6 @@ async function runMatch() {
       if (pt.big && pt.label) showBig(pt.label);
       await M.view.playPoint(pt, { onCutin: cutin });
       setLog(pt.text); hud(pt);
-      if (pt.big && ['win', 'ace', 'poach'].includes(pt.endType) && M.speed === 1 && !M.skipGame) await M.view.replay(pt);
       hideBig();
     }
     if (M.view) M.view.speed = M.speed;

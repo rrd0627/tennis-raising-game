@@ -40,7 +40,6 @@ export class MatchView {
     this.tweens = [];
     this.fx = [];
     this.alive = true;
-    this.slow = 1;
     const w = container.clientWidth || 360, h = container.clientHeight || 400;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -256,8 +255,8 @@ export class MatchView {
   }
 
   wait(sec) { return new Promise(res => this.tweens.push({ t: 0, dur: sec, step: () => { }, done: res })); }
-  // 공 시간으로 sec초 뒤에 할 일 (슬로 모션이면 같이 느려진다)
-  later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, slowable: true, step: () => { }, done: () => { if (this.alive) fn(); } }); }
+  // 공 시간으로 sec초 뒤에 할 일
+  later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, step: () => { }, done: () => { if (this.alive) fn(); } }); }
 
   // 공 비행: from/to = [x,z]. 높이는 중력으로(js/rally.js ballArc), 시간은 엔진과 같다. v = 공 빠르기(엔진이 샷 품질로 정함)
   flyBall(from, to, bounce, type, h0, h1, overNet = true, v = 0) {
@@ -267,7 +266,7 @@ export class MatchView {
     return new Promise(res => {
       let bounced = false;
       this.tweens.push({
-        t: 0, dur: arc.dur, slowable: true,
+        t: 0, dur: arc.dur,
         step: k => {
           const t = k * arc.dur;
           if (bounce && !bounced && t > arc.t1) { bounced = true; this.mark(bounce); }
@@ -371,7 +370,6 @@ export class MatchView {
     } else {
       await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v);
     }
-    this.slow = 1;
     if (s.res === 'fault') {
       for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, 2.4);
       await this.wait(0.6);
@@ -392,7 +390,8 @@ export class MatchView {
       if (!this.alive) return;
       const s = shots[i];
       const decisive = i === lastIdx && pt.big && ['win', 'ace', 'poach', 'center'].includes(s.res);
-      if ((decisive || s.skill) && hooks.onCutin) { this.slow = 0.35; await hooks.onCutin(s, pt); }
+      // 큰 순간과 기술은 컷인으로 알린다. 경기는 멈추거나 느려지지 않는다
+      if ((decisive || s.skill) && hooks.onCutin) hooks.onCutin(s, pt);
       await this.playShot(s, shots[i + 1], shots[i - 1]);
     }
     // 결과 포즈
@@ -407,33 +406,17 @@ export class MatchView {
     this.ball.visible = false; this.ballShadow.visible = false;
   }
 
-  // 큰 순간 끝난 뒤 사이드 리플레이: 마지막 샷 다시
-  async replay(pt) {
-    const s = pt.shots[pt.shots.length - 1];
-    this.setCamera('side');
-    this.slow = 0.45;
-    for (let i = 0; i < 4; i++) this.setPose(i, 'ready');
-    const rp = this.players[s.h];
-    rp.x = rp.tx = s.from[0]; rp.z = rp.tz = s.from[1]; this.placeAll();
-    this.setPose(s.h, poseFor(s.type, 1), 800);
-    const h0 = s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.3 : s.type.startsWith('serve') ? 2.5 : 0.95;
-    await this.flyBall(s.from, s.to, s.bounce, s.type, h0, 0.1, true, s.v);
-    await this.wait(0.4);
-    this.slow = 1;
-    this.setCamera('main');
-  }
-
   tick() {
     const dt = Math.min(0.05, this.clock.getDelta());
     const now = performance.now();
     for (const tw of [...this.tweens]) {
-      tw.t += dt * this.speed * (tw.slowable ? this.slow : 1);
+      tw.t += dt * this.speed;
       const k = Math.min(1, tw.t / tw.dur);
       tw.step(k);
       if (k >= 1) { this.tweens.splice(this.tweens.indexOf(tw), 1); tw.done && tw.done(); }
     }
     if (this.players) {
-      const pdt = dt * this.speed * (this.slow < 1 ? this.slow : 1);
+      const pdt = dt * this.speed;
       for (let i = 0; i < 4; i++) {
         const p = this.players[i];
         // 달리기: 목표까지 일정한 속도로, 도착하면 멈춘다
