@@ -346,7 +346,6 @@ const SCREENS = {
         <div class="cutin" id="cutin"></div>
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
-        <div class="cmt" id="cmt"></div>
         <div class="shotcard" id="shotcard"></div>
       </div>
       <div class="hud">
@@ -355,6 +354,7 @@ const SCREENS = {
           <button class="chip sm on" data-a="spd" data-v="hl">하이라이트</button><button class="chip sm" data-a="spd" data-v="1">전체 1×</button><button class="chip sm" data-a="spd" data-v="3">전체 3×</button>
           <button class="chip sm" data-a="skipgame">게임 스킵</button><button class="chip sm" data-a="skipmatch">결과 보기</button>
         </div>
+        <div class="cmt" id="cmt"></div>
         <div class="logline" id="logline">경기 시작!</div>
       </div>
     </div>`,
@@ -1219,7 +1219,7 @@ function shotCard(s) {
   const el = document.getElementById('shotcard');
   if (!el || !s.info || M?.skipGame) return;
   const us = s.h < 2, kmh = Math.round((s.v || 16) * 3.6 * 1.12), a = s.info.acc;
-  el.innerHTML = `<div class="sc-head"><b>${esc(M.sim.P[s.h].name)}</b><span>${esc(SHOT_NAME[s.type] || '')}</span></div>
+  el.innerHTML = `<div class="sc-head"><b>${esc(M.sim.P[s.h].name)}</b><span>${esc(SHOT_NAME[s.type] || '')}${s.info.stance ? ` · <u>${esc(s.info.stance)}</u>` : ''}</span></div>
     <div class="sc-nums"><em>${kmh}<small>km/h</small></em><div class="sc-acc"><small>정확도</small><div class="bar"><i style="width:${a}%"></i></div><b>${a}%</b></div></div>
     <div class="sc-use">${s.info.use.map(([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`).join('')}</div>`;
   el.className = `shotcard ${us ? 'us' : 'them'}`; void el.offsetWidth; el.className = `shotcard ${us ? 'us' : 'them'} show`;

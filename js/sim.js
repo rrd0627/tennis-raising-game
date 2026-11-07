@@ -98,6 +98,20 @@ function shotUse(st, dir, forceBh, pressure) {
   if (pressure) ids.push('clutch');
   return [...new Set(ids.filter(id => id && STAT_NAME[id]))];
 }
+// 스탠스(사용자 경험): 크로스(클로즈드), 뉴트럴, 세미오픈, 오픈, 달리면서.
+// 여유 있게 멈춰 섰으면 슬라이스·백핸드는 크로스, 쉬운 공의 포핸드는 앞으로 디디는 뉴트럴, 보통은 세미오픈.
+// 멀리 뻗거나 몸쪽 공, 여유가 거의 없으면 오픈, 공과 같이 도착하면 달리면서 친다
+const NO_STANCE = /volley|smash|^serve/;
+function stanceOf(st, mv, D) {
+  if (NO_STANCE.test(st) || !mv) return null;
+  if (mv.k === 'reach' || mv.k === 'jam') return '오픈';
+  const m = mv.m ?? 0.3;
+  if (m < 0.08) return '달리면서';
+  if (/slice|chip|drop/.test(st)) return m >= 0.22 ? '크로스' : '뉴트럴';
+  if (/^bh_/.test(st)) return m >= 0.22 ? '뉴트럴' : '오픈';
+  if (m >= 0.3 && D < 30) return '뉴트럴';
+  return m >= 0.12 ? '세미오픈' : '오픈';
+}
 // 샷 카드에 보일 것: acc(정확도 %), use([[능력치 이름, 등급], ...])
 const shotInfo = (p, ids, acc) => ({ acc: Math.round(clamp(acc, 3, 99)), use: ids.map(id => [STAT_NAME[id], grade(p.stats[id] ?? 0)]) });
 // 랠리 샷의 품질(Q) → 정확도. 중간값 쯤이 70%대
@@ -403,7 +417,7 @@ export class MatchSim {
       const d = Math.hypot(m.x - at[j][0], m.z - at[j][1]);
       const k = d > 0.01 ? Math.min(1, Math.max(0, ft - m.t0) * m.v / d) : 1;
       at[j] = [at[j][0] + (m.x - at[j][0]) * k, at[j][1] + (m.z - at[j][1]) * k];
-      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}) };
+      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}) };
     });
     // 팀마다 밀어붙이는 정도. 친 쪽의 공이 좋으면 오르고 상대는 내려가는데, 샷마다 조금씩만 움직인다
     const lvl = [0, 0];
@@ -422,9 +436,11 @@ export class MatchSim {
     // 받는 사람이 C까지 가는 계획. 공보다 먼저 닿게 뛴다
     // 쉬운 공(set)은 전속력이 아니라 조금 여유 있게 닿을 만큼만 뛴다. 멀거나 몸쪽 공은 전속력
     const runAt = (j, C, ft, t0, k) => {
-      const need = Math.max(0, Math.hypot(C[0] - at[j][0], C[1] - at[j][1]) - 0.6) / Math.max(0.15, ft - t0 - 0.03);
-      const v = k === 'set' ? Math.min(body[j].top, Math.max(2.2, need * 1.3)) : body[j].top;
-      return { x: C[0], z: C[1], t0, v: Math.max(v, need), k, ...(k === 'reach' ? { far: body[j].reach * 0.85 } : {}) };
+      const d = Math.max(0, Math.hypot(C[0] - at[j][0], C[1] - at[j][1]) - 0.6), avail = Math.max(0.15, ft - t0 - 0.03), need = d / avail;
+      const early = clamp((this.P[j].stats.positioning - 35) / 70, 0, 0.6);   // 포지셔닝 35 이하는 여유 없음, 77이면 60% 빨리
+      const v = k === 'set' ? Math.min(body[j].top, Math.max(need * (1 + early), d > 0.3 ? 1.6 : 0)) : body[j].top;
+      const vv = Math.max(v, need), margin = vv > 0 ? avail - d / vv : avail;   // 공보다 몇 초 먼저 도착하나
+      return { x: C[0], z: C[1], t0, v: vv, k, m: margin, ...(k === 'reach' ? { far: body[j].reach * 0.85 } : {}) };
     };
     // 받지 않는 사람(대개 전위) 곁을 낮게 지나가면 그 사람이 쳤어야 할 공으로 보인다. 닿지 않게 옆으로 비킨다
     const clearOf = (R, from, sp, v, st) => {
@@ -551,6 +567,7 @@ export class MatchSim {
       let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) * TUNE.skill.risk[skillLv] + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
       err = clamp(err, 0.02, 0.65);
       const info = shotInfo(H, shotUse(st, dir, inc.forceBh, pressure), accOfQ(Q));
+      { const stn = stanceOf(st, shots[shots.length - 1]?.mv?.[this.P.indexOf(H)], inc.D); if (stn) info.stance = stn; }
       tire(H);
       const posNow = this.snapshot();
       const hi = this.P.indexOf(H);
@@ -841,7 +858,12 @@ export class MatchSim {
     if (lob) d.deep = 1;
     else if (type === 'dropshot' || type === 'drop_volley') d.short = 1;
     else if (H.pos === 'net' || type === 'smash') { if (oppNet) d.body = 0.3; d.center = 0.25; d.angle = 0.25; d.deep = 0.2; }
-    else { d.cross = 0.55; d.dtl = oppNet ? 0.15 : 0.08; d.center = 0.15; d.angle = 0.1; d.deep = 0.05; }
+    else {
+      d.cross = 0.55; d.dtl = oppNet ? 0.15 : 0.08; d.center = 0.15; d.angle = 0.1; d.deep = 0.05;
+      // 받은 공에 따라 공격 방향이 달라진다(사용자 경험): 쉬운 공은 다운더라인·앵글로 공격하고, 어려운 공은 크로스·깊게 안전하게 넘긴다
+      if (inc.D < 25) { d.dtl *= 1.6; d.angle *= 1.5; d.deep *= 0.7; }
+      else if (inc.D > 50) { d.dtl *= 0.5; d.angle *= 0.5; d.cross *= 1.1; d.deep *= 2; d.center *= 1.15; }
+    }
     if (!lob) {
       if (ch.attack === 'center' && d.center) d.center *= 3;
       if (ch.attack === 'alley' && d.dtl) d.dtl *= 3;

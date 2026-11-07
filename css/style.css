@@ -511,8 +511,9 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .biglabel.show { opacity: 1; transform: translateX(-50%) scale(1); }
 .pointtext { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.92); color: var(--ink); border-radius: 999px; padding: 5px 14px; font-weight: 700; font-size: 13px; opacity: 0; z-index: 2; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis; }
 .pointtext.show { animation: pop 1.6s ease-out forwards; }
-.cmt { position: absolute; left: 8px; right: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: flex-start; background: rgba(16, 28, 44, .86); color: #fff; border-radius: 12px; padding: 7px 10px; font-size: 14px; line-height: 1.4; z-index: 2; opacity: 0; transform: translateY(6px); transition: opacity .18s, transform .18s; pointer-events: none; }
-.cmt.show { opacity: 1; transform: none; }
+/* 해설 자막: 코트를 가리지 않게 경기 화면 아래 칸에 둔다. 두 줄 자리를 늘 잡아 둬서 화면이 들썩이지 않는다 */
+.cmt { display: flex; gap: 8px; align-items: flex-start; background: rgba(16, 28, 44, .9); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 13.5px; line-height: 1.4; min-height: calc(2.8em + 12px); opacity: .35; transition: opacity .18s; pointer-events: none; }
+.cmt.show { opacity: 1; }
 .cmt i { font-style: normal; flex: none; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: #ffd23f; color: #3a2a00; margin-top: 1px; }
 .cmt.a i { background: #7ee0b5; color: #0b3b27; }
 .cmt.p i { background: var(--pink); color: #fff; }
@@ -522,6 +523,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .sc-head { display: flex; gap: 5px; align-items: baseline; white-space: nowrap; overflow: hidden; }
 .sc-head b { font-family: var(--f-display); font-weight: 400; font-size: 13px; }
 .sc-head span { color: #cfe0f2; overflow: hidden; text-overflow: ellipsis; }
+.sc-head u { text-decoration: none; color: #ffd23f; }
 .sc-nums { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px; }
 .sc-nums em { font-style: normal; font-family: var(--f-display); font-size: 22px; line-height: 1; color: #ffd23f; white-space: nowrap; }
 .sc-nums em small { font-size: 10px; color: #cfe0f2; margin-left: 1px; }

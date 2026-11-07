@@ -12,6 +12,14 @@ const SURFACE = {
 };
 
 const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, RUN_CAP = 8.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
+// 발: 출발해서 속도를 올리고(ACC), 멈출 때는 미리 줄인다(DEC). m/s²
+const ACC = 22, DEC = 18;
+// 거리 D를 T초 안에 가려면 얼마나 빨리 달려야 하나(속도를 올리는 시간, 멈추면 줄이는 시간까지 넣어서)
+function cruise(D, T, brake) {
+  const c = 1 / (2 * ACC) + (brake ? 1 / (2 * DEC) : 0), disc = T * T - 4 * c * D;
+  const v = disc >= 0 ? (T - Math.sqrt(disc)) / (2 * c) : T / (2 * c);
+  return Math.min(RUN_CAP, Math.max(1.2, v));
+}
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 공이 오기 직전의 준비 자세
 function prepFor(type) {
@@ -60,6 +68,7 @@ export class MatchView {
     this.camBase = new THREE.Vector3(0, 14.5, 22.5);
     this.camLook = new THREE.Vector3(0, 0, -1.4);
     this.camMode = 'main';
+    this.camCut = true;   // 첫 장면부터 중계 자리에서 시작한다(가까이서 날아 들어오지 않게)
     this.fitCamera(w, h);
     this.buildWorld();
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8ff3a }));
@@ -214,7 +223,7 @@ export class MatchView {
       // 첫 포인트 전(VS 화면, 소개 해설 동안)에도 복식 자리에 서 있게: 한 명은 뒤, 한 명은 네트 앞, 좌우로 갈라서
       const zs = i < 2 ? 1 : -1, xs = zs * (i % 2 === 0 ? 1 : -1);
       const x0 = xs * (i % 2 === 0 ? 2.8 : 2.3), z0 = zs * (i % 2 === 0 ? 11.2 : 3.6);
-      list.push({ sp, tex, shadow, emote, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      list.push({ sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.players = list;
     this.emoteTex = {};
@@ -231,6 +240,7 @@ export class MatchView {
       // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
       const y = Math.abs(Math.sin(p.stride)) * 0.14 + p.hop;
       p.sp.position.set(p.x, y, p.z);
+      if (p.base) p.sp.scale.set(p.base * (1 + p.sq * 0.5 + p.crouch * 0.03), p.base * (1 - p.sq - p.crouch * 0.07), 1);
       p.sp.material.rotation = p.lean + p.kick;
       p.shadow.position.set(p.x, 0.012, p.z);
       p.emote.position.set(p.x, 2.35 + y, p.z);
@@ -292,14 +302,16 @@ export class MatchView {
   }
 
   // 선수는 목표 지점으로 뛰어간다. speed를 주면 그 속도로, within을 주면 그 시간 안에 닿게 뛴다.
-  runTo(i, x, z, within = 0, speed = 0) {
+  // opt: { brake: 도착 전에 속도를 줄여 멈춘다(기본), false면 달리던 속도 그대로 닿는다, onArrive: 멈춰 서면 할 일 }
+  runTo(i, x, z, within = 0, speed = 0, opt = {}) {
     const p = this.players[i];
     p.tx = x; p.tz = z;
+    p.brake = opt.brake ?? true; p.onArrive = opt.onArrive || null;
     const d = Math.hypot(x - p.x, z - p.z);
     p.speed = speed || (within > 0 ? clamp(d / within, RUN_SPEED * 0.6, MAX_RUN_SPEED) : RUN_SPEED);
   }
   // 상대가 치는 순간의 작은 스텝
-  splitStep(i) { this.players[i].hop = 0.16; }
+  splitStep(i) { const p = this.players[i]; p.hop = 0.2; p.crouch = 0; p.splitting = true; }
   // 닿지 못한 공에 몸을 던진다
   lunge(i, toward) {
     const p = this.players[i], right = (i < 2 ? 1 : -1) * (toward[0] - p.x) >= 0;
@@ -420,7 +432,12 @@ export class MatchView {
     const hitter = this.players[s.h];
     const stretched = prev?.mv?.[s.h]?.k === 'reach';
     this.setPose(s.h, poseFor(s.type, side), 380);
-    hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22) * (stretched ? 2 : 1);
+    hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22) * (stretched ? 2 : 1) * (hitter.crouch ? 1.4 : 1);
+    if (hitter.crouch) { hitter.crouch = 0; hitter.sq = 0.06; }
+    // 스탠스: 뉴트럴은 네트 쪽으로, 크로스는 공을 가로질러 디디고, 세미오픈은 조금, 오픈은 옆으로 버틴다. 달리면서는 그대로 지나간다
+    const stance = s.info?.stance, fz = s.h < 2 ? -1 : 1, lx = Math.sign(s.to[0] - s.from[0]) || 1;
+    const stepOf = { '뉴트럴': [0, 0.42], '크로스': [0.28 * -lx, 0.32], '세미오픈': [0, 0.18], '오픈': [0.22 * lx, 0] };
+    if (stepOf[stance]) { const [sx, sz] = stepOf[stance]; this.runTo(s.h, hitter.x + sx, hitter.z + sz * fz, 0, 2.6); }
     const v = s.v || BALL_V[s.type] || 16;
     const dur = flightTime(s.from, s.to, s.bounce, v);
     {
@@ -438,12 +455,21 @@ export class MatchView {
       if (!m) continue;
       const p = this.players[j];
       let tx = m.x, tz = m.z, sp = m.v;
+      let opt = {};
       if (next && next.h === j && j !== s.h) {
-        // 받을 사람은 공 옆(팔과 라켓 길이만큼)에 선다. 늦으면 그만큼 더 빨리 뛴다
+        // 받을 사람은 공 옆(팔과 라켓 길이만큼)에 선다. 여유(m)가 있으면 그만큼 먼저 도착해 멈춰서 힘을 싣고,
+        // 여유가 없거나(포지셔닝이 낮으면) 멀리 뻗는 공이면 달리던 그대로 공과 같이 닿는다
         [tx, tz] = standOf(next.from, next.type, j < 2 ? 0 : 1, [p.x, p.z], m.far || 0);
-        sp = Math.min(RUN_CAP, Math.max(sp, Math.hypot(tx - p.x, tz - p.z) / Math.max(0.12, dur - m.t0 - 0.03)));
+        const set = (m.m ?? 0.3) >= 0.08 && m.k !== 'reach' && m.k !== 'jam';
+        const T = Math.max(0.12, dur - m.t0 - (set ? Math.min(m.m ?? 0.3, 0.45) : 0) - 0.02);
+        const D = Math.hypot(tx - p.x, tz - p.z);
+        sp = cruise(D, T, set);
+        // 멈추지 못하는 사람은 공 자리를 지나쳐 계속 달린다(치는 순간에도 움직이고 있다)
+        if (!set && D > 0.3) { tx += (tx - p.x) / D * 0.7; tz += (tz - p.z) / D * 0.7; }
+        const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14);
+        opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, prepFor(next.type), 0); } : null };
       }
-      this.later(m.t0, () => this.runTo(j, tx, tz, 0, sp));
+      this.later(m.t0, () => this.runTo(j, tx, tz, 0, sp, opt));
       if (m.k === 'miss' || m.k === 'confuse') {
         const ball = s.bounce || s.to;
         this.later(Math.max(m.t0 + 0.05, dur * (m.k === 'confuse' ? 0.55 : 0.8)), () => { if (m.k === 'miss') this.lunge(j, ball); else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); } });
@@ -455,7 +481,7 @@ export class MatchView {
     if (next && next.h !== undefined && next.h !== s.h) {
       const pv = this.players[next.h];
       const lead = Math.max(0, dur - 0.22);
-      this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { this.setPose(next.h, prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12); } });
+      this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { if (pv.crouch) return; this.setPose(next.h, prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12); } });
     }
     if (s.res === 'net') {
       const netPt = [lerp(s.from[0], s.to[0], 0.9), 0.15 * Math.sign(s.from[1])];
@@ -552,17 +578,29 @@ export class MatchView {
       for (let i = 0; i < 4; i++) {
         const p = this.players[i];
         // 달리기: 목표까지 일정한 속도로, 도착하면 멈춘다
-        const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz), step = p.speed * pdt;
+        const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz);
         if (d > 0.02) {
-          const m = Math.min(1, step / d);
-          p.x += dx * m; p.z += dz * m;
+          let want = p.speed;
+          if (p.brake) want = Math.min(want, Math.sqrt(2 * DEC * Math.max(0, d - 0.02)) + 0.4);
+          const braking = want < p.vel - 0.6;
+          p.vel += clamp(want - p.vel, -DEC * pdt, ACC * pdt);
+          const step = Math.min(d, Math.max(0.2, p.vel) * pdt);
+          p.x += dx / d * step; p.z += dz / d * step;
           p.stride += step * 2.6;
-          p.lean += ((i < 2 ? -1 : 1) * clamp(dx / Math.max(d, 0.01), -1, 1) * 0.14 - p.lean) * Math.min(1, pdt * 10);
+          // 달릴 때는 가는 쪽으로 기울고, 멈추려고 속도를 줄일 때는 뒤로 버틴다
+          const lean = (i < 2 ? -1 : 1) * clamp(dx / Math.max(d, 0.01), -1, 1) * 0.15 * Math.min(1, p.vel / 4) * (braking ? -0.9 : 1);
+          p.lean += (lean - p.lean) * Math.min(1, pdt * 12);
         } else {
+          if (p.vel > 2 && p.brake) p.sq = Math.max(p.sq, 0.07);   // 멈춰 서는 순간 몸이 눌린다
+          p.vel = 0;
           p.stride = 0;
           p.lean += (0 - p.lean) * Math.min(1, pdt * 10);
+          if (p.onArrive) { const f = p.onArrive; p.onArrive = null; f(); }
         }
-        p.hop = Math.max(0, p.hop - pdt * 0.9);
+        const wasUp = p.hop > 0;
+        p.hop = Math.max(0, p.hop - pdt * 1.1);
+        if (wasUp && p.hop === 0 && p.splitting) { p.splitting = false; p.sq = Math.max(p.sq, 0.1); }   // 스플릿 스텝 착지
+        p.sq = Math.max(0, p.sq - pdt * 0.5);
         p.kick *= Math.max(0, 1 - pdt * 7);
         if (p.poseUntil && now > p.poseUntil) { p.poseUntil = 0; this.setPose(i, 'ready'); }
         if (p.emoteUntil && now > p.emoteUntil) { p.emoteUntil = 0; p.emote.visible = false; }
