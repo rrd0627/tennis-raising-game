@@ -2,7 +2,7 @@
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
-import { BALL_V, flightTime, standOf, ballArc, NET_CLEAR } from './rally.js';
+import { BALL_V, flightTime, standOf, ballArc, closeCall } from './rally.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 const SURFACE = {
@@ -232,6 +232,26 @@ export class MatchView {
       p.emote.position.set(p.x, 2.35 + y, p.z);
     }
     this.myRing.position.set(this.players[0].x, 0.014, this.players[0].z);
+    for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) a.position.set(this.players[i].x, 0.016, this.players[i].z); }
+  }
+  // 작전이 힘을 내는 동안 발밑에 빛나는 고리(우리 팀 분홍, 상대 파랑). null이면 끈다
+  setAura(i, on) {
+    this.auras = this.auras || [];
+    if (!on) { if (this.auras[i]) { this.scene.remove(this.auras[i]); this.auras[i] = null; } return; }
+    if (this.auras[i]) return;
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.95, 32), new THREE.MeshBasicMaterial({ color: i < 2 ? 0xff6f9c : 0x5b8cff, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.rotation.x = -Math.PI / 2;
+    this.scene.add(m);
+    this.auras[i] = m;
+    this.placeAll();
+  }
+  // 코트 위 한 점에 짧은 글자(라인!, 넷!, 짝! 등)
+  popText(x, y, z, text, cls = '') {
+    const el = document.createElement('div');
+    el.className = `textpop ${cls}`;
+    el.textContent = text;
+    this.el.appendChild(el);
+    this.pops.push({ kind: 'text', el, at: [x, y, z], t: 0, life: 1.1 });
   }
 
   // 능력치가 결과를 가른 순간: 그 선수 머리 위에 능력치 이름과 등급이 톡 튀어 오른다.
@@ -289,19 +309,23 @@ export class MatchView {
   later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, step: () => { }, done: () => { if (this.alive) fn(); } }); }
 
   // 공 비행: from/to = [x,z]. 높이는 중력으로(js/rally.js ballArc), 시간은 엔진과 같다. v = 공 빠르기(엔진이 샷 품질로 정함)
-  flyBall(from, to, bounce, type, h0, h1, overNet = true, v = 0) {
-    const arc = ballArc(from, to, bounce, type, h0, h1, v || BALL_V[type] || 16, overNet);
+  // opt: { skim: 네트 테이프를 스치게, onBounce(), onNet([x,y,z]) }
+  flyBall(from, to, bounce, type, h0, h1, overNet = true, v = 0, opt = {}) {
+    const arc = ballArc(from, to, bounce, type, h0, h1, v || BALL_V[type] || 16, overNet, !!opt.skim);
     this.ball.visible = true; this.ballShadow.visible = true;
     this.trailPts = [];
+    // 꼬리 색으로 회전을 보여 준다: 탑스핀 주황, 슬라이스·드롭 하늘색, 나머지 흰색
+    this.trail.material.color.setHex(/drive|passing|^return$|topspin/.test(type) ? 0xffb07a : /slice|chip|drop/.test(type) ? 0x9fd8ff : 0xffffff);
     const tail = Math.round(clamp(2 + (v || 16) * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
     this.trail.material.opacity = clamp(0.3 + (v || 16) * 0.016, 0.4, 0.75);
     return new Promise(res => {
-      let bounced = false;
+      let bounced = false, netted = false;
       this.tweens.push({
         t: 0, dur: arc.dur,
         step: k => {
           const t = k * arc.dur;
-          if (bounce && !bounced && t > arc.t1) { bounced = true; this.mark(bounce); }
+          if (bounce && !bounced && t > arc.t1) { bounced = true; this.mark(bounce); opt.onBounce?.(); }
+          if (opt.onNet && !netted && arc.tn > 0 && t > arc.tn) { netted = true; const [nx, nz, ny] = arc.at(arc.tn); opt.onNet([nx, ny, nz]); }
           const [x, z, y] = arc.at(t);
           this.ball.position.set(x, Math.max(0.11, y), z);
           this.ballShadow.position.set(x, 0.013, z);
@@ -323,7 +347,21 @@ export class MatchView {
     this.fx.push({ obj: m, life: 1.2 });
   }
 
-  setCamera(mode) { this.camMode = mode; }
+  // 시점: main(중계), low(우리 서브 뒤 낮게), far(상대 서브 쪽으로 당겨서), high(긴 랠리를 높이서), push(결정적인 공 쪽으로 다가감)
+  setCamera(mode, cut = false) { this.camMode = mode; if (cut) this.camCut = true; }
+  camTarget() {
+    const bx = this.ball.visible ? this.ball.position.x : 0, bz = this.ball.visible ? this.ball.position.z : 0;
+    const t = new THREE.Vector3(), l = new THREE.Vector3();
+    switch (this.camMode) {
+      case 'side': t.set(15, 3.2, bz * 0.5); l.set(0, 1, bz * 0.6); break;
+      case 'low': t.set((this.camX || 0) * 0.6, 4.6, 19.5); l.set((this.camX || 0) * 0.2, 1.0, 2); break;
+      case 'far': t.set(bx * 0.2, 13.5, 21); l.set(bx * 0.3, 0, -3.2); break;
+      case 'high': t.set(bx * 0.15, 24, 21); l.set(0, 0, 0.8); break;
+      case 'push': t.copy(this.camBase); t.x += bx * 0.18; t.lerp(new THREE.Vector3(bx, 4.5, bz + 9.5), 0.3); l.set(bx * 0.5, 0.6, bz * 0.5 - 0.7); break;
+      default: t.copy(this.camBase); t.x += bx * 0.18; l.copy(this.camLook); l.x = t.x * 0.6;
+    }
+    return { t, l };
+  }
 
   // 포인트 시작: 모두 시작 자리에 선 채로 보이고, 잠깐 숨을 고른 뒤 서브한다
   async beginPoint(s0) {
@@ -339,7 +377,20 @@ export class MatchView {
     }
     this.placeAll();
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
+    this.setCamera('main', this.camMode === 'low' || this.camMode === 'high');
     await this.wait(first ? 0.25 : 0.45);
+  }
+
+  // 큰 포인트의 서브 전: 공을 두 번 튀기며 숨을 고른다
+  async bounceBall(s) {
+    const [x, z] = s.from, ox = 0.3 * (s.h < 2 ? 1 : -1);
+    this.ball.visible = true; this.ballShadow.visible = true;
+    await new Promise(res => this.tweens.push({
+      t: 0, dur: 0.5, step: k => {
+        const u = (k * 2) % 1, y = 0.11 + 0.85 * Math.abs(Math.cos(Math.PI * u));
+        this.ball.position.set(x + ox, y, z); this.ballShadow.position.set(x + ox, 0.013, z);
+      }, done: res,
+    }));
   }
 
   // 서브: 공을 띄우고 내려칠 때 친다
@@ -407,7 +458,18 @@ export class MatchView {
       await this.flyBall(s.from, netPt, null, s.type, h0, 0.6, false, v);
       await this.flyBall(netPt, [netPt[0], netPt[1] + 0.6 * Math.sign(s.from[1])], null, 'dropshot', 0.6, 0.1, false);
     } else {
-      await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v);
+      const opt = {};
+      // 라인에 걸친 위너·에이스, 아슬아슬하게 나간 공
+      const B = s.bounce || s.to;
+      const cc = closeCall(s);
+      if (cc === 'line') opt.onBounce = () => { this.popText(B[0], 0.3, B[1], '라인!', 'line'); this.shake = Math.max(this.shake, 0.08); };
+      else if (cc === 'out') opt.onBounce = () => this.popText(B[0], 0.3, B[1], '아슬아슬!', 'out');
+      // 넷 코드: 쭉 뻗어 받아야 하는 어려운 공이 가끔 네트 테이프를 스치고 넘어간다(연출만)
+      if (s.res === 'in' && next && !isServe && !/lob|moon|drop/.test(s.type) && s.mv?.[next.h]?.k === 'reach' && Math.random() < 0.08) {
+        opt.skim = true;
+        opt.onNet = ([x, y, z]) => { this.flash(x, y, z, 12); this.popText(x, y + 0.4, z, '넷!', 'net'); this.shake = Math.max(this.shake, 0.05); this.hooks?.onNetCord?.(s); };
+      }
+      await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, opt);
     }
     if (s.res === 'fault') {
       for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, 2.4);
@@ -425,23 +487,49 @@ export class MatchView {
   async playRest(pt, from, hooks = {}) {
     const shots = pt.shots;
     const lastIdx = shots.length - 1;
+    this.hooks = hooks;
     for (let i = from; i < shots.length; i++) {
       if (!this.alive) return;
       const s = shots[i];
+      const isServe = s.type === 'serve' || s.type === 'serve2';
       const decisive = i === lastIdx && pt.big && ['win', 'ace', 'poach', 'center'].includes(s.res);
+      // 시점: 큰 포인트의 서브는 서버 쪽에서, 긴 랠리는 높이서, 끝내는 공은 다가가서
+      const n = shots.slice(0, i + 1).filter(x => x.res !== 'fault').length;
+      let cam = 'main';
+      if (i === lastIdx && ['win', 'ace', 'poach'].includes(s.res)) cam = 'push';
+      else if (isServe && pt.big) cam = s.h < 2 ? 'low' : 'far';
+      else if (n >= 8) cam = 'high';
+      this.camX = s.from[0];
+      if (cam !== this.camMode) this.setCamera(cam, cam === 'low');
+      // 큰 포인트의 첫 서브 전에는 공을 튀기며 숨을 고른다
+      if (i === 0 && isServe && pt.big) await this.bounceBall(s);
       // 큰 순간과 기술은 컷인으로 알린다. 경기는 멈추거나 느려지지 않는다
       if ((decisive || s.skill) && hooks.onCutin) hooks.onCutin(s, pt);
       hooks.onShot?.(s, i, pt);
       await this.playShot(s, shots[i + 1], shots[i - 1]);
     }
-    // 결과 포즈
+    // 결과 몸짓: 이긴 팀은 펄쩍 뛰고 서로 다가가 손뼉을 마주친다. 진 팀은 실수한 사람이 고개를 숙이고 파트너가 다가가 다독인다
     const w = pt.winner;
+    const byShot = ['win', 'ace', 'poach', 'center'].includes(pt.endType);
     for (let i = 0; i < 4; i++) {
-      const team = i < 2 ? 0 : 1;
-      this.setPose(i, team === w ? 'cheer' : (i === pt.by && pt.endType !== 'win' && pt.endType !== 'ace' && pt.endType !== 'poach' && pt.endType !== 'center') ? 'sad' : 'ready', 900);
+      const team = i < 2 ? 0 : 1, won = team === w, blame = !won && i === pt.by && !byShot;
+      this.setPose(i, won ? 'cheer' : blame ? 'sad' : 'ready', 1000);
+      if (won) this.players[i].hop = pt.big ? 0.55 : 0.3;
       const st = pt.states[i];
-      this.showEmote(i, st === 'zone' ? 'fire' : st === 'tilt' ? 'cloud' : st === 'shaky' ? 'sweat' : (team === w && i === pt.by ? 'heart' : null));
+      this.showEmote(i, st === 'zone' ? 'fire' : st === 'tilt' ? 'cloud' : st === 'shaky' ? 'sweat' : won && pt.big ? 'bang' : (won && i === pt.by ? 'heart' : null));
     }
+    const meet = (a, b, k) => {
+      const A = this.players[a], B = this.players[b], d = Math.hypot(A.x - B.x, A.z - B.z);
+      if (d > 5.2) return false;
+      const mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2, stop = 0.45 / Math.max(d, 0.9);
+      this.runTo(a, lerp(A.x, mx, k - stop), lerp(A.z, mz, k - stop), 0, 5);
+      if (k > 0.9) this.runTo(b, lerp(B.x, mx, k - stop), lerp(B.z, mz, k - stop), 0, 5);
+      return [mx, mz, Math.max(0, d / 2 - 0.225) / 5];
+    };
+    const [wa, wb] = [w * 2, w * 2 + 1];
+    const m = meet(wa, wb, 1);
+    if (m) this.later(m[2] + 0.05, () => { this.popText(m[0], 1.5, m[1], '짝!', 'clap'); this.players[wa].hop = this.players[wb].hop = 0.25; });
+    if (!byShot && pt.by !== undefined && (pt.by < 2 ? 0 : 1) !== w) { const mate = pt.by ^ 1; meet(mate, pt.by, 0.6); }
     await this.wait(0.6);
     this.ball.visible = false; this.ballShadow.visible = false;
   }
@@ -480,7 +568,13 @@ export class MatchView {
     for (const q of [...this.pops]) {
       q.t += dt;
       const k = q.t / q.life;
-      if (q.kind === 'call') {
+      if (q.kind === 'text') {
+        const v = new THREE.Vector3(q.at[0], q.at[1], q.at[2]).project(this.camera);
+        const x = (v.x + 1) / 2 * this.el.clientWidth, y = (1 - v.y) / 2 * this.el.clientHeight - q.t * 26;
+        const pop = q.t < 0.1 ? 0.6 + q.t * 6 : q.t < 0.2 ? 1.2 - (q.t - 0.1) * 2 : 1;
+        q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
+        q.el.style.opacity = k > 0.7 ? Math.max(0, (1 - k) / 0.3).toFixed(3) : '1';
+      } else if (q.kind === 'call') {
         const p = this.players?.[q.j];
         const pop = q.t < 0.12 ? 0.6 + q.t / 0.12 * 0.55 : q.t < 0.22 ? 1.15 - (q.t - 0.12) / 0.1 * 0.15 : 1;
         if (p) {
@@ -500,13 +594,13 @@ export class MatchView {
       }
     }
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
-    // 카메라
-    const target = new THREE.Vector3(), look = new THREE.Vector3();
-    if (this.camMode === 'side') { target.set(15, 3.2, this.ball.position.z * 0.5); look.set(0, 1, this.ball.position.z * 0.6); }
-    else { target.copy(this.camBase); target.x += (this.ball.visible ? this.ball.position.x : 0) * 0.18; look.copy(this.camLook); look.x = target.x * 0.6; }
-    this.camera.position.lerp(target, this.camMode === 'side' ? 0.25 : 0.08);
+    // 카메라: 시점이 바뀌면 부드럽게 따라가고, 끊어 보여 줄 때(cut)는 바로 옮긴다
+    const { t: target, l: look } = this.camTarget();
+    const kp = this.camCut ? 1 : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
+    this.camera.position.lerp(target, kp);
     this.curLook = this.curLook || look.clone();
-    this.curLook.lerp(look, 0.12);
+    this.curLook.lerp(look, this.camCut ? 1 : 0.12);
+    this.camCut = false;
     this.camera.lookAt(this.curLook);
     // 스매시·에이스·위너 때 화면이 살짝 흔들린다
     let off = null;

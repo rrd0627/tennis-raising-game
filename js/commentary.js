@@ -3,6 +3,7 @@
 // 줄: { who: 'c'(캐스터) | 'a'(해설), text, pri } — pri가 높을수록 먼저 보이고, 낮은 줄은 밀리면 버린다.
 import { STAT_GROUP_OF, STAT_NAME } from './data.js';
 import { SHOT_NAME, PLAN_OPTS } from './sim.js';
+import { closeCall } from './rally.js';
 
 // 같은 말을 연달아 하지 않게 최근 줄은 피해서 고른다
 let RECENT = [];
@@ -22,6 +23,8 @@ const fill = (t, v) => t.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
 const C = (text, pri = 2) => ({ who: 'c', text, pri });
 const A = (text, pri = 2) => ({ who: 'a', text, pri });
 const GRADE_RANK = { S: 6, A: 5, B: 4, C: 3, D: 2, E: 1, F: 0 };
+// 작전마다 힘을 내는 때(우마무스메의 각질 자리). 경기 전 VS 화면에 보인다
+export const PLAN_STYLE = { power: '초반형', twoup: '속공형', twoback: '후반형', lob: '후반형' };
 
 // 상대 성향 한마디 (data.js OPP_ARCH의 성향대로)
 const ARCH_LINE = {
@@ -143,6 +146,9 @@ export function afterPoint(pt, st) {
     err: last.res === 'net' ? [`${by}의 ${shot}, 네트에 걸립니다.`, '아, 네트!'] : [fill('{shotI} 라인을 벗어납니다.', v), `아웃! ${by}, 아쉽습니다.`],
   };
   L.push(C(pick(R[pt.endType] || [pt.text]), 2));
+  const cc = closeCall(last);
+  if (cc === 'line') L.push(C(pick(['라인에 딱 걸칩니다!', '라인 위에 떨어집니다! 정말 아슬아슬해요.']), 2));
+  else if (cc === 'out') L.push(C(pick(['아슬아슬하게 벗어납니다!', '정말 조금 나갔어요!']), 1));
   // 능력치 글자: 우리 팀 것이 있으면 그중 등급이 가장 높은 것, 없으면 가끔 상대 것
   const calls = pt.shots.flatMap(s => s.call || []);
   for (const c of calls) if (c.j < 2) st.calls[c.j + '|' + c.t] = { j: c.j, t: c.t, g: c.g, n: (st.calls[c.j + '|' + c.t]?.n || 0) + 1 };
@@ -189,5 +195,33 @@ export function matchEnd(winner, games, comeback, st) {
   if (winner === 0 && comeback) L.push(A('초반에 밀렸는데 끝까지 버텨서 뒤집었어요. 대단한 경기였어요.', 4));
   else if (top && winner === 0) L.push(A(`오늘은 ${who(st, top.j)}의 ${josa(top.t, '이가')} 빛났어요. ${top.n}번이나 승부를 갈랐죠.`, 4));
   else if (top) L.push(A(`아쉽네요. 그래도 ${who(st, top.j)}의 ${josa(top.t, '은는')} 충분히 통했어요.`, 4));
+  return L;
+}
+
+// 넷 코드(중계 연출)
+export function netCordLine() { return [C(pick(['넷! 테이프를 맞고 넘어갑니다!', '넷 코드! 행운이 따릅니다.']), 2)]; }
+// 흐름이 넘어갈 때
+export function flowLine(team, st) {
+  return [A(team === 0 ? pick(['흐름이 완전히 넘어왔어요!', '분위기가 바뀌었어요. 지금이 기회예요.']) : pick([`흐름이 ${teamName(st, 1)} 쪽으로 넘어갔어요.`, '분위기가 넘어갔어요. 한 포인트로 끊어야 해요.']), 3)];
+}
+// 작전이 힘을 낼 때: grit(뒤질 때 끈질김), late(후반 스퍼트), rush(초반 러시)
+export const SURGE_LABEL = { grit: '끈질김 발동!', late: '후반 스퍼트!', rush: '초반 러시!' };
+export function surgeLine(kind, team, st) {
+  const tn = teamName(st, team);
+  const T = {
+    grit: `${tn}, 끈질김이 발동했어요! 뒤질수록 회복탄력성과 스태미나로 버텨요.`,
+    late: `${tn}, 후반 스퍼트! 이제부터 작전이 힘을 내는 시간이에요.`,
+    rush: `${tn}, 초반 러시예요. 강타가 가장 무서운 시간이에요.`,
+  };
+  return T[kind] ? [A(T[kind], 3)] : [];
+}
+// 코트 교대(홀수 게임 뒤): 파트너가 주인공에게 한마디. comm = 파트너 소통 능력치
+export function changeover(games, st, comm, grade) {
+  const d = games[0] - games[1];
+  const t = d > 0 ? pick(['좋아요, 이대로만 가요!', '지금 공 좋아요. 계속 밀어붙여요.', '한 게임 한 게임, 지금처럼요.'])
+    : d === 0 ? pick(['한 게임씩 가요.', '괜찮아요, 우리 할 수 있어요.', '지금부터예요. 집중해요.'])
+    : pick(['괜찮아요, 아직 몰라요.', '하나씩 따라가요. 끝까지 가요!', '제가 더 움직일게요. 같이 버텨요.']);
+  const L = [{ who: 'p', name: st.names[1], text: t, pri: 2 }];
+  if (comm >= 55 && Math.random() < 0.5) L.push(A(`파트너 소통 ${grade}, 둘이 말이 잘 통하네요.`, 1));
   return L;
 }

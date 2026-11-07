@@ -27,8 +27,9 @@ const GRAV = 9.8;
 const LOB_T = /lob|moon/;
 const spinG = type => (/drive|passing|^return$/.test(type) ? 1.35 : /slice|chip|drop/.test(type) ? 0.8 : 1);
 const dragOf = type => (LOB_T.test(type) ? 0.25 : /slice|chip|drop/.test(type) ? 0.9 : 0.45);
-// 돌려주는 at(t)는 t초 뒤 [x, z, y]. t1 = 바운드까지 걸리는 시간
-export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true) {
+// 돌려주는 at(t)는 t초 뒤 [x, z, y]. t1 = 바운드까지 걸리는 시간, tn = 네트를 지나는 시간.
+// skim이면 네트 테이프를 스치듯 지나간다(넷 코드 연출)
+export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true, skim = false) {
   const end = bounce || to;
   const dur = flightTime(from, to, bounce, v);
   const r1 = dist(from, end) / v, r2 = bounce ? dist(end, to) / (v * AFTER_BOUNCE) : 0;
@@ -39,17 +40,19 @@ export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true) {
   let g = GRAV * spinG(type);
   // 네트 위를 지나도록: 네트를 지나는 순간의 높이가 모자라면 더 높이 띄운다
   const uNet = from[1] * end[1] < 0 ? Math.abs(from[1]) / (Math.abs(from[1]) + Math.abs(end[1])) : -1;
+  let tn = -1;
   if (overNet && uNet > 0) {
-    const tn = -Math.log(1 - uNet * E) / c;
+    tn = -Math.log(1 - uNet * E) / c;
     const line = h0 + (yEnd - h0) * tn / t1;
-    g = clamp(Math.max(g, 2 * (NET_CLEAR - line) / (tn * (t1 - tn))), 4, 40);
+    const need = 2 * ((skim ? 0.97 : NET_CLEAR) - line) / (tn * (t1 - tn));
+    g = clamp(skim ? need : Math.max(g, need), 4, 40);
   }
   const vy = (yEnd - h0 + g * t1 * t1 / 2) / t1;
   // 바운드 뒤: 바닥에서 받는 높이(h1)까지. 너무 튀어 오르지 않게 위로 가는 속도를 막는다
   let up = t2 > 0 ? (h1 + GRAV * t2 * t2 / 2) / t2 : 0;
   up = Math.min(up, 9);
   return {
-    dur, t1,
+    dur, t1, tn,
     at(t) {
       if (t <= t1) {
         const k = prog(Math.max(0, t));
@@ -59,6 +62,24 @@ export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true) {
       return [end[0] + (to[0] - end[0]) * k, end[1] + (to[1] - end[1]) * k, Math.max(0, up * u - GRAV * u * u / 2)];
     },
   };
+}
+
+// 공이 떨어진 곳에서 가장 가까운 선까지 거리(m). 복식 옆줄, 베이스라인, 서브면 서비스 라인과 센터 라인
+export function lineGap(p, serve = false) {
+  const ax = Math.abs(p[0]), az = Math.abs(p[1]);
+  const gaps = [Math.abs(ax - 5.485), Math.abs(az - 11.885)];
+  if (serve) gaps.push(Math.abs(az - 6.4), ax);
+  return Math.min(...gaps);
+}
+
+// 아슬아슬한 공: 라인에 걸친 위너·에이스('line'), 조금 나간 공('out'). 중계와 해설이 같은 답을 내도록 위치로만 정한다
+const h01 = p => { const v = Math.sin(p[0] * 12.9898 + p[1] * 78.233) * 43758.5453; return v - Math.floor(v); };
+export function closeCall(s) {
+  const B = s.bounce || s.to;
+  if (!B) return null;
+  if ((s.res === 'win' || s.res === 'ace') && lineGap(B, /^serve/.test(s.type)) < 0.3 && h01(B) < 0.5) return 'line';
+  if (s.res === 'out' && lineGap(B) < 0.45 && h01(B) < 0.7) return 'out';
+  return null;
 }
 
 // 능력치 → 몸

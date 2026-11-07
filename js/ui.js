@@ -347,6 +347,7 @@ const SCREENS = {
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
         <div class="cmt" id="cmt"></div>
+        <div class="speedo" id="speedo"></div>
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
@@ -374,6 +375,7 @@ const SCREENS = {
         ${row('포치 성공', `${p.poachWin}/${p.poachTry}`, `${q.poachWin}/${q.poachTry}`)}
         ${row('어시스트', p.assists, q.assists)}
       </table><p>브레이크 성공 ${R.bp[0]}/${R.bp[1]}</p>${R.oppErr ? `<p>상대 범실 초반 ${R.oppErr[0]}개, 후반 ${R.oppErr[1]}개</p>` : ''}</div>
+      <div class="card shine"><h3>오늘 빛난 능력치</h3>${R.shine?.length ? R.shine.map((x, i) => `<div class="shinerow"><b class="rk">${i + 1}</b><span class="callpop us static"><span>${esc(x.t)}</span><b class="g${x.g}">${x.g}</b></span><small>${esc(x.name)} · ${x.n}번 승부를 갈랐다</small></div>`).join('') : '<p class="muted">아직 경기에서 이름이 뜬 능력치가 없다. 능력치가 C 등급을 넘으면 경기에서 이름이 뜬다.</p>'}</div>
       ${Object.keys(p.skillUse || {}).length ? `<div class="card"><h3>쓴 기술</h3><p>${Object.entries(p.skillUse).map(([id, n]) => `${SKILLS[id].name} ${n}번`).join(' · ')}</p></div>` : ''}
       ${counters.length ? `<div class="card"><h3>대처 성공률 (${esc(S.name)})</h3>${counters.map(([c, v]) => `<div class="cbar"><span>${STAT_NAME[c]}</span><div class="bar"><i style="width:${v.ok / v.tot * 100}%"></i></div><b>${v.ok}/${v.tot}</b></div>`).join('')}</div>` : ''}
       <div class="actions"><button class="btn primary big" data-a="aftermatch">${tr.finished ? '대회 결과 보기' : '다음 경기로'}</button></div>
@@ -1043,7 +1045,7 @@ async function runMatch() {
   const tr = S.tournament;
   const { human, npc, opp } = G.buildTeams(S, tr);
   const sim = new MatchSim(human, npc, { startFatigue: G.startFatigue(S, tr) });
-  M = { sim, speed: 1, hl: true, skipGame: false, skipMatch: false, opp, minDiff: 0, chased: false };
+  M = { sim, speed: 1, hl: true, skipGame: false, skipMatch: false, opp, minDiff: 0, chased: false, shine: {}, flow: 0, flowSide: 0, surge: [null, null] };
   const stage = document.getElementById('stage');
   const players = [
     { charId: 'player', look: PLAYER_LOOK }, { charId: tr.partner, look: { ...PARTNER[tr.partner].color, band: '#ffffff' } },
@@ -1061,15 +1063,19 @@ async function runMatch() {
   cmtReset();
   M.cmt = CMT_TEXT.newCommentary({
     names: sim.P.map(p => p.name), tourName: tr.name, stage: G.stageLabel(tr), archId: opp.arch, archName: opp.archName,
-    plan: [sim.teams[0].choices.plan, sim.teams[1].choices.plan], h2h: G.h2hOf(S, opp),
+    plan: [sim.teams[0].choices.plan, ARCH[opp.arch]?.plan], h2h: G.h2hOf(S, opp),
   });
   say(CMT_TEXT.matchIntro(M.cmt));
+  if (M.view) await vsSplash(tr, opp, M.cmt);
   while (!sim.over) {
     sim.teams[1].choices = aiChoices(sim, 1);
     M.curServe = sim.serveTeam;
+    surgeCheck(sim);
     const g = sim.playGame();
     for (const [pi, pt] of g.points.entries()) {
       const lastOfGame = pi === g.points.length - 1;
+      for (const sh of pt.shots) for (const c of sh.call || []) if (c.j < 2) { const k = c.j + '|' + c.t, o = M.shine[k] || (M.shine[k] = { j: c.j, t: c.t, g: c.g, n: 0 }); o.n++; o.g = c.g; }
+      flowTick(pt);
       if (M.hl && M.view && !M.skipGame && !pt.big && !pt.skill && !lastOfGame) {
         // 하이라이트에서 건너뛰는 포인트: 결과만 짧게. 해설 기록(연속 득점 등)은 같이 쌓는다
         CMT_TEXT.afterPoint(pt, M.cmt);
@@ -1080,9 +1086,11 @@ async function runMatch() {
       const prevScore = pi ? g.points[pi - 1].score : '0 - 0';
       await M.view.playPoint(pt, {
         onCutin: cutin,
-        onShot: (s, i) => { rallyTick(s, i, pt); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
+        onShot: (s, i) => { rallyTick(s, i, pt); speedo(s); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
+        onNetCord: () => say(CMT_TEXT.netCordLine()),
       });
       say(CMT_TEXT.afterPoint(pt, M.cmt));
+      crowd(pt);
       setLog(pt.text, false); hud(pt);
       hideBig();
     }
@@ -1098,6 +1106,7 @@ async function runMatch() {
     if (!M.skipMatch) {
       setLog(`게임 ${g.gameWinner === 0 ? '획득!' : '내줌'} ${sim.games[0]} - ${sim.games[1]}`, !M.view);
       say(CMT_TEXT.afterGame(g, sim.games, sim.gameNo, M.cmt));
+      if ((sim.games[0] + sim.games[1]) % 2 === 1) say(CMT_TEXT.changeover(sim.games, M.cmt, sim.P[1].stats.comm, grade(sim.P[1].stats.comm)));
       if (chasing) { M.chased = true; say(CMT_TEXT.chaseLine(M.cmt)); showBig('끈질기게 따라붙는다!'); await sleep(1100); hideBig(); }
       await sleep(M.hl ? 700 : 400);
     }
@@ -1114,7 +1123,11 @@ async function runMatch() {
   const comeback = sim.winner === 0 && M.minDiff <= -2;
   const coachLine = firstWin ? '대회 첫 승이에요! 오늘 일은 오래 기억날 거예요.' : comeback ? '초반엔 밀렸는데 끈질기게 버틴 게 통했어요. 후반에 상대 실수가 늘었죠?' : coachSays(sim);
   const opps = sim.P.filter(p => p.team === 1);
-  V.report = { won: sim.winner === 0, comeback, oppErr: comeback ? [opps.reduce((a, p) => a + p.rec.errEarly, 0), opps.reduce((a, p) => a + p.rec.errLate, 0)] : null, games: [...sim.games], oppName: opp.names.join(' · '), me: me.rec, partner: pa.rec, bp: [sim.bp.won[0], sim.bp.tot[0]], coachLine };
+  // 오늘 빛난 능력치: 주인공 것(키운 능력치) 두 개를 먼저, 나머지 자리는 파트너까지 많이 뜬 순서로
+  const byN = (a, b) => b.n - a.n || 'SABC'.indexOf(a.g) - 'SABC'.indexOf(b.g);
+  const all = Object.values(M.shine).sort(byN), mine = all.filter(o => o.j === 0).slice(0, 2);
+  const shine = [...mine, ...all.filter(o => !mine.includes(o))].slice(0, 3).map(o => ({ name: sim.P[o.j].name, t: o.t, g: o.g, n: o.n }));
+  V.report = { shine, won: sim.winner === 0, comeback, oppErr: comeback ? [opps.reduce((a, p) => a + p.rec.errEarly, 0), opps.reduce((a, p) => a + p.rec.errLate, 0)] : null, games: [...sim.games], oppName: opp.names.join(' · '), me: me.rec, partner: pa.rec, bp: [sim.bp.won[0], sim.bp.tot[0]], coachLine };
   G.recordMatch(S, tr, sim);
   G.save(S);
   await sleep(500);
@@ -1136,7 +1149,8 @@ function hud(pt) {
   const gm = pt ? pt.games : sim.games;
   box.innerHTML = `<small>${esc(tr.name)} · ${G.stageLabel(tr)}</small>
     <div class="sr"><span>${sv === 0 && !sim.over ? '●' : ''}</span><b>${esc(P[0].name)} · ${esc(P[1].name)}</b><em>${gm[0]}</em><i>${pt ? ps[0] : ''}</i></div>
-    <div class="sr"><span>${sv === 1 && !sim.over ? '●' : ''}</span><b>${esc(P[2].name)} · ${esc(P[3].name)}</b><em>${gm[1]}</em><i>${pt ? ps[1] : ''}</i></div>`;
+    <div class="sr"><span>${sv === 1 && !sim.over ? '●' : ''}</span><b>${esc(P[2].name)} · ${esc(P[3].name)}</b><em>${gm[1]}</em><i>${pt ? ps[1] : ''}</i></div>
+    <div class="flowbar"><span>흐름</span><div><i class="${(M.flow || 0) >= 0 ? 'us' : 'them'}" style="left:${(50 + Math.min(0, M.flow || 0) * 50).toFixed(1)}%;width:${(Math.abs(M.flow || 0) * 50).toFixed(1)}%"></i></div></div>`;
   const ms = document.getElementById('mentals');
   const gs = pt ? pt.gauges : P.map(p => Math.round(p.gauge));
   const lbl = g => g >= 80 ? '몰입' : g < 10 ? '틸트' : g < 30 ? '흔들림' : '보통';
@@ -1145,6 +1159,88 @@ function hud(pt) {
 function setLog(t, pop = true) { const l = document.getElementById('logline'); if (l) l.textContent = t; const p = document.getElementById('pointtext'); if (p && pop) { p.textContent = t; p.classList.remove('show'); void p.offsetWidth; p.classList.add('show'); } }
 function showBig(label) { const b = document.getElementById('biglabel'); if (b) { b.textContent = label; b.classList.add('show'); } }
 function hideBig() { const b = document.getElementById('biglabel'); if (b) b.classList.remove('show'); }
+// ── 박진감 연출 ──
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+function flash(label, ms = 1300) {
+  const b = document.getElementById('biglabel');
+  if (!b || M?.skipGame) return;
+  showBig(label);
+  setTimeout(() => { if (b.textContent === label) hideBig(); }, ms);
+}
+// 흐름: 이긴 쪽으로 기울고 조금씩 가운데로 돌아온다. 한쪽으로 넘어가면 알린다
+function flowTick(pt) {
+  M.flow = clampN(M.flow * 0.8 + (pt.winner === 0 ? 0.2 : -0.2) * (pt.big ? 1.5 : 1), -1, 1);
+  const side = M.flow >= 0.45 ? 1 : M.flow <= -0.45 ? -1 : 0;
+  if (side && side !== M.flowSide) {
+    if (M.flowSide) { flash(side > 0 ? '흐름이 넘어왔다!' : '흐름이 넘어갔다…'); say(CMT_TEXT.flowLine(side > 0 ? 0 : 1, M.cmt)); }
+    M.flowSide = side;
+  }
+}
+// 작전이 힘을 내는 때(각질): 뒤질 때 끈질김, 후반 스퍼트, 초반 러시. 발밑 고리와 큰 글자로 알린다
+function surgeCheck(sim) {
+  const plans = [sim.teams[0].choices.plan, ARCH[M.opp.arch]?.plan];
+  for (const t of [0, 1]) {
+    const plan = plans[t], behind = sim.games[1 - t] - sim.games[t], gn = sim.gameNo;
+    const kind = (plan === 'twoback' || plan === 'lob') && behind >= 2 ? 'grit' : (plan === 'twoback' || plan === 'lob') && gn >= 5 ? 'late' : plan === 'power' && gn <= 2 ? 'rush' : null;
+    if (kind === M.surge[t]) continue;
+    M.surge[t] = kind;
+    M.view?.setAura(t * 2, !!kind); M.view?.setAura(t * 2 + 1, !!kind);
+    if (!kind || M.skipGame) continue;
+    if (kind !== 'rush' || gn > 0) flash((t === 0 ? '' : '상대 ') + CMT_TEXT.SURGE_LABEL[kind]);
+    say(CMT_TEXT.surgeLine(kind, t, M.cmt));
+  }
+}
+// 관중석: 아는 사람들의 외침
+function crowd(pt) {
+  const stage = document.getElementById('stage');
+  if (!stage || M.skipGame) return;
+  const us = pt.winner === 0, shot = ['win', 'ace', 'poach', 'center'].includes(pt.endType), r = Math.random();
+  let words = null;
+  if (us && shot) words = pt.big ? ['와아아!', '나이스!!', '최고!'] : ['나이스!', '나이스 샷!', '와!'];
+  else if (us) words = pt.big ? ['좋아!!', '그렇지!'] : r < 0.5 ? ['좋아!', '그렇지!'] : null;
+  else if (pt.by < 2 && !shot) words = pt.big ? ['괜찮아!', '아…'] : r < 0.4 ? ['괜찮아!', '다음!'] : null;
+  else if (shot && r < 0.4) words = ['오…'];
+  if (!words) return;
+  // 같은 말이 겹치지 않게 섞어서 앞에서부터
+  const pool = [...words].sort(() => Math.random() - 0.5), n = Math.min(pool.length, pt.big ? 3 : 1 + (r < 0.5 ? 1 : 0));
+  for (let k = 0; k < n; k++) {
+    const el = document.createElement('div');
+    el.className = `crowdpop ${us ? 'us' : ''} ${pt.big ? 'big' : ''}`;
+    el.textContent = pool[k];
+    el.style.left = `${12 + Math.random() * 70}%`; el.style.top = `${14 + Math.random() * 16}%`;
+    el.style.animationDelay = `${k * 0.12}s`;
+    stage.appendChild(el);
+    setTimeout(() => el.remove(), 1600);
+  }
+}
+// 서브 속도
+function speedo(s) {
+  const el = document.getElementById('speedo');
+  if (!el || !(s.type === 'serve' || s.type === 'serve2') || !(s.res === 'in' || s.res === 'ace')) return;
+  el.textContent = `서브 ${Math.round((s.v || 20) * 3.6 * 1.12)}km/h`;
+  el.className = 'speedo'; void el.offsetWidth; el.className = 'speedo show';
+}
+// 경기 전 VS 화면. 눌러서 넘길 수 있다
+async function vsSplash(tr, opp, st) {
+  const stage = document.getElementById('stage');
+  if (!stage) return;
+  const k = opp.seed % 997;
+  const pics = await Promise.all([
+    portraitURL('player', PLAYER_LOOK, 'joy'), portraitURL(tr.partner, lookOf(tr.partner), 'joy'),
+    portraitURL(`opp:${k}:0`, oppLook(k, 0), 'focus'), portraitURL(`opp:${k}:1`, oppLook(k, 1), 'focus'),
+  ]);
+  const myPlan = PLAN_OPTS.find(p => p.id === st.plan[0]);
+  const h = st.h2h && st.h2h.w + st.h2h.l > 0 ? `전적 ${st.h2h.w}승 ${st.h2h.l}패` : '첫 만남';
+  const el = document.createElement('div');
+  el.className = 'vsplash';
+  el.innerHTML = `<div class="vs-side us"><div class="pics"><img src="${pics[0]}"><img src="${pics[1]}"></div><b>${esc(st.names[0])} · ${esc(st.names[1])}</b><small>${esc(myPlan?.name || '')}${CMT_TEXT.PLAN_STYLE[st.plan[0]] ? ' · ' + CMT_TEXT.PLAN_STYLE[st.plan[0]] : ''}</small></div>
+    <div class="vs-mid">VS<small>${h}</small></div>
+    <div class="vs-side them"><div class="pics"><img src="${pics[2]}"><img src="${pics[3]}"></div><b>${esc(st.names[2])} · ${esc(st.names[3])}</b><small>${esc(opp.archName || '')}${CMT_TEXT.PLAN_STYLE[st.plan[1]] ? ' · ' + CMT_TEXT.PLAN_STYLE[st.plan[1]] : ''}</small></div>`;
+  stage.appendChild(el);
+  await new Promise(res => { const t = setTimeout(res, 1900); el.addEventListener('click', () => { clearTimeout(t); res(); }); });
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 300);
+}
 // ── 해설 자막 ──
 // 한 줄씩 차례로 보여 준다. 밀리면 덜 중요한 줄(pri가 낮은 것)부터 버리고,
 // 지금 줄보다 중요한 줄이 오면 0.7초 뒤 바로 넘긴다. 경기는 기다리지 않는다
@@ -1174,7 +1270,7 @@ function nextLine() {
   const l = CMT.q.shift();
   CMT.cur = l; CMT.since = performance.now();
   el.className = 'cmt'; void el.offsetWidth; el.className = `cmt show ${l.who}`;
-  el.innerHTML = `<i>${l.who === 'c' ? '캐스터' : '해설'}</i><span>${esc(l.text)}</span>`;
+  el.innerHTML = `<i>${l.who === 'c' ? '캐스터' : l.who === 'p' ? esc(l.name) : '해설'}</i><span>${esc(l.text)}</span>`;
   CMT.timer = setTimeout(nextLine, (1100 + l.text.length * 45) / (M.speed || 1));
 }
 // 랠리 수: 공이 네트를 넘은 횟수. 4번부터 보인다
