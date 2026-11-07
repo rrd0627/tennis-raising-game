@@ -557,3 +557,5 @@ table.rep td:first-child { text-align: left; color: var(--muted); }
 .toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: rgba(31, 43, 36, .94); color: #fff; padding: 10px 16px; border-radius: 12px; z-index: 50; font-size: 13px; line-height: 1.5; max-width: min(440px, calc(100% - 32px)); transition: opacity .4s; }
 .toast.out { opacity: 0; }
 #newver { position: fixed; left: 50%; top: calc(36px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 60; white-space: nowrap; background: var(--pink); color: #fff; font-weight: 800; font-size: 13px; padding: 9px 16px; border-radius: 99px; box-shadow: 0 3px 12px rgba(0, 0, 0, .35); }
+/* 대사가 다 나오기 전에는 넘김 표시와 선택지를 숨긴다 (자리는 지킨다) */
+.typing .tapnext, .typing .picks { visibility: hidden; }

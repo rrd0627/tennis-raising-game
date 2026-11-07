@@ -58,6 +58,42 @@ function render() {
   V.turnWord = null;
   hydratePortraits();
   runFx();
+  typeLines();
+}
+// ── 대사는 한 글자씩 나온다. 다 나오기 전에 누르면 글을 다 보여 주고, 다 나온 뒤에 눌러야 넘어간다 ──
+// 화면이 바뀐 직후의 누름은 잠깐 무시해서, 이전 화면에서 누른 손가락에 대사가 그냥 지나가지 않게 한다.
+const ADVANCE = new Set(['resnext', 'evtnext', 'evt', 'tourstep', 'introNext']);
+const TYPE_MS = 28, TAP_GUARD = 300;
+let typing = null, shownAt = 0;
+function typeLines() {
+  if (typing) { clearTimeout(typing.timer); typing = null; }
+  shownAt = performance.now();
+  if (S?.fast || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const nodes = [];
+  for (const p of app.querySelectorAll('.dialog p, .scene p, .talkline')) {
+    const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) if (n.data.trim()) { nodes.push({ n, chars: [...n.data] }); n.data = ''; }
+  }
+  if (!nodes.length) return;
+  const screen = app.querySelector('.screen');
+  screen?.classList.add('typing');
+  let i = 0, k = 0;
+  const step = () => {
+    const cur = nodes[i];
+    cur.n.data = cur.chars.slice(0, ++k).join('');
+    if (k >= cur.chars.length) { i++; k = 0; }
+    if (i >= nodes.length) { finishTyping(); return; }
+    typing.timer = setTimeout(step, TYPE_MS);
+  };
+  typing = { nodes, screen, timer: setTimeout(step, 90) };
+}
+function finishTyping() {
+  if (!typing) return;
+  clearTimeout(typing.timer);
+  for (const x of typing.nodes) x.n.data = x.chars.join('');
+  typing.screen?.classList.remove('typing');
+  typing = null;
+  shownAt = performance.now();
 }
 // 결과 화면 연출: 체력 바가 차오르고 큰 숫자가 올라간다. 탭이 숨겨져 있어도 끝 값에 도착한다.
 function runFx() {
@@ -876,7 +912,7 @@ function showScene(i) {
   if (i >= INTRO_SCENES.length) { V.profile = { step: 0 }; V.screen = 'profile'; render(); return; }
   V.scene = i; V.screen = 'intro';
   render();
-  introTimer = setTimeout(() => showScene(i + 1), 3800);
+  introTimer = setTimeout(() => showScene(i + 1), 2600 + INTRO_SCENES[i].text.length * 110);
 }
 
 // ── 입력 처리 ─────────────────────────────────────────────
@@ -892,6 +928,9 @@ function nextTourScreen() {
 async function onClick(e) {
   const stop = e.target.closest('[data-stop]');
   const t = e.target.closest('[data-a]');
+  // 대사가 나오는 중에 화면이나 넘김·선택 자리를 누르면 대사만 다 보여 준다 (건너뛰기, 빨리 같은 버튼은 그대로 동작)
+  if (typing && (!t || ADVANCE.has(t.dataset.a) || t.classList.contains('pickbtn'))) { finishTyping(); return; }
+  if (t && ADVANCE.has(t.dataset.a) && performance.now() - shownAt < TAP_GUARD) return;
   if (!t) return;
   if (stop && !stop.contains(t)) return;
   if (stop && t.dataset.a.startsWith('close')) return;
