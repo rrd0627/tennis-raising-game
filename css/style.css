@@ -78,6 +78,15 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .dots { position: absolute; bottom: calc(32px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; }
 .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.35); }
 .dots i.on { background: #fff; }
+/* 실제 그림이 등록된 타이틀과 인트로 (art/manifest.json 의 bg.title, intro) */
+.title.hasbg { position: relative; overflow: hidden; }
+.title.hasbg > :not(.bgimg) { position: relative; z-index: 1; }
+.title.hasbg .logo h1, .title.hasbg .logo p, .title.hasbg .tapstart, .title.hasbg .tiny { color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, .5); }
+.introimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; user-select: none; }
+.intro.hasimg { overflow: hidden; }
+.intro.hasimg .scene { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; padding: 56px 24px calc(64px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, .62) 40%); }
+.intro.hasimg .scene .ic { display: none; }
+.intro.hasimg .dots, .intro.hasimg .introskip { z-index: 2; }
 .title { cursor: pointer; }
 .tapstart { margin: 8px 0 0; font-family: var(--f-display); font-size: 20px; color: var(--turf-deep); animation: tappulse 1.6s ease-in-out infinite; }
 @keyframes tappulse { 50% { opacity: .35; } }
@@ -281,6 +290,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 /* 요정: 임시 그림 */
 .fairy { position: absolute; left: 14px; top: 26%; z-index: 2; font-size: 36px; line-height: 1; filter: drop-shadow(0 0 8px rgba(255, 240, 150, .95)); pointer-events: none; animation: fairybob 2.4s ease-in-out infinite; }
 @keyframes fairybob { 50% { transform: translateY(-12px) rotate(6deg); } }
+.fairy.img { width: 72px; height: 72px; object-fit: contain; font-size: 0; }
 .nextwish { text-align: center; }
 /* 대회 정보 */
 .tourcard { display: flex; flex-direction: column; gap: 5px; }

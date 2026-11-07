@@ -6,7 +6,7 @@ import {
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, PLAN_OPTS, PLAN_SET, SHOT_NAME } from './sim.js';
 import { MatchView, webglOK } from './match3d.js';
-import { portraitURL, heroURL, sceneURL, PLAYER_LOOK, oppLook } from './art.js';
+import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
 import { CHECKS } from './checks.js';
 
@@ -80,7 +80,8 @@ function runFx() {
 // ── 타이틀 ────────────────────────────────────────────────
 const SCREENS = {
   title: () => V.check ? checkListHTML() : `
-    <div class="screen title" data-a="titleStart">
+    <div class="screen title${bgPath('title') ? ' hasbg' : ''}" data-a="titleStart">
+      ${bgPath('title') ? `<img class="bgimg" decoding="sync" src="${bgPath('title')}" alt="">` : ''}
       <div class="logo"><div class="ball">🎾</div><h1>테니스 선수<br>키우기</h1><p>간절히 바라는 사람에게 테니스의 요정이 찾아간다</p></div>
       ${portrait('me', 'smile', 'title-pt')}
       <p class="tapstart">${S && !S.ending ? '화면을 눌러 이어 하기' : '화면을 눌러 시작'}</p>
@@ -88,8 +89,9 @@ const SCREENS = {
     </div>`,
 
     intro: () => {
-    const s = INTRO_SCENES[V.scene];
-    return `<div class="screen intro" data-a="introNext" style="--bg:${s.bg}">
+    const s = INTRO_SCENES[V.scene], img = introURL(V.scene);
+    return `<div class="screen intro${img ? ' hasimg' : ''}" data-a="introNext" style="--bg:${s.bg}">
+      ${img ? `<img class="introimg" decoding="sync" src="${img}" alt="">` : ''}
       <button class="introskip" data-a="introSkip">건너뛰기 ›</button>
       <div class="scene"><div class="ic">${s.icon}</div><p>${esc(s.text)}</p></div>
       <div class="dots">${INTRO_SCENES.map((_, i) => `<i class="${i === V.scene ? 'on' : ''}"></i>`).join('')}</div>
@@ -368,7 +370,7 @@ const SCREENS = {
       dialog = `<div class="dialog ask"><div><b class="namechip">${esc(S.name)}</b><p>${esc(talk.line)}</p><div class="picks">${talk.options.map((o, i) => `<button class="pickbtn" data-a="tourjoy" data-i="${i}">${esc(o.label)}</button>`).join('')}</div></div></div>`;
     } else if (step === 'party') {
       const lines = PARTY_LINES[tr.final], n = lines[S.results.length % lines.length];
-      hero = `<div class="duo"><img class="heroimg a" decoding="sync" src="${heroURL(PLAYER_LOOK, 'cheer')}" alt="${esc(S.name)}"><img class="heroimg b" decoding="sync" src="${heroURL(lookOf(tr.partner), 'cheer')}" alt="${esc(pname)}"></div>${FAIRY}`;
+      hero = `<div class="duo"><img class="heroimg a" decoding="sync" src="${heroURL(PLAYER_LOOK, 'cheer')}" alt="${esc(S.name)}"><img class="heroimg b" decoding="sync" src="${heroURL(lookOf(tr.partner), 'cheer', tr.partner)}" alt="${esc(pname)}"></div>${fairyHTML('joy')}`;
       extra = `${confettiHTML()}<div class="spots"><i></i><i></i></div>${tr.final === 'W' ? '<div class="trophy">🏆</div>' : ''}<div class="bigword good">${esc(PARTY_WORD[tr.final])}</div>`;
       dialog = `<div class="dialog"><div><p>${esc(fill(n))}</p>${foot}</div></div>`;
     } else if (step === 'rewards') {
@@ -454,8 +456,13 @@ const MOOD = [['↓', '최악'], ['↘', '나쁨'], ['→', '보통'], ['↗', '
 const BIG_SHORT = { stroke: '스트로크', net: '네트', serve: '서브', physical: '피지컬', tactics: '전술', mental: '멘탈' };
 function bgHTML(kind, wi, cls = '') { return `<img class="bgimg ${cls}" decoding="sync" src="${sceneURL(kind, wi.quarter)}" alt="">`; }
 // 요정(플레이어)은 늘 곁에 있다. 임시 그림.
-const FAIRY = '<div class="fairy" aria-hidden="true">🧚</div>';
-function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">${FAIRY}`; }
+// 요정: 실제 그림(manifest.fairy)이 있으면 그 그림, 없으면 임시 이모지. 주인공 자세에 맞춰 표정을 고른다.
+const FAIRY_EXPR = { cheer: 'joy', sad: 'worry', tired: 'worry' };
+function fairyHTML(expr = 'base') {
+  const u = fairyURL(expr);
+  return u ? `<img class="fairy img" decoding="sync" src="${u}" alt="" aria-hidden="true">` : '<div class="fairy" aria-hidden="true">🧚</div>';
+}
+function heroHTML(pose, look = PLAYER_LOOK) { return `<img class="heroimg" decoding="sync" src="${heroURL(look, pose)}" alt="${esc(S.name)}">${fairyHTML(FAIRY_EXPR[pose])}`; }
 // ── 결과 단계: 설명 → (가끔) 선택 → 대사 → 결과 ─────────────
 function resultSteps(L) {
   return [L.desc && 'desc', L.fail && 'fail', L.choice && L.picked == null && 'choice', (L.reply || L.scene) && 'talk', L.mile && 'mile', L.hint && 'hint', L.bonds?.length && 'bond', 'result', rankUps(L).length && 'rank', L.joy && (L.joyPicked == null ? 'joy' : 'joyreply')].filter(Boolean);
@@ -481,7 +488,7 @@ const SWING = { lesson: ['fh', 'bh'], gym: ['stretch', 'tired'], practice: ['bh'
 const FLOAT = { rest: 'Z', family: '♥', clinic: '+', overtime: '…' };
 function actorHTML(L, pose) {
   const pair = SWING[L.act], fl = FLOAT[L.act], look = LOOK_OF[L.act] || PLAYER_LOOK;
-  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}${FAIRY}`;
+  if (pair) return `<img class="heroimg fa" decoding="sync" src="${heroURL(look, pair[0])}" alt="${esc(S.name)}"><img class="heroimg fb" decoding="sync" src="${heroURL(look, pair[1])}" alt="">${ACT[L.act].tennis ? '<i class="fxball"></i>' : ''}${fairyHTML()}`;
   return heroHTML(pose, LOOK_OF[L.act]) + (fl ? `<div class="floaty"><i>${fl}</i><i>${fl}</i><i>${fl}</i></div>` : '');
 }
 // 빨리 넘기기: 설명과 대사를 건너뛴다. 선택, 이정표, 결과, 등급 상승은 건너뛰지 않는다.
@@ -998,7 +1005,7 @@ async function runMatch() {
   const stage = document.getElementById('stage');
   const players = [
     { charId: 'player', look: PLAYER_LOOK }, { charId: tr.partner, look: { ...PARTNER[tr.partner].color, band: '#ffffff' } },
-    { charId: 'npc', look: oppLook(opp.seed % 997, 0) }, { charId: 'npc', look: oppLook(opp.seed % 997, 1) },
+    { charId: 'oppa', look: oppLook(opp.seed % 997, 0) }, { charId: 'oppb', look: oppLook(opp.seed % 997, 1) },
   ];
   if (webglOK()) {
     try {

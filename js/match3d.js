@@ -187,7 +187,8 @@ export class MatchView {
 
   // players: [{look, facing, name}] ×4 (0,1 = 주인공 팀, 화면 아래쪽)
   async setPlayers(players) {
-    this.players = [];
+    // 그림을 다 불러온 뒤에 한꺼번에 넣는다. 도중에 넣으면 그리기 루프가 빈 자리를 읽는다.
+    const list = [];
     for (let i = 0; i < 4; i++) {
       const info = players[i];
       const frames = await sdFrames(info.charId || `npc${i}`, info.look, i < 2 ? 'back' : 'front');
@@ -201,8 +202,9 @@ export class MatchView {
       const shadow = this.blob(0.38, 0.26);
       const emote = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));
       emote.scale.set(0.7, 0.7, 1); emote.visible = false; this.scene.add(emote);
-      this.players.push({ sp, tex, shadow, emote, x: 0, z: i < 2 ? 11 : -11, tx: 0, tz: i < 2 ? 11 : -11, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      list.push({ sp, tex, shadow, emote, x: 0, z: i < 2 ? 11 : -11, tx: 0, tz: i < 2 ? 11 : -11, speed: RUN_SPEED, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
+    this.players = list;
     this.emoteTex = {};
     for (const k of ['sweat', 'fire', 'cloud', 'heart', 'bang']) this.emoteTex[k] = this.canvasTex(emoteCanvas(k));
     // 주인공 표시 링

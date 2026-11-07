@@ -2,15 +2,24 @@
 // art/manifest.json 에 아티스트 파일이 등록되어 있으면 그 파일을 쓰고, 없으면 여기서 그린 임시 그림을 씁니다.
 // 파일 이름 규칙은 기획 문서의 '아트 명세서' 탭을 따릅니다.
 
-let manifest = { chr: {}, sd: {}, bg: {} };
+// 그림 파일은 tools/art_import.py 가 art/incoming/ 에서 정리해 manifest 에 등록한다 (art/README.md).
+let manifest = { chr: {}, sd: {}, bg: {}, fairy: {}, intro: [] };
 const imgCache = new Map();
 export async function loadManifest() {
   try {
     const r = await fetch('art/manifest.json', { cache: 'no-cache' });
-    if (r.ok) manifest = { chr: {}, sd: {}, bg: {}, ...(await r.json()) };
+    if (r.ok) manifest = { chr: {}, sd: {}, bg: {}, fairy: {}, intro: [], ...(await r.json()) };
   } catch { /* 없으면 임시 아트 */ }
   return manifest;
 }
+// 한 장씩 등록된 전신 그림: manifest.sd[charId]["ready_front"] = 경로
+function sdPath(charId, pose, facing) {
+  const p = manifest.sd?.[charId]?.[`${pose}_${facing}`];
+  return typeof p === 'string' ? p : null;
+}
+export function bgPath(kind) { return manifest.bg?.[kind] || null; }
+export function fairyURL(expr = 'base') { const f = manifest.fairy || {}; return f[expr] || f.base || null; }
+export function introURL(i) { return manifest.intro?.[i] || null; }
 function loadImage(src) {
   if (imgCache.has(src)) return imgCache.get(src);
   const p = new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
@@ -168,12 +177,23 @@ export async function portraitURL(charId, look, expr = 'base') {
   return portraitCanvas(look, expr, 192).toDataURL();
 }
 
-// 경기 스프라이트: manifest.sd[charId] = { image, json } (Aseprite 해시 JSON, 프레임 이름 `${pose}_${facing}`)
+// 경기 스프라이트: manifest.sd[charId] 가 한 장씩 등록된 그림이거나 { image, json } 시트 (Aseprite 해시 JSON, 프레임 이름 `${pose}_${facing}`)
+// 상대 선수(oppa, oppb)는 흰색·회색 옷으로 그려 두고 여기서 상대마다 옷 색을 입힌다.
 export async function sdFrames(charId, look, facing) {
   const poses = ['ready', 'fh', 'bh', 'serve', 'volley', 'smash', 'cheer', 'sad'];
   const out = {};
   const entry = manifest.sd?.[charId];
-  if (entry) {
+  if (entry && !entry.image) {
+    await Promise.all(poses.map(async p => {
+      const path = sdPath(charId, p, facing);
+      const im = path && await loadImage(path);
+      if (!im) return;
+      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      c.getContext('2d').drawImage(im, 0, 0);
+      if (charId === 'oppa' || charId === 'oppb') tintNeutral(c, look.outfit);
+      out[p] = c;
+    }));
+  } else if (entry) {
     try {
       const [im, js] = await Promise.all([loadImage(entry.image), fetch(entry.json).then(r => r.json())]);
       if (im) {
@@ -191,9 +211,26 @@ export async function sdFrames(charId, look, facing) {
   return out;
 }
 
-// 주간 화면의 전신 캐릭터. 실제 아트가 들어오면 여기서 바꾼다.
+// 흰색·회색에 가까운 밝은 칸만 옷 색으로 곱한다 (피부와 머리는 그대로)
+function tintNeutral(c, hex) {
+  if (!hex) return;
+  const n = parseInt(hex.slice(1), 16), tr = (n >> 16) / 255, tg = ((n >> 8) & 255) / 255, tb = (n & 255) / 255;
+  const ctx = c.getContext('2d'), d = ctx.getImageData(0, 0, c.width, c.height), a = d.data;
+  for (let i = 0; i < a.length; i += 4) {
+    if (a[i + 3] < 8) continue;
+    const r = a[i], g = a[i + 1], b = a[i + 2], hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+    if (hi - lo > 28 || hi < 140) continue;
+    a[i] = r * tr; a[i + 1] = g * tg; a[i + 2] = b * tb;
+  }
+  ctx.putImageData(d, 0, 0);
+}
+
+// 주간 화면의 전신 캐릭터. 실제 앞모습 그림(manifest.sd[charId][`${pose}_front`])이 있으면 그것을 쓴다.
+// 평상복·출근복 그림은 아직 없으므로 옷이 달라도 같은 그림을 쓴다.
 const heroCache = new Map();
-export function heroURL(look, pose = 'ready') {
+export function heroURL(look, pose = 'ready', charId = 'player') {
+  const path = sdPath(charId, pose, 'front');
+  if (path) return path;
   const key = pose + look.outfit;
   if (!heroCache.has(key)) heroCache.set(key, chibiCanvas(look, 'front', pose, 1024).toDataURL());
   return heroCache.get(key);
