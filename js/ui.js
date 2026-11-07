@@ -346,7 +346,6 @@ const SCREENS = {
         <div class="cutin" id="cutin"></div>
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
-        <div class="shotcard" id="shotcard"></div>
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
@@ -1213,18 +1212,15 @@ function crowd(pt) {
     setTimeout(() => el.remove(), 1600);
   }
 }
-// 샷 카드: 칠 때마다 누가 무슨 샷을, 얼마나 빠르게(km/h), 얼마나 정확하게(%) 쳤는지와 쓰인 능력치(등급)
-let shotTimer = null;
+// 샷 글자: 칠 때마다 그 선수 머리 위에 무엇을 쳤는지(그 샷 능력치와 등급), 함께 쓰인 능력치(코스·파워·압박감 내성),
+// 스탠스, 공 빠르기(km/h), 정확도(%)를 띄운다
 function shotCard(s) {
-  const el = document.getElementById('shotcard');
-  if (!el || !s.info || M?.skipGame) return;
-  const us = s.h < 2, kmh = Math.round((s.v || 16) * 3.6 * 1.12), a = s.info.acc;
-  el.innerHTML = `<div class="sc-head"><b>${esc(M.sim.P[s.h].name)}</b><span>${esc(SHOT_NAME[s.type] || '')}${s.info.stance ? ` · <u>${esc(s.info.stance)}</u>` : ''}</span></div>
-    <div class="sc-nums"><em>${kmh}<small>km/h</small></em><div class="sc-acc"><small>정확도</small><div class="bar"><i style="width:${a}%"></i></div><b>${a}%</b></div></div>
-    <div class="sc-use">${s.info.use.map(([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`).join('')}</div>`;
-  el.className = `shotcard ${us ? 'us' : 'them'}`; void el.offsetWidth; el.className = `shotcard ${us ? 'us' : 'them'} show`;
-  clearTimeout(shotTimer);
-  shotTimer = setTimeout(() => el.classList.remove('show'), 2600 / (M?.speed || 1));
+  if (!M?.view || !s.info?.use?.length || M.skipGame) return;
+  const kmh = Math.round((s.v || 16) * 3.6 * 1.12), a = s.info.acc;
+  const [[n0, g0], ...rest] = s.info.use;
+  const chip = ([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`;
+  const meta = [s.info.stance, `${kmh}km/h`, `정확도 ${a}%`].filter(Boolean).map(esc).join(' · ');
+  M.view.popTag(s.h, `<div class="ht-main">${chip([n0, g0])}${rest.map(chip).join('')}</div><div class="ht-meta">${meta}</div>`);
 }
 // 경기 전 VS 화면. 눌러서 넘길 수 있다
 async function vsSplash(tr, opp, st) {

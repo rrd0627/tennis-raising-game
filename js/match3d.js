@@ -280,6 +280,17 @@ export class MatchView {
     for (const q of this.pops) if (q.kind === 'call' && q.j === c.j) q.lift += 28;
     this.pops.push({ kind: 'call', el, j: c.j, t: 0, life: 1.5, lift: 0 });
   }
+  // 칠 때마다 그 선수 머리 위에 무엇을 쳤고 어떤 능력치가 쓰였는지 띄운다.
+  // 한 번에 하나만 보인다(새로 치면 앞의 것은 바로 사라진다). 능력치가 결과를 가른 글자(popCall)는 그 위에 뜬다
+  popTag(j, html) {
+    if (!this.players?.[j]) return;
+    for (const q of this.pops) if (q.kind === 'tag' && q.life - q.t > 0.15) q.t = q.life - 0.15;
+    const el = document.createElement('div');
+    el.className = `hittag ${j < 2 ? 'us' : 'them'}`;
+    el.innerHTML = html;
+    this.el.appendChild(el);
+    this.pops.push({ kind: 'tag', el, j, t: 0, life: Math.max(0.8, 1.6 / Math.max(1, this.speed)) });
+  }
   // 공을 맞히는 순간의 번쩍임. 빠른 공일수록 크다
   flash(x, y, z, v) {
     this.glowTex = this.glowTex || this.canvasTex(glowCanvas());
@@ -616,12 +627,26 @@ export class MatchView {
         const pop = q.t < 0.1 ? 0.6 + q.t * 6 : q.t < 0.2 ? 1.2 - (q.t - 0.1) * 2 : 1;
         q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
         q.el.style.opacity = k > 0.7 ? Math.max(0, (1 - k) / 0.3).toFixed(3) : '1';
+      } else if (q.kind === 'tag') {
+        const p = this.players?.[q.j];
+        if (p) {
+          const W = this.el.clientWidth, w = q.w || (q.w = q.el.offsetWidth);
+          const v = new THREE.Vector3(p.x, 2.2, p.z).project(this.camera);
+          const x = clamp((v.x + 1) / 2 * W, w / 2 + 4, W - w / 2 - 4), y = (1 - v.y) / 2 * this.el.clientHeight;
+          const pop = q.t < 0.08 ? 0.75 + q.t / 0.08 * 0.25 : 1;
+          q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
+        }
+        q.el.style.opacity = Math.min(1, q.t / 0.06, (q.life - q.t) / 0.15).toFixed(3);
       } else if (q.kind === 'call') {
         const p = this.players?.[q.j];
         const pop = q.t < 0.12 ? 0.6 + q.t / 0.12 * 0.55 : q.t < 0.22 ? 1.15 - (q.t - 0.12) / 0.1 * 0.15 : 1;
+        // 같은 선수 머리 위에 샷 글자가 떠 있으면 그 위로 올라간다
+        const tag = this.pops.find(o => o.kind === 'tag' && o.j === q.j && o.life - o.t > 0.15);
+        const want = tag ? (tag.h || (tag.h = tag.el.offsetHeight)) + 4 : 0;
+        q.off = (q.off ?? want) + (want - (q.off ?? want)) * Math.min(1, dt * 12);
         if (p) {
           const v = new THREE.Vector3(p.x, 2.3, p.z).project(this.camera);
-          const x = (v.x + 1) / 2 * this.el.clientWidth, y = (1 - v.y) / 2 * this.el.clientHeight - Math.min(16, q.t * 24) - q.lift;
+          const x = (v.x + 1) / 2 * this.el.clientWidth, y = (1 - v.y) / 2 * this.el.clientHeight - Math.min(16, q.t * 24) - q.lift - q.off;
           q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
         }
         q.el.style.opacity = k > 0.75 ? Math.max(0, (1 - k) / 0.25).toFixed(3) : '1';
