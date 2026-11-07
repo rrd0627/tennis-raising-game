@@ -67,14 +67,14 @@
       "volley_front": "art/sd/player/volley_front.webp"
     },
     "oppa": {
-      "bh_front": "art/sd/oppb/bh_front.webp",
-      "cheer_front": "art/sd/oppb/cheer_front.webp",
-      "fh_front": "art/sd/oppb/fh_front.webp",
-      "ready_front": "art/sd/oppb/ready_front.webp",
-      "sad_front": "art/sd/oppb/sad_front.webp",
-      "serve_front": "art/sd/oppb/serve_front.webp",
-      "smash_front": "art/sd/oppb/smash_front.webp",
-      "volley_front": "art/sd/oppb/volley_front.webp"
+      "bh_front": "art/sd/oppa/bh_front.webp",
+      "cheer_front": "art/sd/oppa/cheer_front.webp",
+      "fh_front": "art/sd/oppa/fh_front.webp",
+      "ready_front": "art/sd/oppa/ready_front.webp",
+      "sad_front": "art/sd/oppa/sad_front.webp",
+      "serve_front": "art/sd/oppa/serve_front.webp",
+      "smash_front": "art/sd/oppa/smash_front.webp",
+      "volley_front": "art/sd/oppa/volley_front.webp"
     }
   },
   "bg": {
@@ -85,7 +85,15 @@
     "title": "art/bg/title.webp",
     "venue": "art/bg/venue.webp"
   },
-  "fairy": {},
+  "fairy": {
+    "appear": "art/fairy/appear.webp",
+    "base": "art/fairy/base.webp",
+    "cheer": "art/fairy/cheer.webp",
+    "joy": "art/fairy/joy.webp",
+    "surprise": "art/fairy/surprise.webp",
+    "wave": "art/fairy/wave.webp",
+    "worry": "art/fairy/worry.webp"
+  },
   "intro": [
     "art/intro/01.webp",
     "art/intro/02.webp",
@@ -93,6 +101,7 @@
     "art/intro/04.webp",
     "art/intro/05.webp",
     "art/intro/06.webp",
-    "art/intro/07.webp"
+    "art/intro/07.webp",
+    "art/intro/08.webp"
   ]
 }
