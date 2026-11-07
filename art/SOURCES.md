@@ -1,0 +1,71 @@
+# 그림 출처
+
+그림마다 만든 도구와 날짜를 남긴다. 요청 내용은 Claude 문서 「테니스 선수 키우기 — 아트 에셋 요청서」의 같은 파일 이름 줄이다.
+
+| 날짜 | 파일 | 도구 |
+| --- | --- | --- |
+| 2026-11-07 | art/bg/cafe.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/bg/court.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/bg/home.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/bg/room.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/bg/title.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/bg/venue.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/coach/base.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/coach/down.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/coach/focus.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/coach/joy.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/coach/smile.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/hana/base.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/hana/down.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/hana/focus.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/hana/joy.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/hana/smile.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/player/base.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/player/down.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/player/focus.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/player/joy.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/chr/player/smile.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/01.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/02.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/03.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/04.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/05.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/06.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/intro/07.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/bh_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/cheer_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/cheer_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/fh_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/ready_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/ready_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/sad_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/serve_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/smash_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/hana/volley_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/bh_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/cheer_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/fh_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/ready_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/sad_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/serve_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/smash_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/oppb/volley_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/bh_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/bh_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/cheer_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/cheer_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/fh_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/fh_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/ready_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/ready_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/relax_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/sad_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/sad_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/serve_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/serve_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/smash_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/smash_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/stretch_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/tired_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/volley_back.webp | ChatGPT 이미지 생성 |
+| 2026-11-07 | art/sd/player/volley_front.webp | ChatGPT 이미지 생성 |

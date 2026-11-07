@@ -1,1 +1,98 @@
-{ "chr": {}, "sd": {} }
+{
+  "chr": {
+    "coach": {
+      "base": "art/chr/coach/base.webp",
+      "down": "art/chr/coach/down.webp",
+      "focus": "art/chr/coach/focus.webp",
+      "joy": "art/chr/coach/joy.webp",
+      "smile": "art/chr/coach/smile.webp"
+    },
+    "hana": {
+      "base": "art/chr/hana/base.webp",
+      "down": "art/chr/hana/down.webp",
+      "focus": "art/chr/hana/focus.webp",
+      "joy": "art/chr/hana/joy.webp",
+      "smile": "art/chr/hana/smile.webp"
+    },
+    "player": {
+      "base": "art/chr/player/base.webp",
+      "down": "art/chr/player/down.webp",
+      "focus": "art/chr/player/focus.webp",
+      "joy": "art/chr/player/joy.webp",
+      "smile": "art/chr/player/smile.webp"
+    }
+  },
+  "sd": {
+    "hana": {
+      "bh_back": "art/sd/hana/bh_back.webp",
+      "cheer_back": "art/sd/hana/cheer_back.webp",
+      "cheer_front": "art/sd/hana/cheer_front.webp",
+      "fh_back": "art/sd/hana/fh_back.webp",
+      "ready_back": "art/sd/hana/ready_back.webp",
+      "ready_front": "art/sd/hana/ready_front.webp",
+      "sad_back": "art/sd/hana/sad_back.webp",
+      "serve_back": "art/sd/hana/serve_back.webp",
+      "smash_back": "art/sd/hana/smash_back.webp",
+      "volley_back": "art/sd/hana/volley_back.webp"
+    },
+    "oppb": {
+      "bh_front": "art/sd/oppb/bh_front.webp",
+      "cheer_front": "art/sd/oppb/cheer_front.webp",
+      "fh_front": "art/sd/oppb/fh_front.webp",
+      "ready_front": "art/sd/oppb/ready_front.webp",
+      "sad_front": "art/sd/oppb/sad_front.webp",
+      "serve_front": "art/sd/oppb/serve_front.webp",
+      "smash_front": "art/sd/oppb/smash_front.webp",
+      "volley_front": "art/sd/oppb/volley_front.webp"
+    },
+    "player": {
+      "bh_back": "art/sd/player/bh_back.webp",
+      "bh_front": "art/sd/player/bh_front.webp",
+      "cheer_back": "art/sd/player/cheer_back.webp",
+      "cheer_front": "art/sd/player/cheer_front.webp",
+      "fh_back": "art/sd/player/fh_back.webp",
+      "fh_front": "art/sd/player/fh_front.webp",
+      "ready_back": "art/sd/player/ready_back.webp",
+      "ready_front": "art/sd/player/ready_front.webp",
+      "relax_front": "art/sd/player/relax_front.webp",
+      "sad_back": "art/sd/player/sad_back.webp",
+      "sad_front": "art/sd/player/sad_front.webp",
+      "serve_back": "art/sd/player/serve_back.webp",
+      "serve_front": "art/sd/player/serve_front.webp",
+      "smash_back": "art/sd/player/smash_back.webp",
+      "smash_front": "art/sd/player/smash_front.webp",
+      "stretch_front": "art/sd/player/stretch_front.webp",
+      "tired_front": "art/sd/player/tired_front.webp",
+      "volley_back": "art/sd/player/volley_back.webp",
+      "volley_front": "art/sd/player/volley_front.webp"
+    },
+    "oppa": {
+      "bh_front": "art/sd/oppb/bh_front.webp",
+      "cheer_front": "art/sd/oppb/cheer_front.webp",
+      "fh_front": "art/sd/oppb/fh_front.webp",
+      "ready_front": "art/sd/oppb/ready_front.webp",
+      "sad_front": "art/sd/oppb/sad_front.webp",
+      "serve_front": "art/sd/oppb/serve_front.webp",
+      "smash_front": "art/sd/oppb/smash_front.webp",
+      "volley_front": "art/sd/oppb/volley_front.webp"
+    }
+  },
+  "bg": {
+    "cafe": "art/bg/cafe.webp",
+    "court": "art/bg/court.webp",
+    "home": "art/bg/home.webp",
+    "room": "art/bg/room.webp",
+    "title": "art/bg/title.webp",
+    "venue": "art/bg/venue.webp"
+  },
+  "fairy": {},
+  "intro": [
+    "art/intro/01.webp",
+    "art/intro/02.webp",
+    "art/intro/03.webp",
+    "art/intro/04.webp",
+    "art/intro/05.webp",
+    "art/intro/06.webp",
+    "art/intro/07.webp"
+  ]
+}

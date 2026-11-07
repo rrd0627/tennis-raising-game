@@ -197,7 +197,8 @@ export class MatchView {
       const mat = new THREE.SpriteMaterial({ map: tex.ready, transparent: true });
       const sp = new THREE.Sprite(mat);
       sp.center.set(0.5, 0.02);
-      sp.scale.set(2.0, 2.0, 1);
+      const k = frames.real ? 2.5 : 2.0;
+      sp.scale.set(k, k, 1);
       this.scene.add(sp);
       const shadow = this.blob(0.38, 0.26);
       const emote = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false }));

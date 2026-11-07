@@ -6,7 +6,7 @@
     python tools/art_import.py --check   무엇을 할지만 보여 준다
 
 - 배경이 투명하지 않으면 #FF00FF 단색이나, 가장자리에서 이어진 단색 배경을 지운다.
-- 전신(sd_)은 768x768 칸에 발끝 높이를 맞춘다. 크기는 원본 캔버스 높이를 기준으로 줄여서 포즈끼리 크기가 같게 둔다.
+- 전신(sd_)은 768x768 칸에서 머리 꼭대기와 발끝 높이를 맞춘다. 캔버스 크기가 그림마다 달라도 포즈끼리 키가 같아진다.
 - 결과는 WebP로 art/sd, art/chr, art/fairy, art/bg, art/intro 에 저장하고, 원본은 art/incoming/done/ 으로 옮긴다.
 - 그림마다 art/SOURCES.md 에 날짜와 도구를 남긴다.
 
@@ -31,7 +31,7 @@ SOURCES = ART / 'SOURCES.md'
 
 SD = 768        # 전신 칸 크기 (정사각)
 FOOT = 0.97     # 발끝 높이, 칸 위에서부터의 비율 (경기 스프라이트 기준점과 맞춤)
-SD_SCALE = 0.92  # 원본 캔버스 높이를 칸 높이의 몇 배로 줄일지
+HEAD = 0.30     # 머리 꼭대기 높이. 머리부터 발끝까지가 칸의 67%가 된다
 CHR = 512       # 대화용 얼굴
 FAIRY = 384     # 요정
 BG_W = 1024     # 배경과 인트로 컷의 최대 너비
@@ -131,19 +131,33 @@ def fit(im, size, anchor='center'):
     return out
 
 
+def head_of(im):
+    """머리 꼭대기 높이와 머리의 가로 가운데를 찾는다.
+    SD 캐릭터는 머리(머리카락)가 몸에서 가장 넓은 덩어리라, 가장 넓은 줄 폭의 45% 이상인 첫 줄을 머리 꼭대기로 본다.
+    위로 든 팔, 라켓, 삐친 머리카락은 폭이 좁아서 건너뛴다."""
+    a = im.getchannel('A').load()
+    w, h = im.size
+    widths = [sum(1 for x in range(0, w, 2) if a[x, y] > 128) for y in range(h)]
+    top = next(y for y, c in enumerate(widths) if c >= max(widths) * 0.45)
+    band = range(top, min(h, top + max(4, h // 12)))
+    xs = [x for y in band for x in range(0, w, 2) if a[x, y] > 128]
+    return top, sum(xs) / len(xs)
+
+
 def place_sd(im):
-    """발끝을 FOOT 높이에 두고, 원본 캔버스에서의 가로 위치를 지킨다."""
+    """머리 꼭대기에서 발끝까지의 키가 모든 포즈에서 같도록 줄이고, 발끝을 FOOT 높이, 머리를 가운데에 둔다."""
     box = im.getchannel('A').getbbox()
     if not box:
         return None
-    s = SD * SD_SCALE / im.height
+    top, cx = head_of(im)
+    s = SD * (FOOT - HEAD) / max(1, box[3] - top)
     cut = im.crop(box)
     nw, nh = cut.width * s, cut.height * s
-    if nh > SD * FOOT or nw > SD:
+    if nh > SD * FOOT or nw > SD:   # 라켓을 높이 든 포즈가 칸을 넘으면 그 포즈만 조금 줄인다
         k = min(SD * FOOT / nh, SD / nw)
         nw, nh, s = nw * k, nh * k, s * k
     cut = cut.resize((max(1, round(nw)), max(1, round(nh))), Image.LANCZOS)
-    x = round(SD / 2 + (box[0] - im.width / 2) * s)
+    x = round(SD / 2 - (cx - box[0]) * s)
     x = min(max(x, 0), SD - cut.width)
     out = Image.new('RGBA', (SD, SD), (0, 0, 0, 0))
     out.alpha_composite(cut, (x, round(SD * FOOT) - cut.height))

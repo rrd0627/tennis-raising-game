@@ -207,7 +207,10 @@ export async function sdFrames(charId, look, facing) {
       }
     } catch { /* 임시 아트로 */ }
   }
+  // 실제 그림은 라켓을 들 자리로 위쪽이 비어 있어 임시 그림보다 작게 보인다. 경기에서 키우도록 표시만 남긴다.
+  const real = poses.some(p => out[p]);
   for (const p of poses) if (!out[p]) out[p] = chibiCanvas(look, facing, p);
+  Object.defineProperty(out, 'real', { value: real });
   return out;
 }
 
