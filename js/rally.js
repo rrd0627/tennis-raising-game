@@ -26,7 +26,7 @@ export const NET_CLEAR = 1.08;
 const GRAV = 9.8;
 const LOB_T = /lob|moon/;
 const spinG = type => (/drive|passing|^return$/.test(type) ? 1.35 : /slice|chip|drop/.test(type) ? 0.8 : 1);
-const dragOf = type => (LOB_T.test(type) ? 0.25 : /slice|chip|drop/.test(type) ? 0.9 : 0.45);
+const dragOf = type => (LOB_T.test(type) ? 0.25 : /slice|chip|drop/.test(type) ? 0.55 : 0.45);
 // 돌려주는 at(t)는 t초 뒤 [x, z, y]. t1 = 바운드까지 걸리는 시간, tn = 네트를 지나는 시간.
 // skim이면 네트 테이프를 스치듯 지나간다(넷 코드 연출)
 export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true, skim = false) {
@@ -62,6 +62,23 @@ export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true, skim 
       return [end[0] + (to[0] - end[0]) * k, end[1] + (to[1] - end[1]) * k, Math.max(0, up * u - GRAV * u * u / 2)];
     },
   };
+}
+
+// 중계에서 공을 치는 높이(h0)와 받는 높이(h1). 중계와 속도 표시가 같은 값을 쓴다
+export function ballHeights(s, next) {
+  const serve = /^serve/.test(s.type);
+  const h0 = serve || s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.25 : 0.9;
+  const h1 = s.res === 'net' ? 0.5 : next ? (/volley/.test(next.type) ? 1.15 : next.type === 'smash' ? 2.4 : 0.85) : 0.0;
+  return [h0, h1];
+}
+// 화면에 보이는 공 빠르기(km/h). 스피드건처럼 라켓을 떠나는 순간의 빠르기를 잰다. 중계가 그리는 공(ballArc)과 같은 계산이다
+export function launchKmh(s, next) {
+  const v = s.v || BALL_V[s.type] || 16, [h0, h1] = ballHeights(s, next);
+  const arc = s.res === 'net'
+    ? ballArc(s.from, [s.from[0] + (s.to[0] - s.from[0]) * 0.9, 0.15 * Math.sign(s.from[1])], null, s.type, h0, 0.6, v, false)
+    : ballArc(s.from, s.to, s.bounce, s.type, h0, h1, v, true);
+  const dt = 0.004, a = arc.at(0), b = arc.at(dt);
+  return Math.round(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / dt * 3.6);
 }
 
 // 공이 떨어진 곳에서 가장 가까운 선까지 거리(m). 복식 옆줄, 베이스라인, 서브면 서비스 라인과 센터 라인

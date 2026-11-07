@@ -2,7 +2,7 @@
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
-import { BALL_V, flightTime, standOf, ballArc, closeCall } from './rally.js';
+import { BALL_V, flightTime, standOf, ballArc, closeCall, ballHeights } from './rally.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 const SURFACE = {
@@ -486,8 +486,7 @@ export class MatchView {
         this.later(Math.max(m.t0 + 0.05, dur * (m.k === 'confuse' ? 0.55 : 0.8)), () => { if (m.k === 'miss') this.lunge(j, ball); else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); } });
       }
     }
-    const h0 = isServe ? 2.6 : s.type === 'smash' ? 2.6 : /volley/.test(s.type) ? 1.25 : 0.9;
-    const h1 = s.res === 'net' ? 0.5 : next ? (/volley/.test(next.type) ? 1.15 : next.type === 'smash' ? 2.4 : 0.85) : 0.0;
+    const [h0, h1] = ballHeights(s, next);
     // 받을 선수는 공이 닿기 직전에 준비 자세를 잡는다
     if (next && next.h !== undefined && next.h !== s.h) {
       const pv = this.players[next.h];

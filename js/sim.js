@@ -206,6 +206,9 @@ export class MatchSim {
     return [clamp(xs * 2.7 + bx * 0.3, -5, 5), zs * 11.2];
   }
   // 공 빠르기: 샷 품질과 파워
+  // 서브 공 빠르기(바운드까지 평균, m/s). 여자 동호인 서브는 느리다(사용자 경험, 2026-11-08).
+  // 라켓을 떠날 때(화면 숫자) 첫 서브는 능력치 30이면 약 63km/h, 50이면 71, 70이면 79, 85면 86. 세컨은 58~70km/h. 파워가 조금 더한다
+  serveV(p, first) { const s = p.stats; return (first ? 9.6 + s.first_serve * 0.105 : 8.6 + s.second_serve * 0.065) * (0.94 + s.power / 100 * 0.12); }
   ballV(H, st, Q) { return (BALL_V[st] || 16) * (0.9 + clamp((Q - 25) / 50, 0, 1) * 0.16) * (0.94 + H.stats.power / 100 * 0.12); }
   // 서브가 떨어지는 곳. 서브 코스가 좋을수록 선에 가깝다
   serveSpot(server, cx, zs, kind) {
@@ -507,7 +510,7 @@ export class MatchSim {
         server.rec.aces++;
         // 에이스: 구석에 꽂히고, 받는 사람은 손을 뻗다 놓친다
         const side = rng() < 0.5 ? 1 : -1;
-        const B = this.serveSpot(server, cx, zs, side > 0 ? 'wide' : 'T'), v = 21 + s.first_serve * 0.09;
+        const B = this.serveSpot(server, cx, zs, side > 0 ? 'wide' : 'T'), v = this.serveV(server, true);
         const w = unit(serverPos, B), to = [B[0] + w[0] * 6, B[1] + w[1] * 6];
         const ft = flightTime(serverPos, to, B, v);
         const plan = []; plan[ri] = missAt(ri, [B[0] + w[0] * 3, B[1] + w[1] * 3], ft, clamp((55 - r.c_power) * 0.0015, -0.03, 0.08));
@@ -518,13 +521,13 @@ export class MatchSim {
       D = 22 + (0.6 * s.first_serve + 0.4 * s.serve_place) * 0.45 - r.c_power * 0.18;
       recCounter(receiver, 'c_power', true);
     } else {
-      const fb = fault(), fv = 21 + s.first_serve * 0.09;
+      const fb = fault(), fv = this.serveV(server, true);
       shots.push({ h: si, type: 'serve', from: serverPos, bounce: fb, to: fb, res: 'fault', pos: pos0, v: r2(fv), info: shotInfo(server, ['first_serve', 'serve_place', 'power'], sq1 * 0.45), mv: move(letGo(serverPos, fb, flightTime(serverPos, fb, null, fv), receiver.team), 0) });
       const pin2 = clamp(0.80 + s.second_serve / 600 + M(server) - fat(server) / 400, 0.72, 0.97);
       if (rng() >= pin2) {
         server.rec.df++;
         server.gauge -= 8 * (1 - server.stats.composure / 170);
-        const fb2 = fault(), fv2 = 15 + s.second_serve * 0.05;
+        const fb2 = fault(), fv2 = this.serveV(server, false);
         shots.push({ h: si, type: 'serve2', from: serverPos, bounce: fb2, to: fb2, res: 'df', pos: pos0, v: r2(fv2), info: shotInfo(server, ['second_serve', 'serve_place'], sq2 * 0.45), mv: move(letGo(serverPos, fb2, flightTime(serverPos, fb2, null, fv2), receiver.team), 0) });
         return this.finish(shots, receiver.team, 'df', server, ctx);
       }
@@ -536,7 +539,7 @@ export class MatchSim {
     const svMove = (sT.choices.shot === 'serve_volley' && rng() < 0.75) || (sT.choices.shot === 'dash' && rng() < 0.3);
     {
       // 공은 바운드 뒤 3~4m 더 가서 받는다. 강서브 대처가 낮으면 출발이 늦다
-      const v = type === 'serve' ? 21 + s.first_serve * 0.09 : 15 + s.second_serve * 0.05;
+      const v = this.serveV(server, type === 'serve');
       const w = unit(serverPos, svcBounce), C = [svcBounce[0] + w[0] * (2.6 + v * 0.04), svcBounce[1] + w[1] * (2.6 + v * 0.04)];
       const ft = flightTime(serverPos, C, svcBounce, v);
       const kind = Math.abs(svcBounce[0] + cx * 2.6) < 0.01 ? 'jam' : strain(clamp(D, 0, 95)) >= 0.72 ? 'reach' : 'set';

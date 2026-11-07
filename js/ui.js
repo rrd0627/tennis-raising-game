@@ -6,6 +6,7 @@ import {
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, PLAN_OPTS, PLAN_SET, SHOT_NAME } from './sim.js';
 import { MatchView, webglOK } from './match3d.js';
+import { launchKmh } from './rally.js';
 import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
 import { CHECKS } from './checks.js';
@@ -1085,7 +1086,7 @@ async function runMatch() {
       const prevScore = pi ? g.points[pi - 1].score : '0 - 0';
       await M.view.playPoint(pt, {
         onCutin: cutin,
-        onShot: (s, i) => { rallyTick(s, i, pt); shotCard(s); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
+        onShot: (s, i) => { rallyTick(s, i, pt); shotCard(s, pt.shots[i + 1]); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
         onNetCord: () => say(CMT_TEXT.netCordLine()),
       });
       say(CMT_TEXT.afterPoint(pt, M.cmt));
@@ -1214,12 +1215,13 @@ function crowd(pt) {
 }
 // 샷 글자: 칠 때마다 그 선수 머리 위에 무엇을 쳤는지(그 샷 능력치와 등급), 함께 쓰인 능력치(코스·파워·압박감 내성),
 // 스탠스, 공 빠르기(km/h), 정확도(%)를 띄운다
-function shotCard(s) {
+function shotCard(s, next) {
   if (!M?.view || !s.info?.use?.length || M.skipGame) return;
-  const kmh = Math.round((s.v || 16) * 3.6 * 1.12), a = s.info.acc;
+  const kmh = launchKmh(s, next), a = s.info.acc;
   const [[n0, g0], ...rest] = s.info.use;
   const chip = ([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`;
-  const meta = [s.info.stance, `${kmh}km/h`, `정확도 ${a}%`].filter(Boolean).map(esc).join(' · ');
+  const stance = s.info.stance && (s.info.stance === '달리면서' ? '달리면서 치기' : `${s.info.stance} 스탠스`);
+  const meta = [stance, `${kmh}km/h`, `정확도 ${a}%`].filter(Boolean).map(esc).join(' · ');
   M.view.popTag(s.h, `<div class="ht-main">${chip([n0, g0])}${rest.map(chip).join('')}</div><div class="ht-meta">${meta}</div>`);
 }
 // 경기 전 VS 화면. 눌러서 넘길 수 있다
