@@ -20,6 +20,47 @@ export function flightTime(from, to, bounce, v) {
   return Math.max(0.28, d1 / v + d2 / (v * AFTER_BOUNCE));
 }
 
+// 공의 높이는 중력으로 그린다. 시간은 flightTime과 같고, 높이만 물리대로 정한다.
+// 탑스핀은 더 빨리 떨어지고(중력 배율이 큼) 슬라이스와 드롭은 뜬다. 공기 저항 때문에 앞쪽에서 빠르고 뒤에서 느려진다.
+export const NET_CLEAR = 1.08;
+const GRAV = 9.8;
+const LOB_T = /lob|moon/;
+const spinG = type => (/drive|passing|^return$/.test(type) ? 1.35 : /slice|chip|drop/.test(type) ? 0.8 : 1);
+const dragOf = type => (LOB_T.test(type) ? 0.25 : /slice|chip|drop/.test(type) ? 0.9 : 0.45);
+// 돌려주는 at(t)는 t초 뒤 [x, z, y]. t1 = 바운드까지 걸리는 시간
+export function ballArc(from, to, bounce, type, h0, h1, v, overNet = true) {
+  const end = bounce || to;
+  const dur = flightTime(from, to, bounce, v);
+  const r1 = dist(from, end) / v, r2 = bounce ? dist(end, to) / (v * AFTER_BOUNCE) : 0;
+  const t1 = bounce ? dur * r1 / (r1 + r2 || 1) : dur, t2 = dur - t1;
+  const c = dragOf(type), E = 1 - Math.exp(-c * t1);
+  const prog = t => (1 - Math.exp(-c * t)) / E;
+  const yEnd = bounce ? 0 : h1;
+  let g = GRAV * spinG(type);
+  // 네트 위를 지나도록: 네트를 지나는 순간의 높이가 모자라면 더 높이 띄운다
+  const uNet = from[1] * end[1] < 0 ? Math.abs(from[1]) / (Math.abs(from[1]) + Math.abs(end[1])) : -1;
+  if (overNet && uNet > 0) {
+    const tn = -Math.log(1 - uNet * E) / c;
+    const line = h0 + (yEnd - h0) * tn / t1;
+    g = clamp(Math.max(g, 2 * (NET_CLEAR - line) / (tn * (t1 - tn))), 4, 40);
+  }
+  const vy = (yEnd - h0 + g * t1 * t1 / 2) / t1;
+  // 바운드 뒤: 바닥에서 받는 높이(h1)까지. 너무 튀어 오르지 않게 위로 가는 속도를 막는다
+  let up = t2 > 0 ? (h1 + GRAV * t2 * t2 / 2) / t2 : 0;
+  up = Math.min(up, 9);
+  return {
+    dur, t1,
+    at(t) {
+      if (t <= t1) {
+        const k = prog(Math.max(0, t));
+        return [from[0] + (end[0] - from[0]) * k, from[1] + (end[1] - from[1]) * k, h0 + vy * t - g * t * t / 2];
+      }
+      const u = t - t1, k = t2 > 0 ? u / t2 : 1;
+      return [end[0] + (to[0] - end[0]) * k, end[1] + (to[1] - end[1]) * k, Math.max(0, up * u - GRAV * u * u / 2)];
+    },
+  };
+}
+
 // 능력치 → 몸
 export function bodyOf(st, F = 0) {
   const tired = 1 - clamp(F * 0.02, 0, 0.2);

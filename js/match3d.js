@@ -2,17 +2,16 @@
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
-import { BALL_V, flightTime, standOf } from './rally.js';
+import { BALL_V, flightTime, standOf, ballArc, NET_CLEAR } from './rally.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
-const APEX = { topspin_lob: 6.5, def_lob: 8, moon_volley: 5.5, dropshot: 1.8, drop_volley: 1.5, smash: 0.4, serve: 0.6, serve2: 1.2, fh_slice: 1.4, bh_slice: 1.4, chip_return: 1.3 };
 const SURFACE = {
   turf: { court: '#3f9d63', out: '#2f7d4c', line: '#ffffff', grain: 'rgba(255,255,255,0.05)' },
   hard: { court: '#3a6fb0', out: '#3d8a5a', line: '#ffffff', grain: 'rgba(255,255,255,0.03)' },
   clay: { court: '#c8693a', out: '#b85e33', line: '#f5efe6', grain: 'rgba(0,0,0,0.05)' },
 };
 
-const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, NET_CLEAR = 1.08;
+const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, RUN_CAP = 8.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 공이 오기 직전의 준비 자세
 function prepFor(type) {
@@ -260,42 +259,19 @@ export class MatchView {
   // 공 시간으로 sec초 뒤에 할 일 (슬로 모션이면 같이 느려진다)
   later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, slowable: true, step: () => { }, done: () => { if (this.alive) fn(); } }); }
 
-  // 공 비행: from/to = [x,z]. 네트를 넘는 포물선 + 바운드 뒤 다시 튀어 오름. v = 공 빠르기(엔진이 샷 품질로 정함)
+  // 공 비행: from/to = [x,z]. 높이는 중력으로(js/rally.js ballArc), 시간은 엔진과 같다. v = 공 빠르기(엔진이 샷 품질로 정함)
   flyBall(from, to, bounce, type, h0, h1, overNet = true, v = 0) {
-    const sp = v || BALL_V[type] || 16;
-    const end = bounce || to;
-    const d1 = Math.hypot(end[0] - from[0], end[1] - from[1]);
-    const d2 = bounce ? Math.hypot(to[0] - bounce[0], to[1] - bounce[1]) : 0;
-    const t1 = d1 / sp, t2 = d2 / (sp * 0.62);
-    const dur = flightTime(from, to, bounce, sp);
-    const k1 = bounce ? t1 / (t1 + t2) : 1;
-    const yEnd = bounce ? 0 : h1;
-    // 네트 위치에서 테이프보다 높게 지나가도록 곡선 높이를 정한다
-    let apex = (APEX[type] ?? 1.5) * (bounce ? 1 : 0.5);
-    const uNet = from[1] * end[1] < 0 ? Math.abs(from[1]) / (Math.abs(from[1]) + Math.abs(end[1])) : -1;
-    if (overNet && uNet > 0) {
-      const need = NET_CLEAR - lerp(h0, yEnd, uNet);
-      apex = Math.max(apex, need / (4 * uNet * (1 - uNet)));
-    }
-    const rise = bounce ? Math.max(0.35, Math.min(1.8, apex * 0.5 + 0.35)) : 0;
+    const arc = ballArc(from, to, bounce, type, h0, h1, v || BALL_V[type] || 16, overNet);
     this.ball.visible = true; this.ballShadow.visible = true;
     this.trailPts = [];
     return new Promise(res => {
       let bounced = false;
       this.tweens.push({
-        t: 0, dur, slowable: true,
+        t: 0, dur: arc.dur, slowable: true,
         step: k => {
-          let x, z, y;
-          if (k <= k1) {
-            const u = k / k1;
-            x = lerp(from[0], end[0], u); z = lerp(from[1], end[1], u);
-            y = lerp(h0, yEnd, u) + 4 * apex * u * (1 - u);
-          } else {
-            const u = (k - k1) / (1 - k1);
-            if (!bounced) { bounced = true; this.mark(bounce); }
-            x = lerp(bounce[0], to[0], u); z = lerp(bounce[1], to[1], u);
-            y = lerp(0, h1, u) + 4 * rise * u * (1 - u);
-          }
+          const t = k * arc.dur;
+          if (bounce && !bounced && t > arc.t1) { bounced = true; this.mark(bounce); }
+          const [x, z, y] = arc.at(t);
           this.ball.position.set(x, Math.max(0.11, y), z);
           this.ballShadow.position.set(x, 0.013, z);
           this.ballShadow.material.opacity = Math.max(0.12, 0.38 - y * 0.04);
@@ -318,7 +294,7 @@ export class MatchView {
 
   setCamera(mode) { this.camMode = mode; }
 
-  // 포인트 시작 위치로 선수들이 걸어간다. 첫 포인트만 바로 세운다.
+  // 포인트 시작: 모두 시작 자리에 선 채로 보이고, 잠깐 숨을 고른 뒤 서브한다
   async beginPoint(s0) {
     const start = s0.pos;
     const first = !this.started;
@@ -327,12 +303,12 @@ export class MatchView {
       const [x, z] = i === s0.h ? s0.from : start[i];
       const p = this.players[i];
       this.setPose(i, 'ready'); this.showEmote(i, null);
-      p.stride = 0; p.hop = 0; p.kick = 0;
-      if (first) { p.x = p.tx = x; p.z = p.tz = z; } else this.runTo(i, x, z, 0.55);
+      p.stride = 0; p.hop = 0; p.kick = 0; p.lean = 0;
+      p.x = p.tx = x; p.z = p.tz = z;
     }
     this.placeAll();
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
-    await this.wait(first ? 0.25 : 0.6);
+    await this.wait(first ? 0.25 : 0.45);
   }
 
   // 서브: 공을 띄우고 내려칠 때 친다
@@ -372,7 +348,7 @@ export class MatchView {
       if (next && next.h === j && j !== s.h) {
         // 받을 사람은 공 옆(팔과 라켓 길이만큼)에 선다. 늦으면 그만큼 더 빨리 뛴다
         [tx, tz] = standOf(next.from, next.type, j < 2 ? 0 : 1, [p.x, p.z], m.far || 0);
-        sp = Math.max(sp, Math.hypot(tx - p.x, tz - p.z) / Math.max(0.12, dur - m.t0 - 0.03));
+        sp = Math.min(RUN_CAP, Math.max(sp, Math.hypot(tx - p.x, tz - p.z) / Math.max(0.12, dur - m.t0 - 0.03)));
       }
       this.later(m.t0, () => this.runTo(j, tx, tz, 0, sp));
       if (m.k === 'miss' || m.k === 'confuse') {
@@ -396,7 +372,10 @@ export class MatchView {
       await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v);
     }
     this.slow = 1;
-    if (s.res === 'fault') { await this.wait(0.35); }
+    if (s.res === 'fault') {
+      for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, 2.4);
+      await this.wait(0.6);
+    }
   }
 
   // 포인트 하나 재생. hooks: { onCutin(shot, pt) }
