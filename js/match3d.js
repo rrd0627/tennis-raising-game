@@ -29,6 +29,13 @@ function poseFor(type, side) {
   return side < 0 ? 'bh' : 'fh';
 }
 const lerp = (a, b, t) => a + (b - a) * t;
+function glowCanvas() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d'), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,250,190,0.85)'); gr.addColorStop(1, 'rgba(255,240,120,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  return c;
+}
 const ease = t => t * t * (3 - 2 * t);
 
 export class MatchView {
@@ -39,6 +46,8 @@ export class MatchView {
     this.banner = opts.banner || '';
     this.tweens = [];
     this.fx = [];
+    this.pops = [];   // 능력치 글자와 타구 번쩍임
+    this.shake = 0;
     this.alive = true;
     const w = container.clientWidth || 360, h = container.clientHeight || 400;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
@@ -225,6 +234,27 @@ export class MatchView {
     this.myRing.position.set(this.players[0].x, 0.014, this.players[0].z);
   }
 
+  // 능력치가 결과를 가른 순간: 그 선수 머리 위에 능력치 이름과 등급이 톡 튀어 오른다.
+  // 글자는 화면 위에 같은 크기로 그린다(먼 선수도 읽히게). 우리 팀은 분홍, 상대는 파랑
+  popCall(c) {
+    if (!this.players?.[c.j]) return;
+    const el = document.createElement('div');
+    el.className = `callpop ${c.j < 2 ? 'us' : 'them'}`;
+    el.innerHTML = `<span>${c.t}</span><b class="g${c.g}">${c.g}</b>`;
+    this.el.appendChild(el);
+    // 같은 선수에게 이미 떠 있는 글자는 위로 비켜 준다
+    for (const q of this.pops) if (q.kind === 'call' && q.j === c.j) q.lift += 28;
+    this.pops.push({ kind: 'call', el, j: c.j, t: 0, life: 1.5, lift: 0 });
+  }
+  // 공을 맞히는 순간의 번쩍임. 빠른 공일수록 크다
+  flash(x, y, z, v) {
+    this.glowTex = this.glowTex || this.canvasTex(glowCanvas());
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    sp.position.set(x, y, z); sp.renderOrder = 5;
+    this.scene.add(sp);
+    this.pops.push({ kind: 'flash', sp, t: 0, life: 0.2, size: clamp(0.5 + v * 0.04, 0.7, 1.7) });
+  }
+
   setPose(i, pose, ms = 0) {
     const p = this.players[i];
     p.pose = pose; p.sp.material.map = p.tex[pose] || p.tex.ready; p.sp.material.needsUpdate = true;
@@ -263,6 +293,8 @@ export class MatchView {
     const arc = ballArc(from, to, bounce, type, h0, h1, v || BALL_V[type] || 16, overNet);
     this.ball.visible = true; this.ballShadow.visible = true;
     this.trailPts = [];
+    const tail = Math.round(clamp(2 + (v || 16) * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
+    this.trail.material.opacity = clamp(0.3 + (v || 16) * 0.016, 0.4, 0.75);
     return new Promise(res => {
       let bounced = false;
       this.tweens.push({
@@ -275,7 +307,7 @@ export class MatchView {
           this.ballShadow.position.set(x, 0.013, z);
           this.ballShadow.material.opacity = Math.max(0.12, 0.38 - y * 0.04);
           this.trailPts.push(new THREE.Vector3(x, Math.max(0.11, y), z));
-          if (this.trailPts.length > 10) this.trailPts.shift();
+          if (this.trailPts.length > tail) this.trailPts.shift();
           this.trail.geometry.setFromPoints(this.trailPts);
         },
         done: res,
@@ -336,6 +368,13 @@ export class MatchView {
     hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22) * (stretched ? 2 : 1);
     const v = s.v || BALL_V[s.type] || 16;
     const dur = flightTime(s.from, s.to, s.bounce, v);
+    {
+      const hy = isServe || s.type === 'smash' ? 2.5 : /volley/.test(s.type) ? 1.25 : 0.95;
+      if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], hy, s.from[1], v);
+      if (s.type === 'smash' || s.res === 'ace') this.shake = Math.max(this.shake, 0.16);
+      else if (s.res === 'win' || s.res === 'poach') this.shake = Math.max(this.shake, v >= 17 ? 0.1 : 0.06);
+      for (const c of s.call || []) { if (c.end) this.later(Math.max(0, dur - 0.08), () => this.popCall(c)); else this.popCall(c); }
+    }
     // 움직임은 엔진이 능력치로 정한 대로: 첫발만큼 늦게 출발해서 스피드만큼 뛴다(js/rally.js)
     for (let j = 0; j < 4; j++) {
       const m = s.mv?.[j];
@@ -392,6 +431,7 @@ export class MatchView {
       const decisive = i === lastIdx && pt.big && ['win', 'ace', 'poach', 'center'].includes(s.res);
       // 큰 순간과 기술은 컷인으로 알린다. 경기는 멈추거나 느려지지 않는다
       if ((decisive || s.skill) && hooks.onCutin) hooks.onCutin(s, pt);
+      hooks.onShot?.(s, i, pt);
       await this.playShot(s, shots[i + 1], shots[i - 1]);
     }
     // 결과 포즈
@@ -437,6 +477,28 @@ export class MatchView {
       }
       this.placeAll();
     }
+    for (const q of [...this.pops]) {
+      q.t += dt;
+      const k = q.t / q.life;
+      if (q.kind === 'call') {
+        const p = this.players?.[q.j];
+        const pop = q.t < 0.12 ? 0.6 + q.t / 0.12 * 0.55 : q.t < 0.22 ? 1.15 - (q.t - 0.12) / 0.1 * 0.15 : 1;
+        if (p) {
+          const v = new THREE.Vector3(p.x, 2.3, p.z).project(this.camera);
+          const x = (v.x + 1) / 2 * this.el.clientWidth, y = (1 - v.y) / 2 * this.el.clientHeight - Math.min(16, q.t * 24) - q.lift;
+          q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
+        }
+        q.el.style.opacity = k > 0.75 ? Math.max(0, (1 - k) / 0.25).toFixed(3) : '1';
+      } else {
+        const s = q.size * (0.5 + k);
+        q.sp.scale.set(s, s, 1);
+        q.sp.material.opacity = Math.max(0, 1 - k);
+      }
+      if (k >= 1) {
+        if (q.el) q.el.remove(); else { this.scene.remove(q.sp); q.sp.material.dispose(); }
+        this.pops.splice(this.pops.indexOf(q), 1);
+      }
+    }
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
     // 카메라
     const target = new THREE.Vector3(), look = new THREE.Vector3();
@@ -446,7 +508,15 @@ export class MatchView {
     this.curLook = this.curLook || look.clone();
     this.curLook.lerp(look, 0.12);
     this.camera.lookAt(this.curLook);
+    // 스매시·에이스·위너 때 화면이 살짝 흔들린다
+    let off = null;
+    if (this.shake > 0.004) {
+      off = new THREE.Vector3((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake, 0);
+      this.camera.position.add(off);
+      this.shake *= Math.pow(0.02, dt);
+    } else this.shake = 0;
     this.renderer.render(this.scene, this.camera);
+    if (off) this.camera.position.sub(off);
   }
 
   dispose() {
@@ -457,6 +527,7 @@ export class MatchView {
     this.tweens = [];
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    for (const q of this.pops) q.el?.remove();
   }
 }
 

@@ -343,6 +343,7 @@ const SCREENS = {
         <div class="scorebox" id="scorebox"></div>
         <div class="biglabel" id="biglabel"></div>
         <div class="cutin" id="cutin"></div>
+        <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
       </div>
       <div class="hud">
@@ -1063,7 +1064,7 @@ async function runMatch() {
       if (M.hl && M.view && !M.skipGame && !pt.big && !pt.skill && !lastOfGame) { setLog(pt.text); hud(pt); await sleep(450); continue; }
       if (M.skipGame || !M.view) { if (!M.view && !M.skipGame) { setLog(pt.text); hud(pt); await sleep(380 / M.speed); } continue; }
       if (pt.big && pt.label) showBig(pt.label);
-      await M.view.playPoint(pt, { onCutin: cutin });
+      await M.view.playPoint(pt, { onCutin: cutin, onShot: rallyTick });
       setLog(pt.text); hud(pt);
       hideBig();
     }
@@ -1120,6 +1121,15 @@ function hud(pt) {
 function setLog(t) { const l = document.getElementById('logline'); if (l) l.textContent = t; const p = document.getElementById('pointtext'); if (p) { p.textContent = t; p.classList.remove('show'); void p.offsetWidth; p.classList.add('show'); } }
 function showBig(label) { const b = document.getElementById('biglabel'); if (b) { b.textContent = label; b.classList.add('show'); } }
 function hideBig() { const b = document.getElementById('biglabel'); if (b) b.classList.remove('show'); }
+// 랠리 수: 공이 네트를 넘은 횟수. 4번부터 보인다
+function rallyTick(s, i, pt) {
+  const el = document.getElementById('rally');
+  if (!el) return;
+  const n = pt.shots.slice(0, i + 1).filter(x => x.res !== 'fault').length;
+  if (n < 4) { el.className = 'rally'; return; }
+  el.textContent = `랠리 ${n}`;
+  el.className = 'rally show'; void el.offsetWidth; el.className = 'rally show bump';
+}
 async function cutin(s) {
   const c = document.getElementById('cutin');
   if (!c || M.skipGame) return;

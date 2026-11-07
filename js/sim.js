@@ -1,6 +1,6 @@
 // 경기 시뮬레이션 엔진 — 포인트 단위 확률 엔진 (기획 문서 7장)
 // 엔진은 결과와 포인트 로그만 만들고, 화면(match3d.js)은 로그를 재생만 한다.
-import { COUNTER_OF, ALL_STATS, OPP_ARCH } from './data.js';
+import { COUNTER_OF, ALL_STATS, OPP_ARCH, STAT_NAME, grade } from './data.js';
 import { BALL_V, flightTime, bodyOf, reachOf, standOf } from './rally.js';
 
 export function mulberry32(a) {
@@ -82,6 +82,20 @@ export const PLAN_SET = {
 // 받는 사람의 부담(D)이 클수록 공은 그 사람이 닿을 수 있는 거리 끝으로 가고, 위너는 그 밖으로 간다.
 const LOBS = new Set(['topspin_lob', 'def_lob', 'moon_volley']);
 const r2 = v => Math.round(v * 100) / 100;
+// 능력치가 결과를 가른 순간(중계용). 그 선수 머리 위에 능력치 이름과 등급이 뜬다.
+// C(40) 이상일 때만 뜬다. 키운 능력치일수록 경기에서 자주 이름이 보인다
+const CALL_MIN = 40;
+const STAT_OF_SHOT = t => (t === 'serve' ? 'first_serve' : t === 'serve2' ? 'second_serve' : t);
+const POWER_SHOTS = new Set(['serve', 'smash', 'fh_drive', 'bh_drive', 'passing', 'return', 'swing_volley']);
+// 샷으로 득점했을 때 쓴 능력치들: 그 샷, 코스, 강한 샷이면 파워
+const shotStats = (st, dir) => [STAT_OF_SHOT(st), COURSE_STAT[dir], POWER_SHOTS.has(st) ? 'power' : null].filter(Boolean);
+function addCall(P, shot, p, ids, end = false) {
+  if (!shot || !p) return;
+  const id = ids.reduce((a, b) => ((p.stats[b] ?? 0) > (p.stats[a] ?? 0) ? b : a));
+  const v = p.stats[id] ?? 0;
+  if (v < CALL_MIN || !STAT_NAME[id]) return;
+  (shot.call ||= []).push({ j: P.indexOf(p), t: STAT_NAME[id], g: grade(v), ...(end ? { end: 1 } : {}) });
+}
 // 점 q에서 선분 a-b까지 거리
 const segDist = (q, a, b) => {
   const wx = b[0] - a[0], wz = b[1] - a[1], L = wx * wx + wz * wz || 1;
@@ -466,6 +480,7 @@ export class MatchSim {
         const ft = flightTime(serverPos, to, B, v);
         const plan = []; plan[ri] = missAt(ri, [B[0] + w[0] * 3, B[1] + w[1] * 3], ft, clamp((55 - r.c_power) * 0.0015, -0.03, 0.08));
         shots.push({ h: si, type: 'serve', from: serverPos, bounce: B, to, res: 'ace', pos: pos0, v: r2(v), mv: move(plan, ft), victim: ri });
+        addCall(this.P, shots[shots.length - 1], server, ['first_serve', 'serve_place', 'power']);
         return this.finish(shots, server.team, 'ace', server, ctx);
       }
       D = 22 + (0.6 * s.first_serve + 0.4 * s.serve_place) * 0.45 - r.c_power * 0.18;
@@ -538,11 +553,14 @@ export class MatchSim {
         // 상대는 받을 것처럼 가다가 멈춘다. 걸리는 공은 가려던 쪽으로, 나가는 공은 떨어지는 곳 쪽으로
         const ev = this.ballV(H, st, Q), aim = isNet ? [clamp(-from[0] * 0.6, -4.5, 4.5), -zs2 * 8] : to;
         shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), mv: move(letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team), 0) });
+        if (inc.D >= 45 && inc.from && inc.from.team !== H.team) addCall(this.P, shots[shots.length - 1], inc.from, shotStats(inc.type, prev?.dir), true);
         H.gauge -= 6 * (1 - H.stats.composure / 160);
         const m = this.mate(H); m.gauge -= 2 * (1 - m.stats.composure / 150);
         return this.finish(shots, 1 - H.team, 'err', H, ctx);
       }
       rec(H, st, 'n');
+      if (prev && prev.mv?.[hi]?.k === 'reach') addCall(this.P, prev, H, ['first_step', 'speed', 'flex'], true);
+      else if (prev && inc.counter && inc.D >= 40) addCall(this.P, prev, H, [inc.counter], true);
       if (skillLv) H.rec.skillUse[skillKey] = (H.rec.skillUse[skillKey] || 0) + 1;
       // 받는 사람
       let R = this.pickReceiver(H, st, dir);
@@ -592,6 +610,7 @@ export class MatchSim {
             const vi = hs.reduce((a, b) => (Math.hypot(at[a][0] - land[0], at[a][1] - land[1]) <= Math.hypot(at[b][0] - land[0], at[b][1] - land[1]) ? a : b));
             const plan2 = []; plan2[vi] = missAt(vi, land, ft2);
             shots.push({ h: ni, type: 'fh_volley', dir: 'body', from: contact, bounce: land, to: out2, res: 'poach', pos: p2, v: r2(v2), mv: move(plan2, ft2), victim: vi });
+            addCall(this.P, shots[shots.length - 1], Rmate, ['poach', 'fh_volley']);
             Rmate.gauge += 5;
             return this.finish(shots, R.team, 'poach', Rmate, ctx);
           }
@@ -638,6 +657,7 @@ export class MatchSim {
         const plan = []; plan[Ri] = missAt(Ri, sp.C, ft);
         pushLvl(H.team, 1);
         shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, skill: skillLv ? skillKey : undefined, v: r2(v), mv: move(follow(plan, land[0]), ft) });
+        addCall(this.P, shots[shots.length - 1], H, shotStats(st, dir));
         if (counter) recCounter(R, counter, false);
         return this.finish(shots, H.team, 'win', H, ctx);
       }
@@ -681,6 +701,17 @@ export class MatchSim {
   }
 
   finish(shots, winner, endType, by, ctx) {
+    {
+      const last = shots[shots.length - 1], ws = this.P.filter(p => p.team === winner);
+      const best = ids => ws.reduce((a, b) => (Math.max(...ids.map(i => b.stats[i])) > Math.max(...ids.map(i => a.stats[i])) ? b : a));
+      if (ctx.big) addCall(this.P, last, best(['clutch', 'composure']), ['clutch', 'composure'], true);
+      else if (shots.length >= 10) addCall(this.P, last, best(['stamina', 'focus']), ['stamina', 'focus'], true);
+      // 한 포인트에 너무 많이 뜨지 않게: 끝을 가른 것은 두고, 랠리 중 것은 등급이 가장 높은 하나만(같으면 나중 것)
+      const G = { S: 6, A: 5, B: 4, C: 3 };
+      let keep = null;
+      shots.slice(0, -1).forEach(sh => (sh.call || []).forEach(c => { if (!keep || G[c.g] >= G[keep.c.g]) keep = { sh, c }; }));
+      shots.slice(0, -1).forEach(sh => { if (sh.call) { sh.call = sh.call.filter(c => keep && c === keep.c); if (!sh.call.length) delete sh.call; } });
+    }
     for (const p of this.P) {
       p.gauge += p.team === winner ? 2 : -1.5;
       const base = 50 + ((p.conf ?? 50) - 50) / 3;
