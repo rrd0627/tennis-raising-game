@@ -9,6 +9,7 @@ import { MatchView, webglOK } from './match3d.js';
 import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
 import { CHECKS } from './checks.js';
+import * as CMT_TEXT from './commentary.js';
 
 const app = document.getElementById('app');
 let S = null;
@@ -345,6 +346,7 @@ const SCREENS = {
         <div class="cutin" id="cutin"></div>
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
+        <div class="cmt" id="cmt"></div>
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
@@ -1055,17 +1057,33 @@ async function runMatch() {
   }
   if (!M.view) stage.classList.add('textmode');
   hud(null);
+  // 해설(캐스터와 해설). 글은 js/commentary.js
+  cmtReset();
+  M.cmt = CMT_TEXT.newCommentary({
+    names: sim.P.map(p => p.name), tourName: tr.name, stage: G.stageLabel(tr), archId: opp.arch, archName: opp.archName,
+    plan: [sim.teams[0].choices.plan, sim.teams[1].choices.plan], h2h: G.h2hOf(S, opp),
+  });
+  say(CMT_TEXT.matchIntro(M.cmt));
   while (!sim.over) {
     sim.teams[1].choices = aiChoices(sim, 1);
     M.curServe = sim.serveTeam;
     const g = sim.playGame();
     for (const [pi, pt] of g.points.entries()) {
       const lastOfGame = pi === g.points.length - 1;
-      if (M.hl && M.view && !M.skipGame && !pt.big && !pt.skill && !lastOfGame) { setLog(pt.text); hud(pt); await sleep(450); continue; }
+      if (M.hl && M.view && !M.skipGame && !pt.big && !pt.skill && !lastOfGame) {
+        // 하이라이트에서 건너뛰는 포인트: 결과만 짧게. 해설 기록(연속 득점 등)은 같이 쌓는다
+        CMT_TEXT.afterPoint(pt, M.cmt);
+        setLog(pt.text, false); say([{ who: 'c', text: pt.text, pri: 0 }]); hud(pt); await sleep(450); continue;
+      }
       if (M.skipGame || !M.view) { if (!M.view && !M.skipGame) { setLog(pt.text); hud(pt); await sleep(380 / M.speed); } continue; }
       if (pt.big && pt.label) showBig(pt.label);
-      await M.view.playPoint(pt, { onCutin: cutin, onShot: rallyTick });
-      setLog(pt.text); hud(pt);
+      const prevScore = pi ? g.points[pi - 1].score : '0 - 0';
+      await M.view.playPoint(pt, {
+        onCutin: cutin,
+        onShot: (s, i) => { rallyTick(s, i, pt); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
+      });
+      say(CMT_TEXT.afterPoint(pt, M.cmt));
+      setLog(pt.text, false); hud(pt);
       hideBig();
     }
     if (M.view) M.view.speed = M.speed;
@@ -1078,11 +1096,17 @@ async function runMatch() {
     const chasing = !M.chased && M.minDiff <= -2 && diff >= M.minDiff + 2;
     if (sim.over) break;
     if (!M.skipMatch) {
-      setLog(`게임 ${g.gameWinner === 0 ? '획득!' : '내줌'} ${sim.games[0]} - ${sim.games[1]}`);
-      if (chasing) { M.chased = true; showBig('끈질기게 따라붙는다!'); await sleep(1100); hideBig(); }
+      setLog(`게임 ${g.gameWinner === 0 ? '획득!' : '내줌'} ${sim.games[0]} - ${sim.games[1]}`, !M.view);
+      say(CMT_TEXT.afterGame(g, sim.games, sim.gameNo, M.cmt));
+      if (chasing) { M.chased = true; say(CMT_TEXT.chaseLine(M.cmt)); showBig('끈질기게 따라붙는다!'); await sleep(1100); hideBig(); }
       await sleep(M.hl ? 700 : 400);
     }
   }
+  if (M.view && !M.skipMatch) {
+    say(CMT_TEXT.matchEnd(sim.winner, sim.games, sim.winner === 0 && M.minDiff <= -2, M.cmt));
+    for (let t = 0; t < 70 && (CMT.cur || CMT.q.length); t++) await sleep(100);
+  }
+  cmtReset();
   // 기록
   S.choices = { ...sim.teams[0].choices, mental: sim.teams[0].choices.tempo === 'safe' ? 'breathe' : 'keep' };
   const me = sim.P[0], pa = sim.P[1];
@@ -1118,9 +1142,41 @@ function hud(pt) {
   const lbl = g => g >= 80 ? '몰입' : g < 10 ? '틸트' : g < 30 ? '흔들림' : '보통';
   ms.innerHTML = P.map((p, i) => `<div class="mg ${i < 2 ? 'us' : 'them'}"><span>${esc(p.name)}</span><div class="bar"><i class="m-${lbl(gs[i])}" style="width:${gs[i]}%"></i></div><small>${lbl(gs[i])}</small></div>`).join('');
 }
-function setLog(t) { const l = document.getElementById('logline'); if (l) l.textContent = t; const p = document.getElementById('pointtext'); if (p) { p.textContent = t; p.classList.remove('show'); void p.offsetWidth; p.classList.add('show'); } }
+function setLog(t, pop = true) { const l = document.getElementById('logline'); if (l) l.textContent = t; const p = document.getElementById('pointtext'); if (p && pop) { p.textContent = t; p.classList.remove('show'); void p.offsetWidth; p.classList.add('show'); } }
 function showBig(label) { const b = document.getElementById('biglabel'); if (b) { b.textContent = label; b.classList.add('show'); } }
 function hideBig() { const b = document.getElementById('biglabel'); if (b) b.classList.remove('show'); }
+// ── 해설 자막 ──
+// 한 줄씩 차례로 보여 준다. 밀리면 덜 중요한 줄(pri가 낮은 것)부터 버리고,
+// 지금 줄보다 중요한 줄이 오면 0.7초 뒤 바로 넘긴다. 경기는 기다리지 않는다
+const CMT = { q: [], cur: null, since: 0, timer: null };
+function cmtReset() { clearTimeout(CMT.timer); CMT.q = []; CMT.cur = null; }
+function say(lines) {
+  if (!M || !M.view || M.skipGame || !lines?.length) return;
+  for (const l of lines) {
+    if (l.pri > 0) CMT.q = CMT.q.filter(x => x.pri > 0);   // 새 줄이 오면 지나간 점수 요약은 버린다
+    CMT.q.push(l);
+  }
+  while (CMT.q.length > 3) {
+    let k = 0; CMT.q.forEach((x, i) => { if (x.pri < CMT.q[k].pri) k = i; });
+    CMT.q.splice(k, 1);
+  }
+  if (!CMT.cur) nextLine();
+  else if (CMT.q.some(x => x.pri > CMT.cur.pri)) {
+    clearTimeout(CMT.timer);
+    CMT.timer = setTimeout(nextLine, Math.max(0, 700 - (performance.now() - CMT.since)));
+  }
+}
+function nextLine() {
+  clearTimeout(CMT.timer);
+  const el = document.getElementById('cmt');
+  if (!el || !M) { CMT.q = []; CMT.cur = null; return; }
+  if (!CMT.q.length) { CMT.cur = null; el.classList.remove('show'); return; }
+  const l = CMT.q.shift();
+  CMT.cur = l; CMT.since = performance.now();
+  el.className = 'cmt'; void el.offsetWidth; el.className = `cmt show ${l.who}`;
+  el.innerHTML = `<i>${l.who === 'c' ? '캐스터' : '해설'}</i><span>${esc(l.text)}</span>`;
+  CMT.timer = setTimeout(nextLine, (1100 + l.text.length * 45) / (M.speed || 1));
+}
 // 랠리 수: 공이 네트를 넘은 횟수. 4번부터 보인다
 function rallyTick(s, i, pt) {
   const el = document.getElementById('rally');
