@@ -209,7 +209,8 @@ export class MatchSim {
   // 서브 공 빠르기(바운드까지 평균, m/s). 여자 동호인 서브는 느리다(사용자 경험, 2026-11-08).
   // 라켓을 떠날 때(화면 숫자) 첫 서브는 능력치 30이면 약 63km/h, 50이면 71, 70이면 79, 85면 86. 세컨은 58~70km/h. 파워가 조금 더한다
   serveV(p, first) { const s = p.stats; return (first ? 9.6 + s.first_serve * 0.105 : 8.6 + s.second_serve * 0.065) * (0.94 + s.power / 100 * 0.12); }
-  ballV(H, st, Q) { return (BALL_V[st] || 16) * (0.9 + clamp((Q - 25) / 50, 0, 1) * 0.16) * (0.94 + H.stats.power / 100 * 0.12); }
+  // 랠리 공 빠르기(바운드까지 평균, m/s): 샷 품질(Q)과, 강하게 치는 샷이면 파워. 키운 만큼 공이 빨라 보이게 폭을 넓혔다(2026-11-08)
+  ballV(H, st, Q) { return (BALL_V[st] || 16) * (0.86 + clamp((Q - 25) / 50, 0, 1) * 0.24) * (POWER_SHOTS.has(st) ? 0.86 + H.stats.power / 100 * 0.28 : 1); }
   // 서브가 떨어지는 곳. 서브 코스가 좋을수록 선에 가깝다
   serveSpot(server, cx, zs, kind) {
     const edge = clamp(0.2 + server.stats.serve_place / 140, 0.3, 0.85);

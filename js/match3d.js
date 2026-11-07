@@ -20,6 +20,11 @@ function cruise(D, T, brake) {
   const v = disc >= 0 ? (T - Math.sqrt(disc)) / (2 * c) : T / (2 * c);
   return Math.min(RUN_CAP, Math.max(1.2, v));
 }
+// 거리 D를 최고 속도 v로 달려가는 데 걸리는 시간(속도를 올리는 시간, 멈추면 줄이는 시간까지)
+function runTime(D, v, brake) {
+  const c = 1 / (2 * ACC) + (brake ? 1 / (2 * DEC) : 0);
+  return D >= v * v * c ? D / v + v * c : 2 * Math.sqrt(D / c) * c;
+}
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 공이 오기 직전의 준비 자세
 function prepFor(type) {
@@ -455,7 +460,7 @@ export class MatchView {
       const hy = isServe || s.type === 'smash' ? 2.5 : /volley/.test(s.type) ? 1.25 : 0.95;
       if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], hy, s.from[1], v);
       if (s.type === 'smash' || s.res === 'ace') this.shake = Math.max(this.shake, 0.16);
-      else if (s.res === 'win' || s.res === 'poach') this.shake = Math.max(this.shake, v >= 17 ? 0.1 : 0.06);
+      else if (s.res === 'win' || s.res === 'poach') this.shake = Math.max(this.shake, v >= 13 ? 0.1 : 0.06);
       for (const c of s.call || []) { if (c.end) this.later(Math.max(0, dur - 0.08), () => this.popCall(c)); else this.popCall(c); }
     }
     // 움직임은 엔진이 능력치로 정한 대로: 첫발만큼 늦게 출발해서 스피드만큼 뛴다(js/rally.js)
@@ -465,25 +470,37 @@ export class MatchView {
       if ((j < 2) !== (s.h < 2)) this.splitStep(j);
       if (!m) continue;
       const p = this.players[j];
-      let tx = m.x, tz = m.z, sp = m.v;
+      let tx = m.x, tz = m.z, sp = m.v, t0 = m.t0;
       let opt = {};
       if (next && next.h === j && j !== s.h) {
         // 받을 사람은 공 옆(팔과 라켓 길이만큼)에 선다. 여유(m)가 있으면 그만큼 먼저 도착해 멈춰서 힘을 싣고,
         // 여유가 없거나(포지셔닝이 낮으면) 멀리 뻗는 공이면 달리던 그대로 공과 같이 닿는다
         [tx, tz] = standOf(next.from, next.type, j < 2 ? 0 : 1, [p.x, p.z], m.far || 0);
         const set = (m.m ?? 0.3) >= 0.08 && m.k !== 'reach' && m.k !== 'jam';
-        const T = Math.max(0.12, dur - m.t0 - (set ? Math.min(m.m ?? 0.3, 0.45) : 0) - 0.02);
+        let T = Math.max(0.12, dur - m.t0 - (set ? Math.min(m.m ?? 0.3, 0.45) : 0) - 0.02);
         const D = Math.hypot(tx - p.x, tz - p.z);
+        // 쭉 뻗어 받는 공: 공이 느려 시간이 남아도 천천히 걸어가지 않는다. 늦게 읽고(그만큼 늦게 출발해) 힘껏 달려가 겨우 닿는다
+        if (m.k === 'reach' && D > 0.5) { const full = runTime(D, m.v, false) * 1.1; if (T > full) { t0 += T - full; T = full; } }
         sp = cruise(D, T, set);
         // 멈추지 못하는 사람은 공 자리를 지나쳐 계속 달린다(치는 순간에도 움직이고 있다)
         if (!set && D > 0.3) { tx += (tx - p.x) / D * 0.7; tz += (tz - p.z) / D * 0.7; }
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14);
         opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, prepFor(next.type), 0); } : null };
       }
-      this.later(m.t0, () => this.runTo(j, tx, tz, 0, sp, opt));
+      const lungeAt = Math.max(m.t0 + 0.05, dur * (m.k === 'confuse' ? 0.55 : 0.8));
+      // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
+      if (m.k === 'miss') {
+        const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true);
+        if (go - m.t0 > 0.2 && D > 0.3) {
+          const wx = (tx - p.x) / D, wz = (tz - p.z) / D, wf = Math.min(0.55, (go - m.t0) * 1.2);
+          this.later(m.t0, () => this.runTo(j, p.x - wx * wf, p.z - wz * wf, 0, 2.6));
+          t0 = go;
+        }
+      }
+      this.later(t0, () => this.runTo(j, tx, tz, 0, sp, opt));
       if (m.k === 'miss' || m.k === 'confuse') {
         const ball = s.bounce || s.to;
-        this.later(Math.max(m.t0 + 0.05, dur * (m.k === 'confuse' ? 0.55 : 0.8)), () => { if (m.k === 'miss') this.lunge(j, ball); else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); } });
+        this.later(lungeAt, () => { if (m.k === 'miss') this.lunge(j, ball); else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); } });
       }
     }
     const [h0, h1] = ballHeights(s, next);

@@ -9,8 +9,10 @@
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
-// 샷 종류별 기본 공 빠르기(m/s). 샷 품질과 파워로 조금 달라진다.
-export const BALL_V = { serve: 26, serve2: 18, smash: 24, fh_drive: 18, bh_drive: 17, passing: 19, return: 17, swing_volley: 20, fh_volley: 15, bh_volley: 14, low_volley: 12, half_volley: 12, fh_slice: 13, bh_slice: 13, chip_return: 12, topspin_lob: 11, def_lob: 9, moon_volley: 9, dropshot: 9, drop_volley: 8 };
+// 샷 종류별 기본 공 빠르기(바운드까지 평균, m/s). 샷 품질과 파워로 조금 달라진다.
+// 여자 동호인 공은 느리다(사용자 경험, 2026-11-08): 강하게 치는 공은 예전의 0.75배쯤, 발리·슬라이스는 0.85배쯤. 로브와 드롭은 그대로.
+// 서브는 sim.js의 serveV가 정한다(여기 serve, serve2는 값이 없을 때만 쓴다)
+export const BALL_V = { serve: 15, serve2: 12.5, smash: 17.5, fh_drive: 13.5, bh_drive: 12.8, passing: 14, return: 12.8, swing_volley: 15, fh_volley: 12.8, bh_volley: 12, low_volley: 10.5, half_volley: 10.5, fh_slice: 11, bh_slice: 11, chip_return: 10.5, topspin_lob: 11, def_lob: 9, moon_volley: 9, dropshot: 9, drop_volley: 8 };
 export const AFTER_BOUNCE = 0.62;   // 바운드 뒤에는 공이 느려진다
 export const START = 0.18;          // 멈춘 몸이 속도를 내기까지 잃는 시간
 
