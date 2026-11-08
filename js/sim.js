@@ -134,6 +134,15 @@ const unit = (a, b) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; re
 // 부담 D(0~95) → 닿을 수 있는 거리 중 얼마나 멀리 오는가
 const strain = D => clamp(0.15 + D * 0.0136, 0.15, 0.97);   // D 중간값 약 29 → 0.54, 상위 25%(42) → 0.72(쭉 뻗어 받음)
 // 바운드 지점: 받는 곳보다 공 길이 쪽으로 조금 앞. 코트 안에 들어오게 받는 곳까지 같이 당긴다.
+// from에서 C로 가는 직선 위, 깊이(z)가 z인 곳
+function onLineAtZ(from, C, z) { const u = Math.abs(C[1] - from[1]) > 0.01 ? (z - from[1]) / (C[1] - from[1]) : 1; return [from[0] + (C[0] - from[0]) * u, z]; }
+// 끝까지 간 공이 펜스(옆 x ±11, 먼 쪽 z -19.5)를 뚫지 않게 길이를 줄인다
+function toFence(P, w, L) {
+  let k = L;
+  if (Math.abs(w[0]) > 1e-3) k = Math.min(k, (10.6 * Math.sign(w[0]) - P[0]) / w[0]);
+  if (w[1] < -1e-3) k = Math.min(k, (-19.1 - P[1]) / w[1]);
+  return [P[0] + w[0] * Math.max(0.5, k), P[1] + w[1] * Math.max(0.5, k)];
+}
 function bounceOf(from, C, v, rz) {
   const w = unit(from, C), bd = 2.0 + v * 0.06;
   let B = [C[0] - w[0] * bd, C[1] - w[1] * bd];
@@ -141,8 +150,10 @@ function bounceOf(from, C, v, rz) {
   if (Math.abs(B[0]) > 5.25) dx = (Math.abs(B[0]) - 5.25) * -Math.sign(B[0]);
   if (B[1] * rz > 11.6) dz = -(B[1] * rz - 11.6) * rz;
   if (B[1] * rz < 0.9) dz = (0.9 - B[1] * rz) * rz;
+  if (!dx && !dz) return { B, C };
   B = [B[0] + dx, B[1] + dz];
-  return { B, C: [C[0] + dx, C[1] + dz] };
+  const w2 = unit(from, B);
+  return { B, C: [B[0] + w2[0] * bd, B[1] + w2[1] * bd] };
 }
 
 // ── 선수 만들기 ───────────────────────────────────────────
@@ -224,19 +235,20 @@ export class MatchSim {
     const lob = LOBS.has(st), short = st === 'dropshot' || st === 'drop_volley';
     if (lob) {
       const C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (10.0 + Math.min(f, 1.3) * 2.4)];
-      const B = [C[0] * 0.95, rz * (C[1] * rz - 1.8)];
+      const B = onLineAtZ(from, C, rz * (C[1] * rz - 1.8));
       return { C, B, T: flightTime(from, C, B, v) };
     }
     if (short) {
       // 짧은 공: 네트 가까이 떨어진다. 뒤에서 달려오는 사람이 닿을 수 있게, 바운드 뒤 죽어 가는 공을 조금 더 깊은 곳에서 받는다
       let C = [clamp(P[0] * 0.7 + n1 * 1.2, -5, 5), rz * clamp(4.6 - Math.min(f, 1.3) * 2.2, 1.9, 4.6)];
-      const B = [C[0], rz * Math.max(1.0, C[1] * rz - 1.2)];
+      let B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - 1.2));
       let T = flightTime(from, C, B, v);
       for (let it = 0; it < 4 && f < 1; it++) {
         const can = reachOf(body, T, late) * Math.max(f, 0.6), d = Math.hypot(C[0] - P[0], C[1] - P[1]);
         if (d <= can) break;
         const w = unit(C, P), z = clamp((C[1] + w[1] * (d - can)) * rz, C[1] * rz, 7.5);
         C = [C[0] + w[0] * (d - can), rz * z];
+        B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - 1.2));
         T = flightTime(from, C, B, v);
       }
       return { C, B, T };
@@ -462,12 +474,12 @@ export class MatchSim {
       return sp;
     };
     // 나가거나 걸릴 공: 가까운 사람이 받을 것처럼 공이 지나는 선 옆까지 가서 받을 준비를 하다가 마지막에 보낸다. 파트너는 조금 따라 옮긴다
-    const letGo = (from, to, ft, team) => {
+    const letGo = (from, to, ft, team, who = -1) => {
       const plan = [], os = [0, 1, 2, 3].filter(j => this.P[j].team === team);
       const w = unit(from, to), L = Math.hypot(to[0] - from[0], to[1] - from[1]);
       const near = j => { const s = clamp((at[j][0] - from[0]) * w[0] + (at[j][1] - from[1]) * w[1], 0, L); return [from[0] + w[0] * s, from[1] + w[1] * s]; };
       const gap = j => { const X = near(j); return Math.hypot(X[0] - at[j][0], X[1] - at[j][1]); };
-      const j = gap(os[0]) <= gap(os[1]) ? os[0] : os[1], o = os[0] === j ? os[1] : os[0];
+      const j = os.includes(who) ? who : gap(os[0]) <= gap(os[1]) ? os[0] : os[1], o = os[0] === j ? os[1] : os[0];
       const X = near(j), t0 = body[j].react, u = unit(at[j], X);
       const go = clamp(Math.min(gap(j) - 0.7, Math.max(0, ft - t0 - 0.1) * body[j].top * 0.9), 0.35, 4.5);
       plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: body[j].top * 0.85, k: 'let' };
@@ -512,7 +524,7 @@ export class MatchSim {
         // 에이스: 구석에 꽂히고, 받는 사람은 손을 뻗다 놓친다
         const side = rng() < 0.5 ? 1 : -1;
         const B = this.serveSpot(server, cx, zs, side > 0 ? 'wide' : 'T'), v = this.serveV(server, true);
-        const w = unit(serverPos, B), to = [B[0] + w[0] * 6, B[1] + w[1] * 6];
+        const w = unit(serverPos, B), to = toFence(B, w, 6);
         const ft = flightTime(serverPos, to, B, v);
         const plan = []; plan[ri] = missAt(ri, [B[0] + w[0] * 3, B[1] + w[1] * 3], ft, clamp((55 - r.c_power) * 0.0015, -0.03, 0.08));
         shots.push({ h: si, type: 'serve', from: serverPos, bounce: B, to, res: 'ace', pos: pos0, v: r2(v), mv: move(plan, ft), victim: ri, info: shotInfo(server, ['first_serve', 'serve_place', 'power'], Math.max(90, sq1 * 0.5 + 50)) });
@@ -586,43 +598,45 @@ export class MatchSim {
         const isNet = st === 'dropshot' || st === 'drop_volley' || st === 'low_volley' || rng() < 0.45;
         const zs2 = this.zSign(H.team);
         // 아웃은 노린 코스 쪽으로 벗어난다 (난수 순서는 예전과 같다: gauss 다음 rng)
-        const to = isNet ? [from[0] * 0.6, zs2 * 0.3] : this.missSpot(H, st, dir, from, gauss(rng), rng());
+        const gg = isNet ? 0 : gauss(rng), rr = isNet ? 0 : rng();
+        const to = isNet ? [from[0] * 0.6, zs2 * 0.3] : this.missSpot(H, st, dir, from, gg, rr);
         // 나가는 공을 쳐 버리는 판단 실수(사용자 경험: 동호인은 나가는 공을 꽤 친다).
-        // 나가는 공이 받는 쪽 사람 곁을 칠 수 있게 지나가면 판단해야 한다. 샷 선택·집중력이 좋을수록, 많이 나갈수록 잘 보낸다
+        // 그 공을 받을 사람이 판단한다. 샷 선택·집중력이 좋을수록, 많이 나갈수록 잘 보낸다.
+        // 승패는 엔진 값으로만 정하고(누가 받는지, 얼마나 나갔는지), 화면의 위치는 쓰지 않는다
         let judged = -1;
         if (!isNet && !LOBS.has(st)) {
-          const L = Math.hypot(to[0] - from[0], to[1] - from[1]), w = unit(from, to);
-          const proj = j => clamp((at[j][0] - from[0]) * w[0] + (at[j][1] - from[1]) * w[1], 0, L);
-          const gapOf = j => { const t = proj(j); return Math.hypot(from[0] + w[0] * t - at[j][0], from[1] + w[1] * t - at[j][1]); };
-          const os = [0, 1, 2, 3].filter(j => this.P[j].team !== H.team);
-          const j0 = gapOf(os[0]) <= gapOf(os[1]) ? os[0] : os[1], J = this.P[j0], s0 = proj(j0);
-          if (gapOf(j0) < body[j0].reach + 1.2 && L - s0 > 0.6 && s0 > 4) {
-            const by = Math.max(Math.abs(to[0]) - 5.49, Math.abs(to[1]) - 11.89, 0);   // 얼마나 나갔나(m)
-            const judge = J.stats.shot_sel * 0.7 + J.stats.focus * 0.3;
-            const pm = clamp(0.34 - judge * 0.0026, 0.07, 0.28) * clamp(1.5 - by * 0.6, 0.4, 1.4);
-            if (rng() < pm) {
-              // 그 사람 곁에서 떨어지기 전에 받아 친다. 어려운 공을 받은 셈이다
-              J.rec.misjudge = (J.rec.misjudge || 0) + 1; rec(H, st, 'n');
-              const C = [from[0] + w[0] * s0, from[1] + w[1] * s0];
-              const ev = this.ballV(H, st, Q), ft = flightTime(from, C, null, ev);
-              const plan = [];
-              plan[j0] = runAt(j0, C, ft, body[j0].react, 'set');
-              const [hx, hz] = this.homeOf(H, C[0], lvl[H.team]);
-              plan[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' };
-              shots.push({ h: hi, type: st, dir, from, bounce: null, to: C, res: 'in', outBall: true, pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(plan, C[0]), ft) });
-              lastByTeam[H.team] = H; lastShooter = H;
-              inc = { D: clamp(48 + (Q - 40) * 0.35, 35, 75), height: 'mid', type: st, from: H, counter: null };
-              H = J; continue;
-            }
-            judged = j0;
+          const os = this.opps(H), crossT = os.find(o => o.side === H.side) || os[0], J = dir === 'dtl' ? os.find(o => o !== crossT) : crossT;
+          const j0 = this.P.indexOf(J);
+          const wide = dir === 'dtl' || dir === 'angle' || (dir === 'cross' && rr < 0.35);
+          const by = wide ? 0.21 + Math.abs(gg) * 0.6 : 0.41 + rr * 1.4;   // 얼마나 나갔나(m), missSpot과 같은 값
+          const judge = J.stats.shot_sel * 0.7 + J.stats.focus * 0.3;
+          const pm = clamp(0.2 - judge * 0.0015, 0.04, 0.16) * clamp(1.5 - by * 0.6, 0.4, 1.4);
+          if (rng() < pm) {
+            // 그 사람 곁(공이 지나는 직선 위 가장 가까운 곳)에서 떨어지기 전에 받아 친다. 어려운 공을 받은 셈이다
+            J.rec.misjudge = (J.rec.misjudge || 0) + 1; rec(H, st, 'n');
+            const L = Math.hypot(to[0] - from[0], to[1] - from[1]), w = unit(from, to);
+            const s0 = clamp((at[j0][0] - from[0]) * w[0] + (at[j0][1] - from[1]) * w[1], Math.min(4, L * 0.6), L - 0.6);
+            const C = [from[0] + w[0] * s0, from[1] + w[1] * s0];
+            const ev = this.ballV(H, st, Q), ft = flightTime(from, C, null, ev);
+            const plan = [];
+            plan[j0] = runAt(j0, C, ft, body[j0].react, 'set');
+            const [hx, hz] = this.homeOf(H, C[0], lvl[H.team]);
+            plan[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' };
+            shots.push({ h: hi, type: st, dir, from, bounce: null, to: C, res: 'in', outBall: true, pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(plan, C[0]), ft) });
+            lastByTeam[H.team] = H; lastShooter = H;
+            inc = { D: clamp(48 + (Q - 40) * 0.35, 35, 75), height: 'mid', type: st, from: H, counter: null };
+            H = J; continue;
           }
+          judged = j0;
+          // 조금 나간 공(1m 안)을 잘 보냈을 때만 판단이 돋보인다
+          if (by >= 0.9) judged = -2 - j0;
         }
         H.rec.errors++; rec(H, st, 'err');
         if (this.gameNo < 5) H.rec.errEarly++; else H.rec.errLate++;
         // 상대는 받을 것처럼 가다가 멈춘다. 걸리는 공은 가려던 쪽으로, 나가는 공은 떨어지는 곳 쪽으로
         const ev = this.ballV(H, st, Q), aim = isNet ? [clamp(-from[0] * 0.6, -4.5, 4.5), -zs2 * 8] : to;
         // 아무도 멈춰 서지 않는다: 친 사람은 제자리로 돌아가고, 나머지도 공 쪽으로 옮긴다
-        const lp = letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team);
+        const lp = letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team, judged >= 0 ? judged : judged <= -2 ? -2 - judged : -1);
         { const [hx, hz] = this.homeOf(H, aim[0], lvl[H.team]); lp[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' }; }
         shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(lp, aim[0]), 0), ...(judged >= 0 ? { judge: judged } : {}) });
         if (inc.D >= 45 && inc.from && inc.from.team !== H.team) addCall(this.P, shots[shots.length - 1], inc.from, shotStats(inc.type, prev?.dir), true);
@@ -648,7 +662,7 @@ export class MatchSim {
           H.rec.winners++; rec(H, st, 'win');
           this.assist(H, lastByTeam);
           // 둘 다 가다가 서로 미룬다
-          const v = this.ballV(H, st, Q), out = [0, -this.zSign(H.team) * 12.5], ft = flightTime(from, out, to, v);
+          const v = this.ballV(H, st, Q), out = toFence(to, unit(from, to), 5.5), ft = flightTime(from, out, to, v);
           const plan = [];
           for (const o of os) { const j = this.P.indexOf(o); plan[j] = { ...missAt(j, [0, to[1] * 1.3], ft), k: 'confuse' }; }
           shots.push({ h: hi, type: st, dir, from, bounce: to, to: out, res: 'center', pos: posNow, v: r2(v), mv: move(plan, ft), info });
@@ -679,7 +693,7 @@ export class MatchSim {
             const p2 = this.snapshot(); p2[ni] = contact;
             const land = [-contact[0] * 2 + (rng() < 0.5 ? 2.5 : -2.5), this.zSign(H.team) * 6];
             at[ni] = standOf(contact, 'fh_volley', R.team, runFrom[ni]);
-            const v2 = BALL_V.fh_volley * 1.2, out2 = [land[0] * 1.2, this.zSign(H.team) * 12], ft2 = flightTime(contact, out2, land, v2);
+            const v2 = BALL_V.fh_volley * 1.2, out2 = toFence(land, unit(contact, land), 6), ft2 = flightTime(contact, out2, land, v2);
             const hs = this.P.filter(q => q.team === H.team).map(q => this.P.indexOf(q));
             const vi = hs.reduce((a, b) => (Math.hypot(at[a][0] - land[0], at[a][1] - land[1]) <= Math.hypot(at[b][0] - land[0], at[b][1] - land[1]) ? a : b));
             const plan2 = []; plan2[vi] = missAt(vi, land, ft2);
@@ -726,7 +740,7 @@ export class MatchSim {
         let land = sp.B;
         if (!land) { const w0 = unit(from, sp.C); land = [sp.C[0] + w0[0] * 3, sp.C[1] + w0[1] * 3]; }
         land = [clamp(land[0], -5.25, 5.25), rz * clamp(land[1] * rz, 0.9, 11.6)];
-        const w = unit(from, land), out = [land[0] + w[0] * 7, land[1] + w[1] * 7];
+        const w = unit(from, land), out = toFence(land, w, 7);
         const ft = flightTime(from, out, land, v);
         const plan = []; plan[Ri] = missAt(Ri, sp.C, ft);
         pushLvl(H.team, 1);

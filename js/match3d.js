@@ -364,6 +364,7 @@ export class MatchView {
     const tail = Math.round(clamp(2 + (v || 16) * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
     this.trail.material.opacity = clamp(0.3 + (v || 16) * 0.016, 0.4, 0.75);
     const end = opt.cutAt ? Math.min(arc.dur, opt.cutAt) : arc.dur;
+    this.rollId = (this.rollId || 0) + 1;
     return new Promise(res => {
       let bounced = false, netted = false;
       this.tweens.push({
@@ -380,8 +381,40 @@ export class MatchView {
           if (this.trailPts.length > tail) this.trailPts.shift();
           this.trail.geometry.setFromPoints(this.trailPts);
         },
-        done: res,
+        done: () => res({ arc, end }),
       });
+    });
+  }
+
+  // 떨어진 공은 그 자리에 멈추지 않는다. 튀고 구르다 펜스에 막힌다(포인트가 끝나 공이 사라지거나 다음 공을 치면 멈춘다)
+  rollOn(fl, maxDur = 1.6) {
+    if (!fl?.arc) return;
+    const { arc, end } = fl, a = arc.at(Math.max(0, end - 0.02)), b = arc.at(end);
+    let [x, z, y] = b, vx = (b[0] - a[0]) / 0.02, vz = (b[1] - a[1]) / 0.02, vy = (b[2] - a[2]) / 0.02;
+    const id = this.rollId = (this.rollId || 0) + 1;
+    let last = 0;
+    this.tweens.push({
+      t: 0, dur: maxDur, done: () => { },
+      step: k => {
+        if (id !== this.rollId || !this.ball.visible) return;
+        const t = k * maxDur;
+        let dt = t - last; last = t;
+        while (dt > 1e-6) {
+          const h = Math.min(dt, 1 / 120); dt -= h;
+          vy -= 9.8 * h; y += vy * h;
+          if (y <= 0) { y = 0; if (vy < 0) { vy = -vy * 0.55; vx *= 0.75; vz *= 0.75; if (vy < 0.6) vy = 0; } }
+          if (y === 0 && vy === 0) { const f = Math.max(0, 1 - 1.6 * h); vx *= f; vz *= f; }
+          x += vx * h; z += vz * h;
+          if (Math.abs(x) > 10.85) { x = Math.sign(x) * 10.85; vx = -vx * 0.25; }
+          if (z < -19.35) { z = -19.35; vz = -vz * 0.25; }
+          if (z > 21) { z = 21; vz = 0; }
+        }
+        this.ball.position.set(x, Math.max(0.11, y), z);
+        this.ballShadow.position.set(x, 0.013, z);
+        this.trailPts.push(new THREE.Vector3(x, Math.max(0.11, y), z));
+        if (this.trailPts.length > 6) this.trailPts.shift();
+        this.trail.geometry.setFromPoints(this.trailPts);
+      },
     });
   }
 
@@ -422,6 +455,7 @@ export class MatchView {
       p.x = p.tx = x; p.z = p.tz = z;
     }
     this.placeAll();
+    this.rollId = (this.rollId || 0) + 1;
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
     this.setCamera('main', this.camMode === 'low' || this.camMode === 'high');
     await this.wait(first ? 0.25 : 0.45);
@@ -444,11 +478,13 @@ export class MatchView {
     const [x, z] = s.from;
     this.setPose(s.h, 'serve');
     this.ball.visible = true; this.ballShadow.visible = true;
+    this.rollId = (this.rollId || 0) + 1;
+    this.trailPts = []; this.trail.geometry.setFromPoints([]);
     await new Promise(res => this.tweens.push({
       t: 0, dur: 0.42, step: k => {
-        const y = 1.1 + 2.0 * Math.sin(k * Math.PI * 0.8);
-        this.ball.position.set(x + 0.15, y, z);
-        this.ballShadow.position.set(x + 0.15, 0.013, z);
+        const y = 1.1 + 1.5 * k + 3.6 * k * (1 - k), ox = 0.15 * (1 - k);
+        this.ball.position.set(x + ox, y, z);
+        this.ballShadow.position.set(x + ox, 0.013, z);
       }, done: res,
     }));
   }
@@ -577,7 +613,7 @@ export class MatchView {
         opt.skim = true;
         opt.onNet = ([x, y, z]) => { this.flash(x, y, z, 12); this.popText(x, y + 0.4, z, '넷!', 'net'); this.shake = Math.max(this.shake, 0.05); this.hooks?.onNetCord?.(s); };
       }
-      if (!touch) await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, opt);
+      if (!touch) { const fl = await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, opt); if (!next || s.res === 'fault') this.rollOn(fl, s.res === 'fault' ? 0.55 : 1.6); }
       else {
         // 라켓(틱)이나 몸(퍽)에 맞고 튕겨 나간다
         await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, { ...opt, cutAt: touch.t });
@@ -589,13 +625,17 @@ export class MatchView {
         let to, type, sp2;
         if (touch.kind === 'body') { to = [x + ux * 0.9 + (r - 0.5) * 0.8, z + uz * 0.9]; type = 'dropshot'; sp2 = 3.5; }
         else { const a = (r < 0.5 ? 1 : -1) * (0.9 + r * 0.5), L = 4 + r * 2.5; to = [x + (ux * Math.cos(a) - uz * Math.sin(a)) * L, z + (ux * Math.sin(a) + uz * Math.cos(a)) * L]; type = 'def_lob'; sp2 = 7; }
-        await this.flyBall([x, z], to, to, type, Math.max(0.3, y), 0, false, sp2);
+        this.rollOn(await this.flyBall([x, z], to, to, type, Math.max(0.3, y), 0, false, sp2));
         this.mark(to);
       }
     }
     if (s.res === 'fault') {
       for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, 2.4);
       await this.wait(0.6);
+      // 폴트 난 공은 사라지고, 세컨 서브는 새 공으로 친다(공이 서버 손으로 순간 이동하지 않게)
+      this.rollId = (this.rollId || 0) + 1;
+      this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
+      await this.wait(0.15);
     }
   }
 
