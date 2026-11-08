@@ -92,7 +92,7 @@ export function lineGap(p, serve = false) {
 }
 
 // 아슬아슬한 공: 라인에 걸친 위너·에이스('line'), 조금 나간 공('out'). 중계와 해설이 같은 답을 내도록 위치로만 정한다
-const h01 = p => { const v = Math.sin(p[0] * 12.9898 + p[1] * 78.233) * 43758.5453; return v - Math.floor(v); };
+export const h01 = p => { const v = Math.sin(p[0] * 12.9898 + p[1] * 78.233) * 43758.5453; return v - Math.floor(v); };
 export function closeCall(s) {
   const B = s.bounce || s.to;
   if (!B) return null;

@@ -461,7 +461,7 @@ export class MatchSim {
       }
       return sp;
     };
-    // 나가거나 걸릴 공: 가까운 사람이 받을 것처럼 공 쪽으로 가다가 멈춰서 보낸다. 파트너는 조금 따라 옮긴다
+    // 나가거나 걸릴 공: 가까운 사람이 받을 것처럼 공이 지나는 선 옆까지 가서 받을 준비를 하다가 마지막에 보낸다. 파트너는 조금 따라 옮긴다
     const letGo = (from, to, ft, team) => {
       const plan = [], os = [0, 1, 2, 3].filter(j => this.P[j].team === team);
       const w = unit(from, to), L = Math.hypot(to[0] - from[0], to[1] - from[1]);
@@ -469,7 +469,7 @@ export class MatchSim {
       const gap = j => { const X = near(j); return Math.hypot(X[0] - at[j][0], X[1] - at[j][1]); };
       const j = gap(os[0]) <= gap(os[1]) ? os[0] : os[1], o = os[0] === j ? os[1] : os[0];
       const X = near(j), t0 = body[j].react, u = unit(at[j], X);
-      const go = clamp(Math.min(gap(j) - 0.9, Math.max(0, ft - t0 - 0.15) * body[j].top * 0.8), 0.35, 4);
+      const go = clamp(Math.min(gap(j) - 0.7, Math.max(0, ft - t0 - 0.1) * body[j].top * 0.9), 0.35, 4.5);
       plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: body[j].top * 0.85, k: 'let' };
       plan[o] = { x: at[o][0] + (X[0] - at[o][0]) * 0.12, z: at[o][1], t0: body[o].react * 1.2, v: body[o].recov, k: 'shift' };
       return plan;
@@ -587,12 +587,47 @@ export class MatchSim {
         const zs2 = this.zSign(H.team);
         // 아웃은 노린 코스 쪽으로 벗어난다 (난수 순서는 예전과 같다: gauss 다음 rng)
         const to = isNet ? [from[0] * 0.6, zs2 * 0.3] : this.missSpot(H, st, dir, from, gauss(rng), rng());
+        // 나가는 공을 쳐 버리는 판단 실수(사용자 경험: 동호인은 나가는 공을 꽤 친다).
+        // 나가는 공이 받는 쪽 사람 곁을 칠 수 있게 지나가면 판단해야 한다. 샷 선택·집중력이 좋을수록, 많이 나갈수록 잘 보낸다
+        let judged = -1;
+        if (!isNet && !LOBS.has(st)) {
+          const L = Math.hypot(to[0] - from[0], to[1] - from[1]), w = unit(from, to);
+          const proj = j => clamp((at[j][0] - from[0]) * w[0] + (at[j][1] - from[1]) * w[1], 0, L);
+          const gapOf = j => { const t = proj(j); return Math.hypot(from[0] + w[0] * t - at[j][0], from[1] + w[1] * t - at[j][1]); };
+          const os = [0, 1, 2, 3].filter(j => this.P[j].team !== H.team);
+          const j0 = gapOf(os[0]) <= gapOf(os[1]) ? os[0] : os[1], J = this.P[j0], s0 = proj(j0);
+          if (gapOf(j0) < body[j0].reach + 1.2 && L - s0 > 0.6 && s0 > 4) {
+            const by = Math.max(Math.abs(to[0]) - 5.49, Math.abs(to[1]) - 11.89, 0);   // 얼마나 나갔나(m)
+            const judge = J.stats.shot_sel * 0.7 + J.stats.focus * 0.3;
+            const pm = clamp(0.34 - judge * 0.0026, 0.07, 0.28) * clamp(1.5 - by * 0.6, 0.4, 1.4);
+            if (rng() < pm) {
+              // 그 사람 곁에서 떨어지기 전에 받아 친다. 어려운 공을 받은 셈이다
+              J.rec.misjudge = (J.rec.misjudge || 0) + 1; rec(H, st, 'n');
+              const C = [from[0] + w[0] * s0, from[1] + w[1] * s0];
+              const ev = this.ballV(H, st, Q), ft = flightTime(from, C, null, ev);
+              const plan = [];
+              plan[j0] = runAt(j0, C, ft, body[j0].react, 'set');
+              const [hx, hz] = this.homeOf(H, C[0], lvl[H.team]);
+              plan[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' };
+              shots.push({ h: hi, type: st, dir, from, bounce: null, to: C, res: 'in', outBall: true, pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(plan, C[0]), ft) });
+              lastByTeam[H.team] = H; lastShooter = H;
+              inc = { D: clamp(48 + (Q - 40) * 0.35, 35, 75), height: 'mid', type: st, from: H, counter: null };
+              H = J; continue;
+            }
+            judged = j0;
+          }
+        }
         H.rec.errors++; rec(H, st, 'err');
         if (this.gameNo < 5) H.rec.errEarly++; else H.rec.errLate++;
         // 상대는 받을 것처럼 가다가 멈춘다. 걸리는 공은 가려던 쪽으로, 나가는 공은 떨어지는 곳 쪽으로
         const ev = this.ballV(H, st, Q), aim = isNet ? [clamp(-from[0] * 0.6, -4.5, 4.5), -zs2 * 8] : to;
-        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team), 0) });
+        // 아무도 멈춰 서지 않는다: 친 사람은 제자리로 돌아가고, 나머지도 공 쪽으로 옮긴다
+        const lp = letGo(from, aim, flightTime(from, aim, null, ev) * (isNet ? 0.6 : 1), 1 - H.team);
+        { const [hx, hz] = this.homeOf(H, aim[0], lvl[H.team]); lp[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' }; }
+        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(lp, aim[0]), 0), ...(judged >= 0 ? { judge: judged } : {}) });
         if (inc.D >= 45 && inc.from && inc.from.team !== H.team) addCall(this.P, shots[shots.length - 1], inc.from, shotStats(inc.type, prev?.dir), true);
+        // 잘 보낸 공: 그 사람의 판단(샷 선택)이 C 이상이면 머리 위에 뜬다
+        else if (judged >= 0) addCall(this.P, shots[shots.length - 1], this.P[judged], ['shot_sel'], true);
         H.gauge -= 6 * (1 - H.stats.composure / 160);
         const m = this.mate(H); m.gauge -= 2 * (1 - m.stats.composure / 150);
         return this.finish(shots, 1 - H.team, 'err', H, ctx);

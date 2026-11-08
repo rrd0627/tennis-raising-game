@@ -104,6 +104,8 @@ export function duringShot(s, i, pt, st) {
     if (!st.longSaid) { st.longSaid = true; return [C(`${n}구째! 이런 랠리는 정말 보기 드뭅니다!`, 1)]; }
     return [C(pick([`${n}구째! 또 긴 랠리입니다.`, `${n}구째, 오늘 랠리가 정말 길어요.`, '끝까지 안 놓칩니다!']), 1)];
   }
+  // 나가는 공을 쳐 버렸다(판단 실수)
+  if (pt.shots[i - 1]?.outBall) return [C(pick(['아, 나가는 공인데 칩니다!', '나가는 공을 쳐 버렸어요!', '어, 그건 나가는 공이었는데요!']), 2)];
   const pj = (s.mv || []).findIndex(m => m && m.k === 'poach');
   if (pj >= 0) return [C(pick([`${who(st, pj)} 포치 나갑니다!`, `포치! ${who(st, pj)}가 가로질러 나옵니다!`]), 1)];
   if (/lob|moon/.test(s.type) && s.res === 'in' && i < pt.shots.length - 1 && st.lobPt !== pt && Math.random() < 0.35) { st.lobPt = pt; return [C(pick(['로브! 머리 위로 넘깁니다.', '높이 띄웁니다!']), 1)]; }
@@ -125,6 +127,7 @@ function callLine(c, st) {
     if (stat === '집중력') return pick([`끝까지 집중을 놓지 않네요. 집중력 ${gr}!`, `${nm}, 긴 랠리에서도 실수가 없어요. 집중력이 대단해요.`]);
     return pick([`이런 큰 포인트에서 흔들리지 않아요. ${stat} ${gr}!`, `${nm}, 큰 경기에 강한 선수예요. ${josa(stat, '이가')} 좋아요.`]);
   }
+  if (stat === '샷 선택') return pick([`잘 봤어요! 끝까지 보고 보냈어요. 샷 선택 ${gr}.`, `${nm}, 나가는 공에 라켓을 안 대요. 판단이 좋아요.`]);
   if (grp === 'tactics') return pick([`${stat} ${gr}! 타이밍이 기가 막혀요.`, `${nm}, 읽고 움직이는 게 달라요. ${josa(stat, '이가')} 좋네요.`]);
   return pick([`${stat} ${gr}! 정말 잘 다듬어진 공이에요.`, `오늘 ${nm} ${josa(stat, '이가')} 좋네요.`, `${nm}의 ${stat}, 연습한 그대로 나오네요.`]);
 }
@@ -146,6 +149,11 @@ export function afterPoint(pt, st) {
     err: last.res === 'net' ? [`${by}의 ${shot}, 네트에 걸립니다.`, '아, 네트!'] : [fill('{shotI} 라인을 벗어납니다.', v), `아웃! ${by}, 아쉽습니다.`],
   };
   L.push(C(pick(R[pt.endType] || [pt.text]), 2));
+  // 위너가 곁을 지나가며 라켓이나 몸에 맞았다(중계가 정한다)
+  if (last.touched === 'frame') L.push(C(pick([`${who(st, last.victim)}, 라켓에 맞았지만 밀렸어요!`, '건드렸어요! 하지만 공이 너무 셉니다.']), 2));
+  else if (last.touched === 'body') L.push(C(pick([`아, ${who(st, last.victim)} 몸에 맞습니다!`, '몸에 맞았어요! 피할 틈이 없었네요.']), 2));
+  // 나가는 공을 끝까지 보고 보냈다
+  if (last.judge !== undefined && !(last.call || []).some(c => c.t === '샷 선택')) L.push(C(pick(['끝까지 보고 보냅니다. 아웃!', '잘 봤어요, 나가는 공이에요.']), 1));
   const cc = closeCall(last);
   if (cc === 'line') L.push(C(pick(['라인에 딱 걸칩니다!', '라인 위에 떨어집니다! 정말 아슬아슬해요.']), 2));
   else if (cc === 'out') L.push(C(pick(['아슬아슬하게 벗어납니다!', '정말 조금 나갔어요!']), 1));
