@@ -300,7 +300,7 @@ export class MatchView {
     // 어깨 너머 시점에서는 주인공 머리 위 표시가 카메라 바로 앞이라 너무 크다. 작게, 머리 옆으로
     const near = this.view3 === 'tps';
     me.emote.scale.set(near ? 0.28 : 0.7, near ? 0.28 : 0.7, 1);
-    if (near) me.emote.position.set(me.x - 0.35 * (this.tpsSide || 1), 1.95, me.z);
+    if (near) me.emote.position.set(me.x - 0.3 * (this.tpsSide || 1), 2.05, me.z);
     if (this.auras?.[0]) this.auras[0].visible = !hide;
   }
   // 작전이 힘을 내는 동안 발밑에 빛나는 고리(우리 팀 분홍, 상대 파랑). null이면 끈다
@@ -461,6 +461,31 @@ export class MatchView {
   // main(중계, 랠리가 길어질수록 다가감), serveUs(우리 서버 바로 뒤 낮게), serveThem(맞은편 서버를 망원으로 당겨서),
   // push(결정적인 공 쪽으로 다가감). 서브는 당겨 찍다가 치는 순간 중계 자리로 빠진다
   setCamera(mode, cut = false) { this.camMode = mode; if (cut) this.camCut = true; }
+  // 3인칭(어깨 너머, 사용자 2026-11-09): 카메라가 주인공 머리 바로 뒤 어깨 위에 붙어 있다(뒤 1.5m, 옆 0.5m, 머리보다 0.35m 위).
+  // 시선은 공을 따라간다(공이 아주 가까이 오면 앞쪽도 같이 본다). 카메라는 머리를 축으로 그 시선 방향 뒤에 서므로
+  // 주인공은 늘 화면 아래 한쪽 같은 자리에 있다. 포핸드로 칠 공이면 오른쪽 어깨, 백핸드는 왼쪽(tpsSide).
+  // 멀미가 나지 않게 고개는 부드럽게(0.22초, 초당 140도까지), 위아래는 덜, 뒤로는 돌아보지 않는다. 몸이 뛰어올라도 카메라는 들썩이지 않는다
+  tpsCamera(dt) {
+    const p = this.players[0], HEAD = 1.65, BACK = 1.5, SIDE = 0.5, UP = 0.35;
+    // 바라볼 곳
+    let gx = p.x * 0.3, gy = 0.9, gz = -11;
+    if (this.ball.visible) {
+      const b = this.ball.position, w = clamp((Math.hypot(b.x - p.x, b.z - p.z) - 1.5) / 3, 0, 1);
+      gx = lerp(gx, b.x, w); gy = lerp(gy, b.y, w); gz = lerp(gz, b.z, w);
+    }
+    const dx = gx - p.x, dz = gz - p.z, hd = Math.max(0.5, Math.hypot(dx, dz));
+    // 위로는 조금만 든다(높은 공을 올려다보면 주인공이 화면 아래로 빠진다). 세로 화면이 넓어 높은 공도 대개 화면 안에 있다
+    const yawT = clamp(Math.atan2(dx, -dz), -1.2, 1.2), pitchT = clamp(Math.atan2(gy - HEAD, hd) - 0.08, -0.45, 0.06);
+    const cut = this.camCut || this.tpsYaw === undefined, k = tc => (cut ? 1 : 1 - Math.exp(-dt / tc)), cap = 2.4 * dt;
+    if (cut) { this.tpsYaw = yawT; this.tpsPitch = pitchT; this.tpsSideCur = this.tpsSide || 1; }
+    this.tpsYaw += cut ? 0 : clamp((yawT - this.tpsYaw) * k(0.22), -cap, cap);
+    this.tpsPitch += cut ? 0 : clamp((pitchT - this.tpsPitch) * k(0.3), -cap, cap);
+    this.tpsSideCur += ((this.tpsSide || 1) - this.tpsSideCur) * k(0.3);
+    const y = this.tpsYaw, pt = this.tpsPitch, fx = Math.sin(y), fz = -Math.cos(y), rx = Math.cos(y), rz = Math.sin(y), sd = SIDE * this.tpsSideCur;
+    const t = new THREE.Vector3(clamp(p.x - fx * BACK + rx * sd, -10.4, 10.4), HEAD + UP, clamp(p.z - fz * BACK + rz * sd, -18.9, 20.6));
+    const l = new THREE.Vector3(t.x + fx * Math.cos(pt) * 10, t.y + Math.sin(pt) * 10, t.z + fz * Math.cos(pt) * 10);
+    return { t, l, zoom: 1 };
+  }
   camTarget() {
     const bx = this.ball.visible ? this.ball.position.x : 0, bz = this.ball.visible ? this.ball.position.z : 0;
     const sx = this.camX || 0, sz = this.camZ || 0;
@@ -477,15 +502,6 @@ export class MatchView {
         if (ahead > 1.2) { const w = clamp((ahead - 1.2) / 4, 0, 1); lx = lerp(lx, b.x, w * 0.5); ly = lerp(ly, clamp(b.y, 0.5, 2.4), w * 0.3); lz = lerp(lz, b.z, w * 0.35); }
       }
       l.set(lx, ly, lz);
-      return { t, l, zoom };
-    }
-    // 3인칭(어깨 너머, 사용자 2026-11-09): 주인공 어깨 뒤(뒤 2.3m, 옆 0.8m, 높이 2m)에서 앞쪽 코트를 조금 내려다본다.
-    // 포핸드로 칠 공이면 오른쪽 어깨, 백핸드로 칠 공이면 왼쪽 어깨(tpsSide, 상대가 치는 순간 정해지고 공이 오는 동안 넘어간다).
-    // 주인공은 화면 아래 한쪽에 뒷모습으로 크게 보인다. 천천히 따라가고, 공 쪽으로는 아주 조금만 돈다
-    if (this.view3 === 'tps' && this.players) {
-      const p = this.players[0], bx2 = this.ball.visible ? this.ball.position.x : p.x, sd = this.tpsSide || 1;
-      t.set(clamp(p.x + 0.8 * sd, -9.8, 9.8), 2.0, Math.min(p.z + 2.3, 20.5));
-      l.set(p.x * 0.55 + 0.35 * sd + bx2 * 0.18, 0.2, p.z - 12);   // 세로 화면에서 하늘보다 코트가 많이 보이게 조금 내려다본다
       return { t, l, zoom };
     }
     switch (this.camMode) {
@@ -958,14 +974,15 @@ export class MatchView {
     }
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
     // 카메라: 시점이 바뀌면 부드럽게 따라가고, 끊어 보여 줄 때(cut)는 바로 옮긴다
-    const { t: target, l: look, zoom } = this.camTarget();
+    const tpsOn = this.view3 === 'tps' && this.players;
+    const { t: target, l: look, zoom } = tpsOn ? this.tpsCamera(dt) : this.camTarget();
     // 1인칭·3인칭은 멀미가 나지 않게 몸을 부드럽게 따라가고(급히 멈추거나 방향을 틀어도 화면은 미끄러지듯), 고개는 더 천천히 돌린다.
     // 줌 펀치와 화면 흔들림은 중계에서만 쓴다
     const tv = !this.view3 || this.view3 === 'tv', ease1 = tc => 1 - Math.exp(-dt / tc);
-    const kp = this.camCut ? 1 : this.view3 === 'fpv' ? ease1(0.12) : this.view3 === 'tps' ? ease1(0.35) : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
+    const kp = this.camCut || tpsOn ? 1 : this.view3 === 'fpv' ? ease1(0.12) : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
     this.camera.position.lerp(target, kp);
     this.curLook = this.curLook || look.clone();
-    this.curLook.lerp(look, this.camCut ? 1 : this.view3 === 'fpv' ? ease1(0.35) : this.view3 === 'tps' ? ease1(0.5) : 0.12);
+    this.curLook.lerp(look, this.camCut || tpsOn ? 1 : this.view3 === 'fpv' ? ease1(0.35) : 0.12);
     // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다(중계만)
     this.fovCur += (zoom - this.fovCur) * (this.camCut ? 1 : 0.09);
     const fov = this.viewFov() * this.fovCur * (1 - (tv ? this.punch : 0));
