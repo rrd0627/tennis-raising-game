@@ -206,6 +206,31 @@ export function matchEnd(winner, games, comeback, st) {
   return L;
 }
 
+// 이 포인트의 무게(중계의 절정 연출용). L: 0 보통, 1 큰 포인트, 2 브레이크 포인트·늦은 듀스·타이브레이크 막판, 3 매치 포인트.
+// for: 누구에게 기회인지(0 우리, 1 상대, null 둘 다). prevScore는 이 포인트 전 점수
+export function stakesOf(pt, prevScore) {
+  const games = pt.games, tb = games[0] === 6 && games[1] === 6;
+  const p = pointsOf(prevScore, tb), sTeam = pt.shots[0].h < 2 ? 0 : 1;
+  const mp = matchPointFor(p, games, tb);
+  if (mp !== null) return { L: 3, for: mp, label: '매치 포인트' };
+  if (!pt.big) return { L: 0, for: null, label: '' };
+  if (pt.label === '브레이크 포인트') return { L: 2, for: 1 - sTeam, label: pt.label };
+  if (tb && Math.max(...p) >= 5) return { L: 2, for: null, label: '타이브레이크' };
+  if (pt.label === '듀스 결정 포인트' && games[0] + games[1] >= 8) return { L: 2, for: null, label: pt.label };
+  return { L: 1, for: null, label: pt.label || '' };
+}
+// 이 게임으로 경기가 끝날 수 있나(승부처). games는 게임 시작 때 스코어
+export function climaxOf(games) {
+  const tb = games[0] === 6 && games[1] === 6;
+  const can = [0, 1].map(t => { const g = games[t] + 1, o = games[1 - t]; return tb || (g >= 6 && g - o >= 2) || g === 7; });
+  return { tb, can, on: can[0] || can[1] };
+}
+export function climaxLine(c, st) {
+  if (c.tb || !c.on) return [];   // 타이브레이크는 beforePoint가 부른다
+  if (c.can[0]) return [C(pick([`승리까지 한 게임! ${teamName(st, 0)}, 이 게임을 가져가면 경기가 끝납니다.`, `${teamName(st, 0)}, 여기서 끝낼 수 있을까요. 승부처입니다!`]), 3)];
+  return [C(pick([`${teamName(st, 1)}가 이 게임을 가져가면 경기가 끝납니다. 버텨야 합니다.`, '벼랑 끝입니다. 이 게임을 내주면 끝입니다.']), 3)];
+}
+
 // 넷 코드(중계 연출)
 export function netCordLine() { return [C(pick(['넷! 테이프를 맞고 넘어갑니다!', '넷 코드! 행운이 따릅니다.']), 2)]; }
 // 흐름이 넘어갈 때

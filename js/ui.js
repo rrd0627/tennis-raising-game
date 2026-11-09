@@ -342,6 +342,7 @@ const SCREENS = {
   match: () => `
     <div class="screen match">
       <div class="stage" id="stage">
+        <div class="vign"></div><div class="lbox"><i></i><i></i></div><div class="speedl"></div>
         <div class="scorebox" id="scorebox"></div>
         <div class="biglabel" id="biglabel"></div>
         <div class="cutin" id="cutin"></div>
@@ -1045,6 +1046,8 @@ async function runMatch() {
   const tr = S.tournament;
   const { human, npc, opp } = G.buildTeams(S, tr);
   const sim = new MatchSim(human, npc, { startFatigue: G.startFatigue(S, tr) });
+  // 확인 링크의 '승부처' 장면: 정해 둔 게임 스코어에서 시작한다(확인용 저장에서만)
+  if (tr.checkGames) { sim.games = [...tr.checkGames]; sim.gameNo = tr.checkGames[0] + tr.checkGames[1]; }
   M = { sim, speed: 1, hl: true, skipGame: false, skipMatch: false, opp, minDiff: 0, chased: false, shine: {}, flow: 0, flowSide: 0, surge: [null, null] };
   const stage = document.getElementById('stage');
   const players = [
@@ -1072,6 +1075,13 @@ async function runMatch() {
     M.curServe = sim.serveTeam;
     surgeCheck(sim);
     const g = sim.playGame();
+    // 승부처: 이 게임으로 경기가 끝날 수 있으면 화면 가장자리가 어두워지고 캐스터가 알린다
+    const clx = CMT_TEXT.climaxOf(g.points[0].games);
+    if (M.view && !M.skipGame) {
+      document.getElementById('stage')?.classList.toggle('climax', clx.on);
+      if (clx.on && !clx.tb && !M.climax) { flash('승부처!'); say(CMT_TEXT.climaxLine(clx, M.cmt)); }
+    }
+    M.climax = clx.on;
     for (const [pi, pt] of g.points.entries()) {
       const lastOfGame = pi === g.points.length - 1;
       for (const sh of pt.shots) for (const c of sh.call || []) if (c.j < 2) { const k = c.j + '|' + c.t, o = M.shine[k] || (M.shine[k] = { j: c.j, t: c.t, g: c.g, n: 0 }); o.n++; o.g = c.g; }
@@ -1082,17 +1092,25 @@ async function runMatch() {
         setLog(pt.text, false); say([{ who: 'c', text: pt.text, pri: 0 }]); hud(pt); await sleep(450); continue;
       }
       if (M.skipGame || !M.view) { if (!M.view && !M.skipGame) { setLog(pt.text); hud(pt); await sleep(380 / M.speed); } continue; }
-      if (pt.big && pt.label) showBig(pt.label);
       const prevScore = pi ? g.points[pi - 1].score : '0 - 0';
-      await M.view.playPoint(pt, {
+      // 포인트의 무게: 클수록 화면 위아래가 가려지고(레터박스) 가장자리가 어두워진다. 매치 포인트는 맥박처럼 뛴다
+      const stk = CMT_TEXT.stakesOf(pt, prevScore);
+      setStakes(stk.L);
+      const hooks = {
         onCutin: cutin,
         onShot: (s, i) => { rallyTick(s, i, pt); shotCard(s, pt.shots[i + 1]); if (i === 0) say(CMT_TEXT.beforePoint(pt, prevScore, M.cmt)); say(CMT_TEXT.duringShot(s, i, pt, M.cmt)); },
         onNetCord: () => say(CMT_TEXT.netCordLine()),
-      });
+      };
+      // 서버를 당겨 찍은 화면 위에, 큰 포인트면 두 사람의 얼굴이 마주 선다
+      await M.view.beginPoint(pt.shots[0]);
+      if (stk.L >= 2 && !M.skipGame) await faceOff(pt, stk);
+      if (pt.big && (stk.label || pt.label)) showBig(stk.label || pt.label);
+      await M.view.playRest(pt, 0, hooks);
       say(CMT_TEXT.afterPoint(pt, M.cmt));
       crowd(pt);
+      if (stk.L >= 1 || lastOfGame) reaction(pt);
       setLog(pt.text, false); hud(pt);
-      hideBig();
+      hideBig(); setStakes(0); heat(0);
     }
     if (M.view) M.view.speed = M.speed;
     M.skipGame = M.skipMatch;
@@ -1113,6 +1131,7 @@ async function runMatch() {
   }
   if (M.view && !M.skipMatch) {
     say(CMT_TEXT.matchEnd(sim.winner, sim.games, sim.winner === 0 && M.minDiff <= -2, M.cmt));
+    await finale(sim.winner === 0);
     for (let t = 0; t < 70 && (CMT.cur || CMT.q.length); t++) await sleep(100);
   }
   cmtReset();
@@ -1200,6 +1219,8 @@ function crowd(pt) {
   else if (us) words = pt.big ? ['좋아!!', '그렇지!'] : r < 0.5 ? ['좋아!', '그렇지!'] : null;
   else if (pt.by < 2 && !shot) words = pt.big ? ['괜찮아!', '아…'] : r < 0.4 ? ['괜찮아!', '다음!'] : null;
   else if (shot && r < 0.4) words = ['오…'];
+  // 맞은편과 양옆 관중석이 들썩인다
+  M.view?.cheerCrowd(us ? (pt.big ? 1.5 : shot ? 0.9 : 0.5) : pt.big && shot ? 0.6 : 0);
   if (!words) return;
   // 같은 말이 겹치지 않게 섞어서 앞에서부터
   const pool = [...words].sort(() => Math.random() - 0.5), n = Math.min(pool.length, pt.big ? 3 : 1 + (r < 0.5 ? 1 : 0));
@@ -1282,9 +1303,89 @@ function rallyTick(s, i, pt) {
   const el = document.getElementById('rally');
   if (!el) return;
   const n = pt.shots.slice(0, i + 1).filter(x => x.res !== 'fault').length;
+  heat(n);
   if (n < 4) { el.className = 'rally'; return; }
   el.textContent = `랠리 ${n}`;
-  el.className = 'rally show'; void el.offsetWidth; el.className = 'rally show bump';
+  const hot = n >= 9 ? ' hot2' : n >= 6 ? ' hot1' : '';
+  el.className = 'rally show' + hot; void el.offsetWidth; el.className = 'rally show bump' + hot;
+  if (n === 10) flash('대 랠리!', 1000);
+}
+// ── 절정 연출(카메라는 match3d.js) ──
+// 랠리가 길어질수록 화면 가장자리에 속도선이 생기고 짙어진다
+function heat(n) {
+  const st = document.getElementById('stage');
+  if (!st) return;
+  st.classList.toggle('heat1', n >= 6 && !M?.skipGame);
+  st.classList.toggle('heat2', n >= 9 && !M?.skipGame);
+  if (!n) { const r = document.getElementById('rally'); if (r) r.className = 'rally'; }
+}
+// 포인트의 무게(0~3): 레터박스, 가장자리 어둠, 매치 포인트의 맥박
+function setStakes(L) {
+  const st = document.getElementById('stage');
+  if (!st) return;
+  for (const k of [1, 2, 3]) st.classList.toggle(`l${k}`, L === k && !M?.skipGame);
+}
+// 선수 얼굴. 같은 얼굴은 다시 그리지 않는다
+function facePic(j, expr) {
+  const key = j + ':' + expr;
+  M.faces = M.faces || {};
+  if (M.faces[key]) return M.faces[key];
+  const k = M.opp.seed % 997, partner = S.tournament.partner;
+  const p = j === 0 ? portraitURL('player', PLAYER_LOOK, expr) : j === 1 ? portraitURL(partner, lookOf(partner), expr) : portraitURL(`opp:${k}:${j - 2}`, oppLook(k, j - 2), expr);
+  return (M.faces[key] = p);
+}
+// 큰 포인트(브레이크·매치 포인트 등)의 서브 전: 우리 쪽과 상대 쪽 두 사람의 얼굴이 마주 선다(누르면 넘김).
+// 포인트 사이에만 나오고, 랠리 중에는 멈추지 않는다
+async function faceOff(pt, stk) {
+  const stage = document.getElementById('stage');
+  if (!stage) return;
+  const sv = pt.shots[0].h, rv = pt.shots.find(s => !/^serve/.test(s.type))?.h ?? pt.shots[0].victim;
+  const us = sv < 2 ? sv : rv != null && rv < 2 ? rv : 0, them = sv >= 2 ? sv : rv != null && rv >= 2 ? rv : 2;
+  const [a, b] = await Promise.all([facePic(us, 'focus'), facePic(them, 'focus')]);
+  const P = M.sim.P, role = j => (j === sv ? '서브' : j === rv ? '리턴' : '');
+  const sub = stk.for === 0 ? '찬스!' : stk.for === 1 ? '위기!' : '';
+  const el = document.createElement('div');
+  el.className = `faceoff l${stk.L} ${stk.for === 0 ? 'f-us' : stk.for === 1 ? 'f-them' : ''}`;
+  el.innerHTML = `<div class="fo-side us"><img src="${a}"><b>${esc(P[us].name)}</b><small>${role(us)}</small></div>
+    <div class="fo-side them"><img src="${b}"><b>${esc(P[them].name)}</b><small>${role(them)}</small></div>
+    <div class="fo-mid"><b>${esc(stk.label)}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  stage.appendChild(el);
+  await new Promise(res => { const t = setTimeout(res, (stk.L >= 3 ? 1500 : 1100) / Math.max(1, M.speed)); el.addEventListener('click', () => { clearTimeout(t); res(); }); });
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 300);
+}
+// 포인트가 끝난 뒤 그 포인트를 가른 사람의 얼굴과 한마디(멈추지 않고 다음 포인트와 겹쳐도 된다)
+async function reaction(pt) {
+  const stage = document.getElementById('stage');
+  if (!stage || M.skipGame) return;
+  const w = pt.winner, byShot = ['win', 'ace', 'poach', 'center'].includes(pt.endType);
+  const j = pt.by >= 0 ? pt.by : w * 2, jt = j < 2 ? 0 : 1, won = jt === w;
+  const expr = won ? (byShot ? 'joy' : 'smile') : byShot ? 'focus' : 'down';
+  const words = won ? (byShot ? ['좋았어!', '됐다!', '나이스!'] : ['좋아!', '휴…']) : byShot ? ['잘 쳤다…', '다음!'] : ['아…!', '아깝다…', '미안!'];
+  const src = await facePic(j, expr);
+  if (!M) return;
+  const el = document.createElement('div');
+  el.className = `react ${jt === 0 ? 'us' : 'them'} ${won ? 'won' : 'lost'} ${pt.big ? 'big' : ''}`;
+  el.innerHTML = `<img src="${src}"><span>${words[Math.floor(Math.random() * words.length)]}</span>`;
+  stage.appendChild(el);
+  setTimeout(() => el.remove(), 1500);
+}
+// 경기 끝: '게임 셋!' 큰 글자, 이기면 꽃가루와 주인공의 웃는 얼굴, 지면 고개 숙인 얼굴(누르면 넘김)
+async function finale(won) {
+  const stage = document.getElementById('stage');
+  if (!stage) return;
+  stage.classList.remove('climax'); setStakes(0); heat(0);
+  M.view?.cheerCrowd(won ? 1.6 : 0.4);
+  const src = await facePic(0, won ? 'joy' : 'down');
+  const el = document.createElement('div');
+  el.className = `finale ${won ? 'win' : 'lose'}`;
+  const cols = ['#ff6f9c', '#ffd23f', '#7ee0b5', '#6c8cff', '#ffffff', '#ff9f43'];
+  const bits = won ? Array.from({ length: 36 }, (_, i) => `<i style="left:${(Math.random() * 100).toFixed(1)}%;background:${cols[i % cols.length]};animation-delay:${(Math.random() * 0.6).toFixed(2)}s;animation-duration:${(1.6 + Math.random() * 1.2).toFixed(2)}s"></i>`).join('') : '';
+  el.innerHTML = `${bits}<img src="${src}"><b>게임 셋!</b><small>${won ? '승리!' : '패배'}</small>`;
+  stage.appendChild(el);
+  await new Promise(res => { const t = setTimeout(res, 2400); el.addEventListener('click', () => { clearTimeout(t); res(); }); });
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 300);
 }
 async function cutin(s) {
   const c = document.getElementById('cutin');

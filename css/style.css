@@ -613,3 +613,71 @@ table.rep td:first-child { text-align: left; color: var(--muted); }
 #newver { position: fixed; left: 50%; top: calc(36px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 60; white-space: nowrap; background: var(--pink); color: #fff; font-weight: 800; font-size: 13px; padding: 9px 16px; border-radius: 99px; box-shadow: 0 3px 12px rgba(0, 0, 0, .35); }
 /* 대사가 다 나오기 전에는 넘김 표시와 선택지를 숨긴다 (자리는 지킨다) */
 .typing .tapnext, .typing .picks { visibility: hidden; }
+
+/* ── 중계의 절정 연출 (ui.js setStakes, heat, faceOff, reaction, finale) ── */
+.vign, .lbox, .speedl { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.vign { opacity: 0; transition: opacity .45s; background: radial-gradient(ellipse at 50% 50%, transparent 50%, rgba(10, 6, 22, .78) 100%); }
+.stage.climax .vign { opacity: .45; }
+.stage.l2 .vign { opacity: .62; }
+.stage.l3 .vign { opacity: .75; animation: heartbeat 1.05s ease-in-out infinite; }
+@keyframes heartbeat { 0%, 100% { opacity: .58; } 12% { opacity: .92; } 24% { opacity: .64; } 36% { opacity: .86; } }
+.lbox i { position: absolute; left: 0; right: 0; height: 0; background: #0b0d14; transition: height .35s ease; }
+.lbox i:first-child { top: 0; }
+.lbox i:last-child { bottom: 0; }
+.stage.l2 .lbox i { height: 6%; }
+.stage.l3 .lbox i { height: 9%; }
+.speedl { inset: -30%; opacity: 0; transition: opacity .3s; background: repeating-conic-gradient(from 0deg at 50% 50%, transparent 0deg 4.2deg, rgba(255, 255, 255, .6) 4.2deg 5deg); -webkit-mask: radial-gradient(ellipse at 50% 50%, transparent 36%, #000 62%); mask: radial-gradient(ellipse at 50% 50%, transparent 36%, #000 62%); animation: speedspin .5s steps(4) infinite; }
+.stage.heat1 .speedl { opacity: .3; }
+.stage.heat2 .speedl { opacity: .55; }
+@keyframes speedspin { to { transform: rotate(5deg); } }
+.rally.hot1 { background: #ff9f1c; color: #2a1600; font-size: 19px; }
+.rally.hot2 { background: #ff3b3b; color: #fff; font-size: 22px; box-shadow: 0 0 14px rgba(255, 59, 59, .75); }
+/* 큰 포인트 서브 전: 두 사람이 마주 선다 */
+.faceoff { position: absolute; inset: 0; z-index: 4; cursor: pointer; overflow: hidden; }
+.faceoff.out { opacity: 0; transition: opacity .25s; }
+.fo-side { position: absolute; top: 0; bottom: 0; width: 62%; display: flex; flex-direction: column; gap: 4px; padding: 0 16px; color: #fff; }
+.fo-side.us { left: 0; align-items: flex-start; justify-content: flex-start; padding-top: 13%; background: linear-gradient(90deg, rgba(255, 111, 156, .97), rgba(255, 140, 178, .9)); clip-path: polygon(0 0, 100% 0, 62% 100%, 0 100%); animation: foL .3s ease-out; }
+.fo-side.them { right: 0; align-items: flex-end; justify-content: flex-end; padding-bottom: 13%; text-align: right; background: linear-gradient(90deg, rgba(80, 130, 200, .9), rgba(58, 111, 176, .97)); clip-path: polygon(38% 0, 100% 0, 100% 100%, 0 100%); animation: foR .3s ease-out; }
+.fo-side img { width: 104px; height: 104px; border-radius: 50%; border: 4px solid #fff; background: #fff; object-fit: cover; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); }
+.fo-side b { font-family: var(--f-display); font-weight: 400; font-size: 18px; text-shadow: 0 2px 0 rgba(0, 0, 0, .2); }
+.fo-side small { font-size: 12px; font-weight: 800; opacity: .95; }
+.fo-mid { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-8deg); text-align: center; animation: foMid .38s cubic-bezier(.2, 1.6, .4, 1); }
+.fo-mid b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 34px; color: #fff; white-space: nowrap; letter-spacing: 1px; text-shadow: 0 3px 0 #10131c, 3px 0 0 #10131c, -3px 0 0 #10131c, 0 -3px 0 #10131c, 2px 2px 0 #10131c, -2px -2px 0 #10131c, 2px -2px 0 #10131c, -2px 2px 0 #10131c, 0 6px 10px rgba(0, 0, 0, .4); }
+.faceoff.l3 .fo-mid b { font-size: 40px; color: #ffd23f; }
+.fo-mid small { display: inline-block; margin-top: 4px; font-family: var(--f-display); font-size: 18px; padding: 2px 14px; border-radius: 999px; background: #ffd23f; color: #3a2a00; }
+.faceoff.f-them .fo-mid small { background: #10131c; color: #fff; }
+@keyframes foL { from { transform: translateX(-100%); } }
+@keyframes foR { from { transform: translateX(100%); } }
+@keyframes foMid { from { transform: translate(-50%, -50%) rotate(-8deg) scale(2.4); opacity: 0; } }
+/* 포인트가 끝난 뒤 그 포인트를 가른 사람의 얼굴과 한마디 */
+.react { position: absolute; bottom: 46px; z-index: 3; display: flex; align-items: center; gap: 6px; pointer-events: none; animation: reactin 1.5s ease-out forwards; }
+.react.us { left: 10px; }
+.react.them { right: 10px; flex-direction: row-reverse; }
+.react img { width: 68px; height: 68px; border-radius: 50%; border: 3px solid var(--pink); background: #fff; object-fit: cover; box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
+.react.them img { border-color: #3a6fb0; }
+.react.big img { width: 86px; height: 86px; }
+.react span { background: #fff; color: var(--ink); font-family: var(--f-display); font-size: 17px; padding: 5px 12px; border-radius: 14px; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); white-space: nowrap; }
+.react.won.us span { background: var(--pink); color: #fff; }
+.react.won.them span { background: #3a6fb0; color: #fff; }
+@keyframes reactin { 0% { opacity: 0; transform: translateY(16px) scale(.8); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+/* 경기 끝 */
+.finale { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; overflow: hidden; cursor: pointer; background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, .25), rgba(255, 111, 156, .85)); animation: vsin .35s ease-out; }
+.finale.lose { background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, .08), rgba(36, 46, 66, .88)); }
+.finale.out { opacity: 0; transition: opacity .25s; }
+.finale img { width: 118px; height: 118px; border-radius: 50%; border: 5px solid #fff; background: #fff; object-fit: cover; animation: bigin .4s cubic-bezier(.2, 1.6, .4, 1); position: relative; z-index: 1; }
+.finale b { font-family: var(--f-display); font-weight: 400; font-size: 46px; color: #fff; position: relative; z-index: 1; text-shadow: 0 3px 0 #10131c, 3px 0 0 #10131c, -3px 0 0 #10131c, 0 -3px 0 #10131c, 2px 2px 0 #10131c, -2px -2px 0 #10131c, 2px -2px 0 #10131c, -2px 2px 0 #10131c; animation: stampbig .45s cubic-bezier(.2, 1.6, .4, 1); }
+.finale small { font-family: var(--f-display); font-size: 22px; color: #fff; position: relative; z-index: 1; }
+.finale.win small { color: #ffd23f; text-shadow: 0 2px 0 rgba(0, 0, 0, .25); }
+.finale i { position: absolute; top: -14px; width: 8px; height: 14px; border-radius: 2px; animation-name: confetti; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes confetti { to { transform: translateY(620px) rotate(720deg); } }
+@keyframes stampbig { from { transform: scale(2.4) rotate(-6deg); opacity: 0; } }
+/* 컷인: 속도선과 번쩍임 */
+.cutin { overflow: hidden; height: 23%; }
+.cutin::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(100deg, transparent 0 22px, rgba(255, 111, 156, .38) 22px 25px); background-size: 50px 100%; animation: cutlines .25s linear infinite; }
+.cutin.them::before { background-image: repeating-linear-gradient(100deg, transparent 0 22px, rgba(58, 111, 176, .38) 22px 25px); }
+.cutin::after { content: ''; position: absolute; inset: 0; background: #fff; animation: cutflash .28s ease-out forwards; pointer-events: none; }
+.cutin img, .cutin b { position: relative; z-index: 1; }
+.cutin img { height: 120%; border: 3px solid #fff; box-shadow: 0 3px 12px rgba(0, 0, 0, .25); }
+.cutin b { font-size: 31px; letter-spacing: 1px; }
+@keyframes cutlines { to { background-position: 50px 0; } }
+@keyframes cutflash { from { opacity: .95; } to { opacity: 0; } }

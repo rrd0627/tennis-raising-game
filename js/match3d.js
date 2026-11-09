@@ -87,6 +87,10 @@ export class MatchView {
     this.camLook = new THREE.Vector3(0, 0, -1.4);
     this.camMode = 'main';
     this.camCut = true;   // 첫 장면부터 중계 자리에서 시작한다(가까이서 날아 들어오지 않게)
+    this.tension = 0;     // 랠리가 길어질수록 카메라가 다가간다(0~1)
+    this.fovCur = 1;      // 화각 배율: 서브를 당겨 찍을 때 좁아지고, 세게 칠 때 잠깐 좁아진다(줌 펀치)
+    this.punch = 0;
+    this.crowdAmp = 0;    // 관중이 들썩이는 크기
     this.fitCamera(w, h);
     this.buildWorld();
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8ff3a }));
@@ -112,7 +116,8 @@ export class MatchView {
     const needW = COURT_W + 2.2;
     const hfov = 2 * Math.atan(needW / 2 / dist);
     const vfov = 2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180 / Math.PI;
-    this.camera.fov = Math.max(40, Math.min(70, vfov));
+    this.baseFov = Math.max(40, Math.min(70, vfov));
+    this.camera.fov = this.baseFov * (this.fovCur || 1);
     this.camera.updateProjectionMatrix();
   }
   resize() {
@@ -215,9 +220,17 @@ export class MatchView {
     const p = pc.getContext('2d');
     const cols = ['#ff7aa2', '#6c8cff', '#ffd166', '#7ad3a8', '#c58cff', '#ff8f6b'];
     for (let i = 0; i < 18; i++) { const x = 14 + i * 28 + (i % 2) * 4; p.fillStyle = cols[i % cols.length]; p.beginPath(); p.roundRect(x - 11, 52, 22, 44, 8); p.fill(); p.fillStyle = '#ffe0cc'; p.beginPath(); p.arc(x, 40, 11, 0, Math.PI * 2); p.fill(); p.fillStyle = '#3a2a22'; p.beginPath(); p.arc(x, 35, 11, Math.PI, 0); p.fill(); }
-    const crowd = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.canvasTex(pc), transparent: true }));
-    crowd.scale.set(9, 1.7, 1); crowd.position.set(5.5, 0.85, -21); this.scene.add(crowd);
+    // 관중은 맞은편 펜스 뒤와 양옆에 앉아 있고, 좋은 포인트가 나면 들썩인다(cheerCrowd)
+    const crowdTex = this.canvasTex(pc);
+    this.crowds = [];
+    for (const [x, y, z, w, h] of [[5.5, 0.85, -21, 9, 1.7], [-2.6, 0.8, -21.4, 6.5, 1.5], [-12.8, 0.8, -8.5, 6, 1.3], [12.8, 0.8, -7.5, 6, 1.3]]) {
+      const crowd = new THREE.Sprite(new THREE.SpriteMaterial({ map: crowdTex, transparent: true }));
+      crowd.scale.set(w, h, 1); crowd.position.set(x, y, z); this.scene.add(crowd);
+      this.crowds.push({ sp: crowd, y, ph: this.crowds.length * 1.7 });
+    }
   }
+  // 관중이 들썩인다. k: 크기(0.5 작게, 1 보통, 1.5 크게)
+  cheerCrowd(k = 1) { this.crowdAmp = Math.max(this.crowdAmp, k); }
 
   // players: [{look, facing, name}] ×4 (0,1 = 주인공 팀, 화면 아래쪽)
   async setPlayers(players) {
@@ -426,20 +439,26 @@ export class MatchView {
     this.fx.push({ obj: m, life: 1.2 });
   }
 
-  // 시점: main(중계), low(우리 서브 뒤 낮게), far(상대 서브 쪽으로 당겨서), high(긴 랠리를 높이서), push(결정적인 공 쪽으로 다가감)
+  // 시점(중계 카메라는 늘 우리 코트 뒤쪽에 있다. 우리 팀 그림이 뒷모습이라서):
+  // main(중계, 랠리가 길어질수록 다가감), serveUs(우리 서버 바로 뒤 낮게), serveThem(맞은편 서버를 망원으로 당겨서),
+  // push(결정적인 공 쪽으로 다가감). 서브는 당겨 찍다가 치는 순간 중계 자리로 빠진다
   setCamera(mode, cut = false) { this.camMode = mode; if (cut) this.camCut = true; }
   camTarget() {
     const bx = this.ball.visible ? this.ball.position.x : 0, bz = this.ball.visible ? this.ball.position.z : 0;
+    const sx = this.camX || 0, sz = this.camZ || 0;
     const t = new THREE.Vector3(), l = new THREE.Vector3();
+    let zoom = 1;
     switch (this.camMode) {
-      case 'side': t.set(15, 3.2, bz * 0.5); l.set(0, 1, bz * 0.6); break;
-      case 'low': t.set((this.camX || 0) * 0.6, 4.6, 19.5); l.set((this.camX || 0) * 0.2, 1.0, 2); break;
-      case 'far': t.set(bx * 0.2, 13.5, 21); l.set(bx * 0.3, 0, -3.2); break;
-      case 'high': t.set(bx * 0.15, 24, 21); l.set(0, 0, 0.8); break;
+      case 'serveUs': t.set(sx * 0.8, 3.3, sz + 5.6); l.set(sx * 0.3, 1.1, -2.5); zoom = 0.9; break;
+      case 'serveThem': t.set(sx * 0.35, 6.4, 15); l.set(sx * 0.85, 1.2, sz); zoom = 0.5; break;
       case 'push': t.copy(this.camBase); t.x += bx * 0.18; t.lerp(new THREE.Vector3(bx, 4.5, bz + 9.5), 0.3); l.set(bx * 0.5, 0.6, bz * 0.5 - 0.7); break;
-      default: t.copy(this.camBase); t.x += bx * 0.18; l.copy(this.camLook); l.x = t.x * 0.6;
+      default: {
+        t.copy(this.camBase); t.x += bx * 0.18; l.copy(this.camLook); l.x = t.x * 0.6;
+        const k = ease(clamp(this.tension, 0, 1));
+        if (k > 0) { t.lerp(new THREE.Vector3(bx * 0.32, 10.2, 18.2), k * 0.75); l.lerp(new THREE.Vector3(bx * 0.45, 0.5, bz * 0.18 - 1.2), k * 0.6); }
+      }
     }
-    return { t, l };
+    return { t, l, zoom };
   }
 
   // 포인트 시작: 모두 시작 자리에 선 채로 보이고, 잠깐 숨을 고른 뒤 서브한다
@@ -457,7 +476,10 @@ export class MatchView {
     this.placeAll();
     this.rollId = (this.rollId || 0) + 1;
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
-    this.setCamera('main', this.camMode === 'low' || this.camMode === 'high');
+    // 서버를 당겨 찍으며 시작한다(중계처럼 끊어서). 치는 순간 중계 자리로 빠진다
+    this.tension = 0;
+    this.camX = s0.from[0]; this.camZ = s0.from[1];
+    this.setCamera(s0.h < 2 ? 'serveUs' : 'serveThem', true);
     await this.wait(first ? 0.25 : 0.45);
   }
 
@@ -493,7 +515,11 @@ export class MatchView {
   async playShot(s, next, prev) {
     const isServe = s.type === 'serve' || s.type === 'serve2';
     const side = (s.h < 2 ? 1 : -1) * (s.to[0] - s.from[0]);
-    if (isServe) await this.tossBall(s);
+    if (isServe) {
+      await this.tossBall(s);
+      // 치는 순간 당겨 찍던 화면이 중계 자리로 빠진다(에이스면 공 쪽으로)
+      this.setCamera(!next && s.res === 'ace' ? 'push' : 'main');
+    }
     // 스윙: 타구 순간 몸을 돌리고 잠깐 뒤 준비 자세로. 쭉 뻗어 받은 공이면 몸이 더 기운다
     const hitter = this.players[s.h];
     const stretched = prev?.mv?.[s.h]?.k === 'reach';
@@ -506,6 +532,10 @@ export class MatchView {
     if (stepOf[stance]) { const [sx, sz] = stepOf[stance]; this.runTo(s.h, hitter.x + sx, hitter.z + sz * fz, 0, 2.6); }
     const v = s.v || BALL_V[s.type] || 16;
     const dur = flightTime(s.from, s.to, s.bounce, v);
+    // 줌 펀치: 세게 친 공, 스매시, 끝내는 공은 맞는 순간 화면이 확 당겨졌다 돌아온다
+    const ends = !next && ['win', 'ace', 'poach', 'center'].includes(s.res);
+    if (s.type === 'smash' || ends) this.punch = Math.max(this.punch, 0.13);
+    else if (v >= 13) this.punch = Math.max(this.punch, 0.06);
     const [h0, h1] = ballHeights(s, next);
     const arc = s.res === 'net' || s.res === 'fault' || s.res === 'df' ? null : ballArc(s.from, s.to, s.bounce, s.type, h0, h1, v, true);
     // 위너가 맞는 사람 곁을 지나가면 가만히 보내지 않는다. 어떻게든 라켓을 대거나(틱) 몸에 맞는다(퍽). 점수는 그대로 친 쪽 것이다
@@ -655,14 +685,14 @@ export class MatchView {
       const s = shots[i];
       const isServe = s.type === 'serve' || s.type === 'serve2';
       const decisive = i === lastIdx && pt.big && ['win', 'ace', 'poach', 'center'].includes(s.res);
-      // 시점: 큰 포인트의 서브는 서버 쪽에서, 긴 랠리는 높이서, 끝내는 공은 다가가서
+      // 시점: 서브는 서버를 당겨 찍고(치는 순간 빠짐), 랠리가 길어질수록 다가가고, 끝내는 공은 공 쪽으로
       const n = shots.slice(0, i + 1).filter(x => x.res !== 'fault').length;
       let cam = 'main';
-      if (i === lastIdx && ['win', 'ace', 'poach'].includes(s.res)) cam = 'push';
-      else if (isServe && pt.big) cam = s.h < 2 ? 'low' : 'far';
-      else if (n >= 8) cam = 'high';
-      this.camX = s.from[0];
-      if (cam !== this.camMode) this.setCamera(cam, cam === 'low');
+      if (isServe) cam = s.h < 2 ? 'serveUs' : 'serveThem';
+      else if (i === lastIdx && ['win', 'poach'].includes(s.res)) cam = 'push';
+      this.tension = isServe ? 0 : clamp((n - 3) / 7, 0, 1);
+      this.camX = s.from[0]; this.camZ = s.from[1];
+      if (cam !== this.camMode) this.setCamera(cam, isServe);
       // 큰 포인트의 첫 서브 전에는 공을 튀기며 숨을 고른다
       if (i === 0 && isServe && pt.big) await this.bounceBall(s);
       // 큰 순간과 기술은 컷인으로 알린다. 경기는 멈추거나 느려지지 않는다
@@ -784,13 +814,24 @@ export class MatchView {
     }
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
     // 카메라: 시점이 바뀌면 부드럽게 따라가고, 끊어 보여 줄 때(cut)는 바로 옮긴다
-    const { t: target, l: look } = this.camTarget();
+    const { t: target, l: look, zoom } = this.camTarget();
     const kp = this.camCut ? 1 : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
     this.camera.position.lerp(target, kp);
     this.curLook = this.curLook || look.clone();
     this.curLook.lerp(look, this.camCut ? 1 : 0.12);
+    // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다
+    this.fovCur += (zoom - this.fovCur) * (this.camCut ? 1 : 0.09);
+    const fov = this.baseFov * this.fovCur * (1 - this.punch);
+    if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+    this.punch = this.punch > 0.002 ? this.punch * Math.pow(0.004, dt) : 0;
     this.camCut = false;
     this.camera.lookAt(this.curLook);
+    // 관중: 좋은 포인트가 나면 들썩인다
+    if (this.crowds) {
+      this.crowdT = (this.crowdT || 0) + dt;
+      for (const c of this.crowds) c.sp.position.y = c.y + (this.crowdAmp > 0.01 ? Math.max(0, Math.sin(this.crowdT * 17 + c.ph)) * 0.22 * Math.min(1.2, this.crowdAmp) : 0);
+      this.crowdAmp = this.crowdAmp > 0.01 ? this.crowdAmp * Math.pow(0.12, dt) : 0;
+    }
     // 스매시·에이스·위너 때 화면이 살짝 흔들린다
     let off = null;
     if (this.shake > 0.004) {

@@ -34,6 +34,7 @@ export const CHECKS = [
 
   { group: '3. 첫 대회 (7주차)', label: '낯선 코트와 낯선 상대', hint: '오늘의 환경과 작전 4개를 보세요. 경기를 해 봐도 돼요.', make: (s, G) => { ready(s); strong(s); const tr = G.checkTour(s, 'local', null, 'clay'); const o = tr.group.opps[0]; if (o) { o.arch = 'control'; o.archName = '컨트롤형'; o.styles = ['컨트롤형']; } return 'tourIntro'; } },
   { group: '3. 첫 대회 (7주차)', label: '공격형을 끈질기게 뒤집기', hint: '로브로 천천히를 고르고 시작하세요. 초반에 밀리다 뒤집으면 큰 글자가 떠요. 결과는 매번 달라요.', make: (s, G) => { ready(s); strong(s, 48); const tr = G.checkTour(s, 'local'); for (const o of [...tr.group.opps, ...tr.ko]) { o.pids = null; o.arch = 'attack'; o.archName = '공격형'; o.styles = ['공격형']; o.rating = 45; } return 'tourIntro'; } },
+  { group: '3. 첫 대회 (7주차)', label: '승부처: 5 대 5에서 시작하는 경기', hint: '경기를 시작하면 5 대 5부터 해요. 승부처 글자, 큰 포인트 전 두 사람의 얼굴, 매치 포인트의 레터박스와 맥박, 점수 뒤 표정, 긴 랠리의 속도선, 경기 끝 "게임 셋!"을 보세요. 전체 1×로 보면 서브 당겨 찍기도 매 포인트 보여요.', make: (s, G) => { ready(s); strong(s, 45); const tr = G.checkTour(s, 'local'); tr.checkGames = [5, 5]; return 'tourIntro'; } },
   { group: '3. 첫 대회 (7주차)', label: '우승 뒤 축하 자리', hint: '화면을 눌러 넘기세요. 결과, 축하 자리, 대회에서 남은 것 순서예요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'W'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '4강 입상 뒤 축하 자리', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'SF'); return 'tourResult'; } },
   { group: '3. 첫 대회 (7주차)', label: '예선 탈락 뒤', hint: '축하 자리 없이 지나가요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
