@@ -1002,6 +1002,13 @@ export class MatchView {
       if (tv) { off = new THREE.Vector3((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake, 0); this.camera.position.add(off); }
       this.shake *= Math.pow(0.02, dt);
     } else this.shake = 0;
+    // 1인칭·어깨 너머: 카메라 바로 앞에 온 다른 선수(대개 파트너)는 화면을 가리지 않게 반투명하게
+    if (this.players) for (let i = 1; i < 4; i++) {
+      const q = this.players[i], m = q.sp.material;
+      const d = Math.hypot(q.x - this.camera.position.x, q.z - this.camera.position.z);
+      const op = tv ? 1 : clamp((d - 1.0) / 1.6, 0.18, 1);
+      if (Math.abs(m.opacity - op) > 0.01) { m.transparent = true; m.opacity = op; }
+    }
     this.renderer.render(this.scene, this.camera);
     if (off) this.camera.position.sub(off);
   }
