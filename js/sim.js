@@ -265,7 +265,9 @@ export class MatchSim {
     else u = [n1 >= 0 ? 1 : -1, (u2 - 0.5) * 0.8 * rz];
     const n = Math.hypot(u[0], u[1]); u = [u[0] / n, u[1] / n];
     const [z0, z1] = volley ? [1.3, 5.6] : [6.5, 13.4];
-    const fit = c => [clamp(c[0], side > 0 ? -1.6 : -6.4, side > 0 ? 6.4 : 1.6), rz * clamp(c[1] * rz, z0, z1)];
+    // 받는 곳. 바운드 없이 받는 공(발리)은 옆줄 안쪽에서 받는다(옆줄 밖에서 발리하면 나가는 공을 친 것처럼 보인다, 사용자 2026-11-09)
+    const xw = volley ? 5.25 : 6.4;
+    const fit = c => [clamp(c[0], side > 0 ? -1.6 : -xw, side > 0 ? xw : 1.6), rz * clamp(c[1] * rz, z0, z1)];
     let C = P, B = null, T = 0.9;
     for (let it = 0; it < 3; it++) {
       const want = dir === 'body' ? Math.min(0.6, f * 0.6) : f * reachOf(body, T, late);

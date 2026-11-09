@@ -461,15 +461,26 @@ export class MatchView {
   // main(중계, 랠리가 길어질수록 다가감), serveUs(우리 서버 바로 뒤 낮게), serveThem(맞은편 서버를 망원으로 당겨서),
   // push(결정적인 공 쪽으로 다가감). 서브는 당겨 찍다가 치는 순간 중계 자리로 빠진다
   setCamera(mode, cut = false) { this.camMode = mode; if (cut) this.camCut = true; }
-  // 3인칭(어깨 너머, 사용자 2026-11-09): 카메라가 주인공 머리 바로 뒤 어깨 위에 붙어 있다(뒤 1.5m, 옆 0.5m, 머리보다 0.35m 위).
+  // 3인칭(어깨 너머, 사용자 2026-11-09): 카메라가 주인공 머리 뒤 어깨 위에 붙어 있다(뒤 2.6m, 옆 0.75m, 머리보다 0.55m 위).
   // 시선은 공을 따라간다(공이 아주 가까이 오면 앞쪽도 같이 본다). 카메라는 머리를 축으로 그 시선 방향 뒤에 서므로
   // 주인공은 늘 화면 아래 한쪽 같은 자리에 있다. 포핸드로 칠 공이면 오른쪽 어깨, 백핸드는 왼쪽(tpsSide).
   // 멀미가 나지 않게 고개는 부드럽게(0.22초, 초당 140도까지), 위아래는 덜, 뒤로는 돌아보지 않는다. 몸이 뛰어올라도 카메라는 들썩이지 않는다
+  // 우리 공이 네트를 넘어가면 공은 더 볼 필요가 없다. 상대 전위가 튀어나오는지 본다(사용자 2026-11-09).
+  // 상대가 둘 다 뒤에 있으면 받을 사람을 본다. 아니면 null(공을 본다)
+  watchOpp() {
+    if (!this.players || !this.ball.visible || this.curHitTeam !== 0 || this.ball.position.z > -0.3) return null;
+    const a = this.players[2], b = this.players[3], net = Math.abs(a.z) <= Math.abs(b.z) ? a : b;
+    if (Math.abs(net.z) < 7) return [net.x, net.z];
+    const r = this.players[this.curRecv] || (Math.abs(this.ball.position.x - a.x) < Math.abs(this.ball.position.x - b.x) ? a : b);
+    return [r.x, r.z];
+  }
   tpsCamera(dt) {
-    const p = this.players[0], HEAD = 1.65, BACK = 1.5, SIDE = 0.5, UP = 0.35;
-    // 바라볼 곳
+    const p = this.players[0], HEAD = 1.65, BACK = 2.6, SIDE = 0.75, UP = 0.55;
+    // 바라볼 곳: 오는 공은 공을, 우리 공이 네트를 넘어가면 상대 전위(튀어나오는지)를 본다
     let gx = p.x * 0.3, gy = 0.9, gz = -11;
-    if (this.ball.visible) {
+    const away = this.watchOpp();
+    if (away) { gx = away[0]; gy = 1.1; gz = away[1]; }
+    else if (this.ball.visible) {
       const b = this.ball.position, w = clamp((Math.hypot(b.x - p.x, b.z - p.z) - 1.5) / 3, 0, 1);
       gx = lerp(gx, b.x, w); gy = lerp(gy, b.y, w); gz = lerp(gz, b.z, w);
     }
@@ -497,7 +508,9 @@ export class MatchView {
       const p = this.players[0];
       t.set(p.x, 1.55, p.z);
       let lx = p.x * 0.35, ly = 1.0, lz = p.z - 12;
-      if (this.ball.visible) {
+      const away = this.watchOpp();
+      if (away) { lx = lerp(lx, away[0], 0.6); ly = 1.1; lz = lerp(lz, away[1], 0.6); }
+      else if (this.ball.visible) {
         const b = this.ball.position, ahead = p.z - b.z;
         if (ahead > 1.2) { const w = clamp((ahead - 1.2) / 4, 0, 1); lx = lerp(lx, b.x, w * 0.5); ly = lerp(ly, clamp(b.y, 0.5, 2.4), w * 0.3); lz = lerp(lz, b.z, w * 0.35); }
       }
@@ -635,6 +648,7 @@ export class MatchView {
   // 샷 하나 재생. next = 다음 타자의 샷 (다음 샷을 알아야 그 선수가 공 옆에 선다), prev = 이 공을 보낸 샷
   async playShot(s, next, prev) {
     const isServe = s.type === 'serve' || s.type === 'serve2';
+    this.curHitTeam = s.h < 2 ? 0 : 1; this.curRecv = next && next.h !== s.h ? next.h : -1;
     const side = (s.h < 2 ? 1 : -1) * (s.to[0] - s.from[0]);
     if (isServe) {
       await this.tossBall(s);
