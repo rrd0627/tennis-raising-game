@@ -65,10 +65,13 @@ function ramp(steps) {
   t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
   return t;
 }
+// 경기장과 같은 툰 재질(코트의 네트 기둥 등에도 쓴다)
+let sharedRamp = null;
+export function toonMaterial(color) { sharedRamp ||= ramp([0.42, 0.72, 1.0]); return new THREE.MeshToonMaterial({ color, gradientMap: sharedRamp }); }
 const tex = (c, srgb = true) => { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
 
 // 그림자를 드리우는 것(지붕, 전광판, 기둥, 조명탑, 나무)과 받는 것
-const CASTS = /^(roof|beam|column|navy|fascia|pole|leaf|trunk|white|concrete|awning|ball|backdrop|wall)/;
+const CASTS = /^(roof|beam|column|navy|fascia|pole|leaf|trunk|white|concrete|awning|ball|backdrop|wall|fence)/;
 const NO_RECV = /^(outline|cloud|hill|light|screen)/;
 const SMOOTH = /^(leaf|cloud|hill|ball)/, UNLIT = /^(outline|light|screen)/;
 

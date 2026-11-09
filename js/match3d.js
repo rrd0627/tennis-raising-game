@@ -4,13 +4,14 @@ import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
 import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
-import { loadStadium, stadiumData, buildStadium } from './stadium.js';
+import { loadStadium, stadiumData, buildStadium, toonMaterial } from './stadium.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
+// 코트 색은 빛을 받지 않고 그대로 보인다(툰풍으로 밝게, 2026-11-09). wear: 많이 밟는 자리 색, stripe: 잔디 깎은 줄
 const SURFACE = {
-  turf: { court: '#3f9d63', out: '#2f7d4c', line: '#ffffff', grain: 'rgba(255,255,255,0.05)' },
-  hard: { court: '#3a6fb0', out: '#3d8a5a', line: '#ffffff', grain: 'rgba(255,255,255,0.03)' },
-  clay: { court: '#c8693a', out: '#b85e33', line: '#f5efe6', grain: 'rgba(0,0,0,0.05)' },
+  turf: { court: '#58c46a', out: '#47b05c', line: '#ffffff', grain: 'rgba(255,255,255,0.05)', wear: 'rgba(236,214,160,0.2)', stripe: 0.07 },
+  hard: { court: '#4a8fe0', out: '#4fb784', line: '#ffffff', grain: 'rgba(255,255,255,0.035)', wear: 'rgba(255,255,255,0.09)' },
+  clay: { court: '#e8894d', out: '#de7f46', line: '#fffaf2', grain: 'rgba(120,40,10,0.06)', wear: 'rgba(150,60,20,0.16)', brush: true },
 };
 
 const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, RUN_CAP = 8.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
@@ -186,43 +187,87 @@ export class MatchView {
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 5, far: 160 });
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
-    // 바깥 바닥
-    const outC = document.createElement('canvas'); outC.width = outC.height = 128;
-    const oc = outC.getContext('2d'); oc.fillStyle = S.out; oc.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 900; i++) { oc.fillStyle = S.grain; oc.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(22.1, 40.7), new THREE.MeshLambertMaterial({ map: this.canvasTex(outC, [6, 10]) }));
-    outer.rotation.x = -Math.PI / 2; outer.position.z = 0.85; this.scene.add(outer);
-    // 코트 + 라인
+    // 바닥: 벽 안쪽 전체(바깥 바닥)와 코트를 칠한다. 빛을 받지 않는 그림이라 고른 색이 그대로 밝게 보인다.
+    // 경기장 그림자(벽, 펜스 기둥)는 그 위에 그림자만 그리는 판으로 얹는다
+    const FX0 = -11.05, FX1 = 11.05, FZ0 = -19.5, FZ1 = 21.2;
+    let seed = 99; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const paint = (g, W, H, x0, z0, x1, z1, court) => {
+      const PX = x => (x - x0) / (x1 - x0) * W, PZ = z => (z - z0) / (z1 - z0) * H, m = W / (x1 - x0);
+      g.fillStyle = S.out; g.fillRect(0, 0, W, H);
+      if (court) { g.fillStyle = S.court; g.fillRect(PX(-COURT_W / 2), PZ(-COURT_L / 2), COURT_W * m, COURT_L * m); }
+      // 잔디는 깎은 줄무늬(코트와 바깥이 이어지게 실제 자리로 1.6m마다)
+      if (S.stripe) for (let k = Math.floor(z0 / 1.6); k * 1.6 < z1; k++) if (k % 2 === 0) { g.fillStyle = `rgba(255,255,255,${S.stripe})`; g.fillRect(0, PZ(k * 1.6), W, 1.6 * m); }
+      // 클레이는 솔로 쓴 결
+      if (S.brush) for (let i = 0; i < W * H / 900; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(255,230,200,0.10)' : 'rgba(140,50,10,0.07)'; g.fillRect(rnd() * W, rnd() * H, 8 + rnd() * 40, 1.2); }
+      for (let i = 0; i < W * H / 60; i++) { g.fillStyle = S.grain; g.fillRect(rnd() * W, rnd() * H, 2, 2); }
+      // 많이 밟는 자리: 베이스라인 가운데 뒤, 서비스 라인 근처
+      const wear = (x, z, rx, rz) => {
+        const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx * m); gr.addColorStop(0, S.wear); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.save(); g.translate(PX(x), PZ(z)); g.scale(1, rz / rx); g.fillStyle = gr; g.fillRect(-rx * m, -rx * m, 2 * rx * m, 2 * rx * m); g.restore();
+      };
+      if (court) for (const sz of [-1, 1]) { wear(0, sz * 12.6, 2.6, 1.0); wear(-1.6, sz * 12.3, 1.4, 0.7); wear(1.6, sz * 12.3, 1.4, 0.7); wear(0, sz * 6.6, 1.6, 1.0); }
+      // 햇빛: 먼 쪽이 살짝 밝고 뿌옇다
+      const sh = g.createLinearGradient(0, PZ(-20), 0, PZ(21)); sh.addColorStop(0, 'rgba(255,255,255,0.08)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = sh; g.fillRect(0, 0, W, H);
+      // 벽 밑은 조금 어둡다(닿는 그늘)
+      if (!court) {
+        const band = (a, b, horiz, k) => {
+          const gr = horiz ? g.createLinearGradient(0, PZ(a), 0, PZ(b)) : g.createLinearGradient(PX(a), 0, PX(b), 0);
+          gr.addColorStop(0, `rgba(20,40,100,${k})`); gr.addColorStop(1, 'rgba(20,40,100,0)'); g.fillStyle = gr;
+          if (horiz) g.fillRect(0, Math.min(PZ(a), PZ(b)), W, Math.abs(PZ(b) - PZ(a))); else g.fillRect(Math.min(PX(a), PX(b)), 0, Math.abs(PX(b) - PX(a)), H);
+        };
+        band(FX0, FX0 + 0.7, false, 0.2); band(FX1, FX1 - 0.7, false, 0.2); band(FZ0, FZ0 + 0.9, true, 0.26); band(FZ1, FZ1 - 0.7, true, 0.2);
+      }
+    };
+    const oW = 512, oH = Math.round(512 * (FZ1 - FZ0) / (FX1 - FX0));
+    const outC = document.createElement('canvas'); outC.width = oW; outC.height = oH;
+    paint(outC.getContext('2d'), oW, oH, FX0, FZ0, FX1, FZ1, false);
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.MeshBasicMaterial({ map: this.canvasTex(outC) }));
+    outer.rotation.x = -Math.PI / 2; outer.position.z = (FZ0 + FZ1) / 2; this.scene.add(outer);
+    // 코트: 복식 라인 안쪽만 코트 색이고, 1m 둘레는 바깥 색으로 이어진다
     const cw = 512, ch = Math.round(512 * (COURT_L + 2) / (COURT_W + 2));
     const cc = document.createElement('canvas'); cc.width = cw; cc.height = ch;
-    const c = cc.getContext('2d');
-    c.fillStyle = S.court; c.fillRect(0, 0, cw, ch);
-    for (let i = 0; i < 4000; i++) { c.fillStyle = S.grain; c.fillRect(Math.random() * cw, Math.random() * ch, 2, 2); }
-    const sx = cw / (COURT_W + 2), sz = ch / (COURT_L + 2);
-    const X = x => (x + (COURT_W + 2) / 2) * sx, Z = z => (z + (COURT_L + 2) / 2) * sz;
-    c.strokeStyle = S.line; c.lineWidth = 0.05 * sx * 1.6;
-    const hw = COURT_W / 2, hs = SINGLES_W / 2, hl = COURT_L / 2;
-    c.strokeRect(X(-hw), Z(-hl), X(hw) - X(-hw), Z(hl) - Z(-hl));
-    c.beginPath();
-    for (const x of [-hs, hs]) { c.moveTo(X(x), Z(-hl)); c.lineTo(X(x), Z(hl)); }
-    for (const z of [-SERVICE, SERVICE]) { c.moveTo(X(-hs), Z(z)); c.lineTo(X(hs), Z(z)); }
-    c.moveTo(X(0), Z(-SERVICE)); c.lineTo(X(0), Z(SERVICE));
-    for (const z of [-hl, hl]) { c.moveTo(X(0), Z(z)); c.lineTo(X(0), Z(z - Math.sign(z) * 0.2)); }
-    c.stroke();
-    const court = new THREE.Mesh(new THREE.PlaneGeometry(COURT_W + 2, COURT_L + 2), new THREE.MeshLambertMaterial({ map: this.canvasTex(cc) }));
+    paint(cc.getContext('2d'), cw, ch, -(COURT_W + 2) / 2, -(COURT_L + 2) / 2, (COURT_W + 2) / 2, (COURT_L + 2) / 2, true);
+    const courtTex = this.canvasTex(cc); courtTex.anisotropy = 8;
+    const court = new THREE.Mesh(new THREE.PlaneGeometry(COURT_W + 2, COURT_L + 2), new THREE.MeshBasicMaterial({ map: courtTex }));
     court.rotation.x = -Math.PI / 2; court.position.y = 0.005; this.scene.add(court);
-    // 네트
+    // 라인: 그림이 아니라 얇은 판이라 가까이서 봐도 또렷하다
+    const hw = COURT_W / 2, hs = SINGLES_W / 2, hl = COURT_L / 2, LW = 0.06, BW = 0.08;
+    const rects = [[-hw, -hl, -hw + LW, hl], [hw - LW, -hl, hw, hl], [-hs, -hl, -hs + LW, hl], [hs - LW, -hl, hs, hl],
+      [-hw, -hl, hw, -hl + BW], [-hw, hl - BW, hw, hl], [-hs, -SERVICE - LW / 2, hs, -SERVICE + LW / 2], [-hs, SERVICE - LW / 2, hs, SERVICE + LW / 2],
+      [-LW / 2, -SERVICE, LW / 2, SERVICE], [-LW / 2, -hl, LW / 2, -hl + 0.2], [-LW / 2, hl - 0.2, LW / 2, hl]];
+    const lp = [];
+    for (const [x0, z0, x1, z1] of rects) lp.push(x0, 0, z0, x0, 0, z1, x1, 0, z1, x0, 0, z0, x1, 0, z1, x1, 0, z0);
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+    const lines = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: S.line }));
+    lines.position.y = 0.009; this.scene.add(lines);   // 높이를 몇 mm씩 띄워 겹치지 않게 한다(바닥 0, 코트 0.005, 라인 0.009, 그림자 0.011, 발밑 그림 0.012~)
+    // 경기장 그림자(벽, 펜스 기둥, 네트 기둥)만 바닥에 얹는다
+    const shadeFloor = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.ShadowMaterial({ color: 0x1a2a66, opacity: 0.28, depthWrite: false }));
+    shadeFloor.rotation.x = -Math.PI / 2; shadeFloor.position.set(0, 0.011, (FZ0 + FZ1) / 2); shadeFloor.receiveShadow = true; shadeFloor.renderOrder = 1;
+    this.scene.add(shadeFloor);
+    // 네트: 윗줄은 가운데 0.914m, 기둥 쪽 1.07m로 처진다(공이 네트에 걸리는 높이 js/ball.js와 같다). 가운데 띠, 흰 테이프
+    const netH = x => 0.914 + 0.156 * Math.min(1, (x / 6.4) ** 2);
     const nc = document.createElement('canvas'); nc.width = 64; nc.height = 64;
-    const n = nc.getContext('2d'); n.strokeStyle = 'rgba(20,20,20,0.85)'; n.lineWidth = 2;
+    const n = nc.getContext('2d'); n.strokeStyle = 'rgba(24,30,64,0.9)'; n.lineWidth = 2;
     for (let i = 0; i <= 64; i += 8) { n.beginPath(); n.moveTo(i, 0); n.lineTo(i, 64); n.stroke(); n.beginPath(); n.moveTo(0, i); n.lineTo(64, i); n.stroke(); }
-    const net = new THREE.Mesh(new THREE.PlaneGeometry(COURT_W + 1.8, 0.92), new THREE.MeshBasicMaterial({ map: this.canvasTex(nc, [40, 3]), transparent: true, side: THREE.DoubleSide, depthWrite: false }));
-    net.position.set(0, 0.46, 0); this.scene.add(net);
-    const tape = new THREE.Mesh(new THREE.BoxGeometry(COURT_W + 1.8, 0.07, 0.03), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-    tape.position.set(0, 0.93, 0); this.scene.add(tape);
+    const NW = COURT_W + 1.8, netG = new THREE.PlaneGeometry(NW, 1, 32, 1), np = netG.attributes.position;
+    for (let i = 0; i < np.count; i++) np.setY(i, np.getY(i) > 0 ? netH(np.getX(i)) - 0.035 : 0);
+    netG.computeBoundingSphere();
+    const net = new THREE.Mesh(netG, new THREE.MeshBasicMaterial({ map: this.canvasTex(nc, [40, 3]), transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    this.scene.add(net);
+    const tapeG = new THREE.PlaneGeometry(NW, 0.07, 32, 1), tp = tapeG.attributes.position;
+    for (let i = 0; i < tp.count; i++) tp.setY(i, netH(tp.getX(i)) + tp.getY(i));
+    tapeG.computeBoundingSphere();
+    const white = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const tape = new THREE.Mesh(tapeG, white); tape.castShadow = true; this.scene.add(tape);
+    const strap = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.914), white); strap.position.set(0, 0.457, 0.004); this.scene.add(strap);
     for (const x of [-(COURT_W / 2 + 0.9), COURT_W / 2 + 0.9]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.07, 8), new THREE.MeshLambertMaterial({ color: 0x334433 }));
-      post.position.set(x, 0.53, 0); this.scene.add(post);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 10), toonMaterial(new THREE.Color('#24407e')));
+      post.position.set(x, 0.55, 0); post.castShadow = true; this.scene.add(post);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.06, 10), toonMaterial(new THREE.Color('#ffffff')));
+      cap.position.set(x, 1.12, 0); this.scene.add(cap);
     }
+    this.renderer.shadowMap.needsUpdate = true;
     // 코트 바깥: Blender로 만든 툰풍 경기장(js/stadium.js). 아직 못 불러왔으면 예전 배경을 두었다가 바꾼다
     if (stadiumData()) this.addStadium(stadiumData());
     else {
