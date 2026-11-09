@@ -2,7 +2,7 @@
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
-import { BALL_V, flightTime, standOf, closeCall, h01 } from './rally.js';
+import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
@@ -300,7 +300,7 @@ export class MatchView {
     // 어깨 너머 시점에서는 주인공 머리 위 표시가 카메라 바로 앞이라 너무 크다. 작게, 머리 옆으로
     const near = this.view3 === 'tps';
     me.emote.scale.set(near ? 0.28 : 0.7, near ? 0.28 : 0.7, 1);
-    if (near) me.emote.position.set(me.x - 0.35, 1.95, me.z);
+    if (near) me.emote.position.set(me.x - 0.35 * (this.tpsSide || 1), 1.95, me.z);
     if (this.auras?.[0]) this.auras[0].visible = !hide;
   }
   // 작전이 힘을 내는 동안 발밑에 빛나는 고리(우리 팀 분홍, 상대 파랑). null이면 끈다
@@ -479,12 +479,13 @@ export class MatchView {
       l.set(lx, ly, lz);
       return { t, l, zoom };
     }
-    // 3인칭(어깨 너머, 사용자 2026-11-09): 주인공 오른쪽 어깨 뒤(뒤 2.3m, 옆 0.8m, 높이 1.9m)에서 앞쪽 코트를 본다.
-    // 주인공은 화면 왼쪽 아래에 뒷모습으로 크게 보인다. 천천히 따라가고, 공 쪽으로는 아주 조금만 돈다
+    // 3인칭(어깨 너머, 사용자 2026-11-09): 주인공 어깨 뒤(뒤 2.3m, 옆 0.8m, 높이 2m)에서 앞쪽 코트를 조금 내려다본다.
+    // 포핸드로 칠 공이면 오른쪽 어깨, 백핸드로 칠 공이면 왼쪽 어깨(tpsSide, 상대가 치는 순간 정해지고 공이 오는 동안 넘어간다).
+    // 주인공은 화면 아래 한쪽에 뒷모습으로 크게 보인다. 천천히 따라가고, 공 쪽으로는 아주 조금만 돈다
     if (this.view3 === 'tps' && this.players) {
-      const p = this.players[0], bx2 = this.ball.visible ? this.ball.position.x : p.x;
-      t.set(clamp(p.x + 0.8, -9.8, 9.8), 1.9, Math.min(p.z + 2.3, 20.5));
-      l.set(p.x * 0.55 + 0.35 + bx2 * 0.18, 1.0, p.z - 12);
+      const p = this.players[0], bx2 = this.ball.visible ? this.ball.position.x : p.x, sd = this.tpsSide || 1;
+      t.set(clamp(p.x + 0.8 * sd, -9.8, 9.8), 2.0, Math.min(p.z + 2.3, 20.5));
+      l.set(p.x * 0.55 + 0.35 * sd + bx2 * 0.18, 0.2, p.z - 12);   // 세로 화면에서 하늘보다 코트가 많이 보이게 조금 내려다본다
       return { t, l, zoom };
     }
     switch (this.camMode) {
@@ -517,6 +518,7 @@ export class MatchView {
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
     // 서버를 당겨 찍으며 시작한다(중계처럼 끊어서). 치는 순간 중계 자리로 빠진다
     this.tension = 0;
+    this.tpsSide = 1;   // 어깨 너머 시점은 오른쪽 어깨에서 시작
     this.camX = s0.from[0]; this.camZ = s0.from[1];
     this.setCamera(s0.h < 2 ? 'serveUs' : 'serveThem', true);
     await this.wait(first ? 0.25 : 0.45);
@@ -745,6 +747,11 @@ export class MatchView {
     }
     // 나가는 공을 쳐 버렸다(판단 실수)
     if (s.outBall) this.later(Math.max(0, dur - 0.06), () => this.popText(s.to[0], 2.0, s.to[1], '아웃 볼!', 'out'));
+    // 어깨 너머 시점: 주인공이 받을 공이면 포핸드는 오른쪽 어깨, 백핸드는 왼쪽 어깨로 넘어간다(머리 위로 치는 공은 그대로)
+    if (next && next.h === 0 && next.from) {
+      const me = this.players[0], wing = wingOf(next.type, 0, next.from, [me.x, me.z]);
+      if (wing !== 'over') this.tpsSide = wing === 'bh' ? -1 : 1;
+    }
     // 받을 선수는 공이 닿기 직전에 준비 자세를 잡는다
     if (next && next.h !== undefined && next.h !== s.h) {
       const pv = this.players[next.h];
