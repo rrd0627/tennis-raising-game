@@ -2,7 +2,8 @@
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
-import { BALL_V, flightTime, standOf, ballArc, closeCall, ballHeights, h01 } from './rally.js';
+import { BALL_V, flightTime, standOf, closeCall, h01 } from './rally.js';
+import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 const SURFACE = {
@@ -382,16 +383,17 @@ export class MatchView {
   // 공 시간으로 sec초 뒤에 할 일
   later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, step: () => { }, done: () => { if (this.alive) fn(); } }); }
 
-  // 공 비행: from/to = [x,z]. 높이는 중력으로(js/rally.js ballArc), 시간은 엔진과 같다. v = 공 빠르기(엔진이 샷 품질로 정함)
-  // opt: { skim: 네트 테이프를 스치게, onBounce(), onNet([x,y,z]) }
-  flyBall(from, to, bounce, type, h0, h1, overNet = true, v = 0, opt = {}) {
-    const arc = ballArc(from, to, bounce, type, h0, h1, v || BALL_V[type] || 16, overNet, !!opt.skim);
+  // 공 비행: 실제 물리로 푼 궤적(js/ball.js)을 그대로 그린다. 시간은 엔진과 같다
+  // opt: { onBounce(), onNet([x,y,z]), cutAt: 이 시각에 멈춘다 }
+  flyArc(arc, opt = {}) {
     this.ball.visible = true; this.ballShadow.visible = true;
     this.trailPts = [];
-    // 꼬리 색으로 회전을 보여 준다: 탑스핀 주황, 슬라이스·드롭 하늘색, 나머지 흰색
-    this.trail.material.color.setHex(/drive|passing|^return$|topspin/.test(type) ? 0xffb07a : /slice|chip|drop/.test(type) ? 0x9fd8ff : 0xffffff);
-    const tail = Math.round(clamp(2 + (v || 16) * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
-    this.trail.material.opacity = clamp(0.3 + (v || 16) * 0.016, 0.4, 0.75);
+    // 꼬리 색으로 회전을 보여 준다: 탑스핀 주황, 백스핀(슬라이스·드롭) 하늘색, 회전이 적으면 흰색
+    const rpm = arc.rpm || 0;
+    this.trail.material.color.setHex(rpm > 600 ? 0xffb07a : rpm < -600 ? 0x9fd8ff : 0xffffff);
+    const v = arc.kmh / 4.6;
+    const tail = Math.round(clamp(2 + v * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
+    this.trail.material.opacity = clamp(0.3 + v * 0.016, 0.4, 0.75);
     const end = opt.cutAt ? Math.min(arc.dur, opt.cutAt) : arc.dur;
     this.rollId = (this.rollId || 0) + 1;
     return new Promise(res => {
@@ -400,7 +402,7 @@ export class MatchView {
         t: 0, dur: end,
         step: k => {
           const t = k * end;
-          if (bounce && !bounced && t >= arc.t1 - 1e-4) { bounced = true; this.mark(bounce); opt.onBounce?.(); }
+          if (opt.onBounce && !bounced && t >= arc.t1 - 1e-4) { bounced = true; opt.onBounce(); }
           if (opt.onNet && !netted && arc.tn > 0 && t > arc.tn) { netted = true; const [nx, nz, ny] = arc.at(arc.tn); opt.onNet([nx, ny, nz]); }
           const [x, z, y] = arc.at(t);
           this.ball.position.set(x, Math.max(0.11, y), z);
@@ -417,9 +419,8 @@ export class MatchView {
 
   // 떨어진 공은 그 자리에 멈추지 않는다. 튀고 구르다 펜스에 막힌다(포인트가 끝나 공이 사라지거나 다음 공을 치면 멈춘다)
   rollOn(fl, maxDur = 1.6) {
-    if (!fl?.arc) return;
-    const { arc, end } = fl, a = arc.at(Math.max(0, end - 0.02)), b = arc.at(end);
-    let [x, z, y] = b, vx = (b[0] - a[0]) / 0.02, vz = (b[1] - a[1]) / 0.02, vy = (b[2] - a[2]) / 0.02;
+    if (!fl?.arc?.end) return;
+    const st = Float64Array.from(fl.arc.end), surf = this.surface;
     const id = this.rollId = (this.rollId || 0) + 1;
     let last = 0;
     this.tweens.push({
@@ -428,16 +429,8 @@ export class MatchView {
         if (id !== this.rollId || !this.ball.visible) return;
         const t = k * maxDur;
         let dt = t - last; last = t;
-        while (dt > 1e-6) {
-          const h = Math.min(dt, 1 / 120); dt -= h;
-          vy -= 9.8 * h; y += vy * h;
-          if (y <= 0) { y = 0; if (vy < 0) { vy = -vy * 0.55; vx *= 0.75; vz *= 0.75; if (vy < 0.6) vy = 0; } }
-          if (y === 0 && vy === 0) { const f = Math.max(0, 1 - 1.6 * h); vx *= f; vz *= f; }
-          x += vx * h; z += vz * h;
-          if (Math.abs(x) > 10.85) { x = Math.sign(x) * 10.85; vx = -vx * 0.25; }
-          if (z < -19.35) { z = -19.35; vz = -vz * 0.25; }
-          if (z > 21) { z = 21; vz = 0; }
-        }
+        while (dt > 1e-6) { const h = Math.min(dt, 1 / 120); dt -= h; stepFree(st, h, surf); }
+        const [x, y, z] = st;
         this.ball.position.set(x, Math.max(0.11, y), z);
         this.ballShadow.position.set(x, 0.013, z);
         this.trailPts.push(new THREE.Vector3(x, Math.max(0.11, y), z));
@@ -560,13 +553,14 @@ export class MatchView {
     const stepOf = { '뉴트럴': [0, 0.42], '크로스': [0.28 * -lx, 0.32], '세미오픈': [0, 0.18], '오픈': [0.22 * lx, 0] };
     if (stepOf[stance]) { const [sx, sz] = stepOf[stance]; this.runTo(s.h, hitter.x + sx, hitter.z + sz * fz, 0, 2.6); }
     const v = s.v || BALL_V[s.type] || 16;
-    const dur = flightTime(s.from, s.to, s.bounce, v);
+    // 공은 실제 물리로 푼 궤적으로 간다(js/ball.js). 포인트를 시작할 때 차례로 풀어 둔다
+    const fl = flyOf(s) || solveShot(s, s.res === 'fault' || s.res === 'df' ? null : next, /^serve/.test(s.type) ? 2.6 : 1.0, this.surface);
+    const dur = fl.dur;
     // 줌 펀치: 세게 친 공, 스매시, 끝내는 공은 맞는 순간 화면이 확 당겨졌다 돌아온다
     const ends = !next && ['win', 'ace', 'poach', 'center'].includes(s.res);
     if (s.type === 'smash' || ends) this.punch = Math.max(this.punch, 0.13);
     else if (v >= 13) this.punch = Math.max(this.punch, 0.06);
-    const [h0, h1] = ballHeights(s, next);
-    const arc = s.res === 'net' || s.res === 'fault' || s.res === 'df' ? null : ballArc(s.from, s.to, s.bounce, s.type, h0, h1, v, true);
+    const arc = s.res === 'net' || s.res === 'fault' || s.res === 'df' ? null : fl;
     // 위너가 맞는 사람 곁을 지나가면 가만히 보내지 않는다. 어떻게든 라켓을 대거나(틱) 몸에 맞는다(퍽). 점수는 그대로 친 쪽 것이다
     let touch = null;
     if ((s.res === 'win' || s.res === 'poach') && arc && s.victim !== undefined && s.mv?.[s.victim]) {
@@ -574,8 +568,7 @@ export class MatchView {
       if (q && q.d < 2.8 && h01([s.from[0] + q.p[0] * 3.1, s.from[1] + q.p[1] * 1.7]) < 0.4) touch = { j: s.victim, ...q, kind: (s.dir === 'body' && h01([q.p[0] * 5.1, q.p[1] * 2.3]) < 0.5) || ((s.type === 'smash' || s.res === 'poach') && q.d < 1.0) ? 'body' : 'frame' };
     }
     {
-      const hy = isServe || s.type === 'smash' ? 2.5 : /volley/.test(s.type) ? 1.25 : 0.95;
-      if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], hy, s.from[1], v);
+      if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], fl.h0, s.from[1], v);
       if (s.type === 'smash' || s.res === 'ace') this.shake = Math.max(this.shake, 0.16);
       else if (s.res === 'win' || s.res === 'poach') this.shake = Math.max(this.shake, v >= 13 ? 0.1 : 0.06);
       for (const c of s.call || []) { if (c.end) this.later(Math.max(0, dur - 0.08), () => this.popCall(c)); else this.popCall(c); }
@@ -656,9 +649,11 @@ export class MatchView {
       this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { if (pv.crouch) return; this.setPose(next.h, prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12); } });
     }
     if (s.res === 'net') {
-      const netPt = [lerp(s.from[0], s.to[0], 0.9), 0.15 * Math.sign(s.from[1])];
-      await this.flyBall(s.from, netPt, null, s.type, h0, 0.6, false, v);
-      await this.flyBall(netPt, [netPt[0], netPt[1] + 0.6 * Math.sign(s.from[1])], null, 'dropshot', 0.6, 0.1, false);
+      // 네트에 걸린 공은 앞으로 가던 힘을 잃고 떨어져 튄다
+      const f = await this.flyArc(fl);
+      this.flash(f.arc.at(f.end)[0], 0.6, f.arc.at(f.end)[1], 6);
+      this.rollOn(f, 1.0);
+      await this.wait(0.35);
     } else {
       const opt = {};
       // 라인에 걸친 위너·에이스, 아슬아슬하게 나간 공
@@ -668,14 +663,13 @@ export class MatchView {
       else if (cc === 'out') opt.onBounce = () => this.popText(B[0], 0.3, B[1], '아슬아슬!', 'out');
       else if (s.res === 'out') opt.onBounce = () => this.popText(B[0], 0.3, B[1], '아웃!', 'out');
       // 넷 코드: 쭉 뻗어 받아야 하는 어려운 공이 가끔 네트 테이프를 스치고 넘어간다(연출만)
-      if (s.res === 'in' && next && !isServe && !/lob|moon|drop/.test(s.type) && s.mv?.[next.h]?.k === 'reach' && Math.random() < 0.08) {
-        opt.skim = true;
+      if (this.skims?.has(s)) {
         opt.onNet = ([x, y, z]) => { this.flash(x, y, z, 12); this.popText(x, y + 0.4, z, '넷!', 'net'); this.shake = Math.max(this.shake, 0.05); this.hooks?.onNetCord?.(s); };
       }
-      if (!touch) { const fl = await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, opt); if (!next || s.res === 'fault') this.rollOn(fl, s.res === 'fault' ? 0.55 : 1.6); }
+      if (!touch) { const f = await this.flyArc(fl, opt); if (!next || s.res === 'fault') this.rollOn(f, s.res === 'fault' ? 0.55 : 1.6); }
       else {
         // 라켓(틱)이나 몸(퍽)에 맞고 튕겨 나간다
-        await this.flyBall(s.from, s.to, s.bounce, s.type, h0, h1, true, v, { ...opt, cutAt: touch.t });
+        await this.flyArc(fl, { ...opt, cutAt: touch.t });
         s.touched = touch.kind;
         const [x, z, y] = arc.at(touch.t), [ux, uz] = heading(arc, touch.t), r = h01([x * 7.3, z * 3.9]);
         this.flash(x, Math.max(0.4, y), z, 8);
@@ -684,8 +678,8 @@ export class MatchView {
         let to, type, sp2;
         if (touch.kind === 'body') { to = [x + ux * 0.9 + (r - 0.5) * 0.8, z + uz * 0.9]; type = 'dropshot'; sp2 = 3.5; }
         else { const a = (r < 0.5 ? 1 : -1) * (0.9 + r * 0.5), L = 4 + r * 2.5; to = [x + (ux * Math.cos(a) - uz * Math.sin(a)) * L, z + (ux * Math.sin(a) + uz * Math.cos(a)) * L]; type = 'def_lob'; sp2 = 7; }
-        this.rollOn(await this.flyBall([x, z], to, to, type, Math.max(0.3, y), 0, false, sp2));
-        this.mark(to);
+        const da = dropArc([x, z], Math.max(0.3, y), to, flightTime([x, z], to, null, sp2), type, this.surface);
+        this.rollOn(await this.flyArc(da, { onBounce: () => this.mark(to) }));
       }
     }
     if (s.res === 'fault') {
@@ -709,6 +703,13 @@ export class MatchView {
     const shots = pt.shots;
     const lastIdx = shots.length - 1;
     this.hooks = hooks;
+    // 공을 실제 물리로 차례로 풀어 둔다(받은 높이가 다음 샷이 치는 높이). 넷 코드(연출만)도 여기서 정한다:
+    // 쭉 뻗어 받아야 하는 어려운 공이 가끔 네트 테이프를 스치고 넘어간다
+    if (!flyOf(shots[from])) {
+      this.skims = new Set();
+      shots.forEach((s, i) => { const nx = shots[i + 1]; if (s.res === 'in' && nx && !/^serve/.test(s.type) && !/lob|moon|drop/.test(s.type) && s.mv?.[nx.h]?.k === 'reach' && Math.random() < 0.08) this.skims.add(s); });
+      planPoint(pt, this.surface, this.skims);
+    }
     for (let i = from; i < shots.length; i++) {
       if (!this.alive) return;
       const s = shots[i];
