@@ -49,7 +49,7 @@
 - 글 상자의 빨리 버튼(`S.fast`)을 켜면 설명과 대사를 건너뛴다. 선택, 이정표, 결과, 등급 상승은 건너뛰지 않는다.
 - 소리는 아직 없다(사용자 결정: 나중에, 2026-11-09에 다시 물었을 때도 같음). 넣을 때가 되면 효과음은 파일 없이 코드로 만들 수 있다.
 - **휴식 결과는 세 가지다(`REST_RESULTS`).** 잠을 설쳤다, 개운하다, 푹 잤다. 체력·스트레스 회복량이 다르고, 기분이 이번 턴과 다음 턴에 오르내린다(`moodNudge`). 결과 이름은 분홍 띠에, 글은 `SCENES`의 `sleep`별로 나온다. 첫 달에는 잠을 설치지 않는다. 평균 회복량은 예전 고정값과 같게 맞췄다.
-- 배경과 캐릭터는 임시 그림이다(`sceneURL`, `chibiCanvas`, `js/art.js`). 실제 아트는 Claude 문서 「아트 에셋 요청서」(https://claude.ai/artifact/Nj3AA84HJhoFFKAPBxd8E1)로 한 장씩 받아 `art/incoming/`에 넣고 `python tools/art_import.py`로 정리한다. 스크립트가 `art/manifest.json`의 `bg`, `chr`, `sd`, `fairy`, `intro`에 등록하고, 등록된 그림이 임시 그림 대신 나온다(`art/README.md`).
+- 배경과 캐릭터는 임시 그림이다(`sceneURL`, `chibiCanvas`, `js/art.js`). 실제 아트는 Claude 문서 「아트 에셋 요청서」(https://claude.ai/artifact/Nj3AA84HJhoFFKAPBxd8E1)로 한 장씩 받아 `art/incoming/`에 넣고 `python tools/art_import.py`로 정리한다. 스크립트가 `art/manifest.json`의 `bg`, `chr`, `sd`, `fairy`, `intro`에 등록하고, 등록된 그림이 임시 그림 대신 나온다(`art/README.md`). 치는 동작을 나눈 그림(스플릿, 유닛턴, 백스윙=파워 포지션, 임팩트, 팔로스로, 포·백 각각 9장)은 Claude 문서 「부분 동작 스프라이트 요청서」(https://claude.ai/artifact/7wvHUJRFD6YxpkuHd5bnan)로 받는다(사용자 2026-11-09: 백스윙 때 파워 포지션을 미리 잡아 두는 느낌이 중요). 포즈 이름 `split` `turnfh` `turnbh` `powerfh` `powerbh` `hitfh` `hitbh` `followfh` `followbh`. 경기에서 차례로 바꿔 보여 주는 코드는 그림을 받은 뒤 넣는다.
 - **요정 모습은 B안, 손바닥만 한 사람 요정이다(사용자 결정).** 연두색 머리와 원피스, 라켓 줄 무늬 날개, 머리에 작은 공 장식.
 - **목표는 달력의 특정 대회다(`GOALS`, 우마무스메 방식, 사용자 결정).** 정해진 대회에서 몇 강 안에 들어야 하고, 그 턴에는 그 대회만 할 수 있다(`goalTourNow`). 지면 같은 상대와 그 경기만 다시 할 수 있고 기회는 3번이다(`RETRIES`, `retryMatch`). 기회가 없거나 그만두면 판이 끝난다. 목표점이 없으면 사람들이 그만두므로 다음 목표가 늘 보여야 한다.
 - **대회는 고정이고 성격이 있다(`TOURS`).** 해마다 같은 대회가 같은 때 열린다. 사는 곳, 코트, 시간, 레벨, 규모가 정해져 있고, 멀면 더 피곤하고 평일 낮이면 연차를 쓴다. 대회 버튼이나 달력에서 특징과 주요 출전 선수를 보고 미리 파트너를 구한다.
