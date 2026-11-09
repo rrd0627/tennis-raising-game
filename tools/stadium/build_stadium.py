@@ -60,8 +60,11 @@ C = dict(
     hill=mat('hill', '#8ccfa4'), hill2=mat('hill_far', '#a6d7cf'), cloud=mat('cloud', '#ffffff'),
     outline=mat('outline', '#2d2b45'), screen=mat('screen', '#1b2340'),
     awn=mat('awning', '#ff8fb3'),
+    seat=mat('seat', '#566b9c'), seat2=mat('seat2', '#4e6295'),
 )
-SEAT = [C['pink'], C['sky'], C['yellow'], C['mint'], C['lav']]
+SEAT = [C['pink'], C['sky'], C['yellow'], C['mint'], C['lav']]   # 깃발 색
+# 좌석은 차분한 남색 두 가지(구역마다 번갈아)와 네 줄마다 흰 줄. 알록달록하면 관중석이 선수보다 눈에 띈다(사용자, 2026-11-09)
+SEATC = [C['seat'], C['seat2']]
 SEAT_SHADE = {}  # 지붕 그늘 아래 자리: 같은 색을 조금 어둡게(실제 그림자는 게임에서 한 번 더 진다)
 
 BUCKET = {}  # 재질마다 한 덩어리로 모아 그리기 횟수를 줄인다
@@ -219,7 +222,7 @@ for i in range(NR):
     y = BH + (i + 1) * RS
     zf, zr = Z0 - WALK - i * TR, Z0 - WALK - (i + 1) * TR   # 이 줄 디딤판 앞과 뒤
     for k, (x0, x1) in enumerate(sections(-GX, GX, AISLES)):
-        cm = SEAT[(k + i // 4) % len(SEAT)] if i % 4 else C['white']
+        cm = SEATC[k % 2] if i % 4 else C['white']
         box(((x0 + x1) / 2, y + 0.2, zr + 0.36), (x1 - x0 - 0.2, 0.4, 0.42), cm, ol=0)
         box(((x0 + x1) / 2, y + 0.55, zr + 0.1), (x1 - x0 - 0.2, 0.42, 0.08), cm, ol=0)
         n = int((x1 - x0 - 0.3) / 0.62)
@@ -332,7 +335,7 @@ for sx in (-1, 1):
         xr = sx * (SX0 + SWALK + (i + 1) * STR)
         xf = sx * (SX0 + SWALK + i * STR)
         for k, (z0, z1) in enumerate(sections(SZ0, SZ1, SAISLES)):
-            cm = SEAT[(k + 2 + i // 3) % len(SEAT)] if i % 3 else C['white']
+            cm = SEATC[(k + 1) % 2] if i % 3 else C['white']
             box((xr - sx * 0.36, y + 0.2, (z0 + z1) / 2), (0.42, 0.4, z1 - z0 - 0.2), cm, ol=0)
             box((xr - sx * 0.1, y + 0.55, (z0 + z1) / 2), (0.08, 0.42, z1 - z0 - 0.2), cm, ol=0)
             n = int((z1 - z0 - 0.3) / 0.62)

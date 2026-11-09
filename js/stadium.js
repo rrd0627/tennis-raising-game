@@ -205,7 +205,8 @@ export function buildStadium(D, opts = {}) {
     geo.setAttribute('aCell', new THREE.InstancedBufferAttribute(cell, 2));
     geo.setAttribute('aPh', new THREE.InstancedBufferAttribute(ph, 1));
     const U = { uT: { value: 0 }, uAmp: { value: 0 } };
-    const mat = new THREE.MeshBasicMaterial({ map: tex(crowdAtlas()), alphaTest: 0.5 });
+    // 관중 색은 조금 눌러 둔다(옷 색이 선수보다 튀지 않게)
+    const mat = new THREE.MeshBasicMaterial({ map: tex(crowdAtlas()), alphaTest: 0.5, color: new THREE.Color('#c3cbe0') });
     mat.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = 'attribute vec2 aCell;\nattribute float aPh;\nuniform float uT;\nuniform float uAmp;\n' + sh.vertexShader

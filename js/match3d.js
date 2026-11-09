@@ -183,7 +183,8 @@ export class MatchView {
     this.scene.fog = new THREE.Fog('#dff2ff', 140, 640);   // 먼 산과 구름은 하늘빛으로 옅게
     // 아래를 보는 면(지붕 밑)은 땅에서 오는 빛을 받는다. 칙칙하지 않게 밝고 시원한 색. 위를 보는 코트는 예전과 같다
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3e6, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-8, 20, 10).multiplyScalar(3.2); this.scene.add(sun);
+    // 해는 왼쪽에서 조금 낮게(오후). 왼쪽 관중석 차양 그림자가 코트 왼쪽 복식 줄 근처까지 진다. 오른쪽 관중석은 밝고 왼쪽은 그늘
+    const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-40, 24.5, 6).setLength(52); this.scene.add(sun);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 5, far: 160 });
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
@@ -207,7 +208,7 @@ export class MatchView {
       };
       if (court) for (const sz of [-1, 1]) { wear(0, sz * 12.6, 2.6, 1.0); wear(-1.6, sz * 12.3, 1.4, 0.7); wear(1.6, sz * 12.3, 1.4, 0.7); wear(0, sz * 6.6, 1.6, 1.0); }
       // 햇빛: 먼 쪽이 살짝 밝고 뿌옇다
-      const sh = g.createLinearGradient(0, PZ(-20), 0, PZ(21)); sh.addColorStop(0, 'rgba(255,255,255,0.08)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+      const sh = g.createLinearGradient(0, PZ(-20), 0, PZ(21)); sh.addColorStop(0, 'rgba(255,255,255,0.08)'); sh.addColorStop(0.55, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(20,40,90,0.07)');
       g.fillStyle = sh; g.fillRect(0, 0, W, H);
       // 벽 밑은 조금 어둡다(닿는 그늘)
       if (!court) {
@@ -242,7 +243,7 @@ export class MatchView {
     const lines = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: S.line }));
     lines.position.y = 0.009; this.scene.add(lines);   // 높이를 몇 mm씩 띄워 겹치지 않게 한다(바닥 0, 코트 0.005, 라인 0.009, 그림자 0.011, 발밑 그림 0.012~)
     // 경기장 그림자(벽, 펜스 기둥, 네트 기둥)만 바닥에 얹는다
-    const shadeFloor = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.ShadowMaterial({ color: 0x1a2a66, opacity: 0.28, depthWrite: false }));
+    const shadeFloor = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.ShadowMaterial({ color: 0x1a2a66, opacity: 0.22, depthWrite: false }));
     shadeFloor.rotation.x = -Math.PI / 2; shadeFloor.position.set(0, 0.011, (FZ0 + FZ1) / 2); shadeFloor.receiveShadow = true; shadeFloor.renderOrder = 1;
     this.scene.add(shadeFloor);
     // 네트: 윗줄은 가운데 0.914m, 기둥 쪽 1.07m로 처진다(공이 네트에 걸리는 높이 js/ball.js와 같다). 가운데 띠, 흰 테이프
