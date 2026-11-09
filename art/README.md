@@ -34,7 +34,7 @@ python tools/art_import.py           # 정리하고 등록
 
 - 캐릭터 ID: `player`(주인공), `coach`, `boss`, `club`, 파트너 `hana` `sunhee` `sumin` `daeun` `jiwoo` `arah` `mikyung` `yujin`, 상대 선수 `oppa` `oppb`
 - 포즈: 라켓을 든 `ready` `fh` `bh` `serve` `volley` `smash` `cheer` `sad`, 라켓 없이 `tired` `stretch` `relax`. 경기는 앞의 8개만 씁니다.
-- 치는 동작을 나눈 포즈(받는 중, 「부분 동작 스프라이트 요청서」 https://claude.ai/artifact/7wvHUJRFD6YxpkuHd5bnan): `split` `turnfh` `turnbh`, 스탠스별 파워 포지션 `powerfhneutral` `powerfhsemi` `powerfhopen` `powerfhrun` `powerbhneutral` `powerbhopen` `powerbhrun`, `hitfh` `hitbh` `followfh` `followbh`. 이름에 밑줄을 쓰지 않습니다(가져오는 스크립트가 `sd_{캐릭터}_{포즈}_{방향}`으로 나눕니다).
+- 치는 동작을 나눈 포즈(받는 중, 「부분 동작 스프라이트 요청서」 https://claude.ai/artifact/7wvHUJRFD6YxpkuHd5bnan): `split` `turnfh` `turnbh`, 스탠스별 파워 포지션 `powerfhneutral` `powerfhsemi` `powerfhopen` `powerfhrun` `powerbhneutral` `powerbhopen` `powerbhrun`, `hitfh` `hitbh` `followfh` `followbh`, 한 손 슬라이스 `powerfhslicecross` `powerfhsliceneutral` `powerfhsliceopen` `powerfhslicerun` `powerbhslicecross` `powerbhsliceneutral` `powerbhsliceopen` `powerbhslicerun` `hitfhslice` `hitbhslice` `followfhslice` `followbhslice`. 이름에 밑줄을 쓰지 않습니다(가져오는 스크립트가 `sd_{캐릭터}_{포즈}_{방향}`으로 나눕니다).
 - 표정: `base` `smile` `joy` `focus` `down` (코드에는 `surprise` `tense` `angry` `tired` `cry`도 있고, 없으면 `base`로 대신 나옵니다)
 - 장소: `home` `court` `wall` `club` `room` `cafe` `venue` `office` `gym` `sea` `clinic` `title`
 - 상대 선수(`oppa`, `oppb`)는 흰색·회색 옷으로 그려 두면 게임이 상대마다 옷 색을 입힙니다.
