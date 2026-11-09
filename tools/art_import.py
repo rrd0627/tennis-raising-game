@@ -39,7 +39,8 @@ CHR = 512       # 대화용 얼굴
 FAIRY = 384     # 요정
 BG_W = 1024     # 배경과 인트로 컷의 최대 너비
 MOTION_W = 1152  # 부분 동작 칸 너비(높이는 SD). 게임은 가운데 아래를 발밑으로 본다
-MOTION = re.compile(r'^(split|turn(fh|bh)|power(fh|bh)(slice)?(neutral|semi|open|run|cross)|(hit|follow)(fh|bh)(slice)?)$')
+MOTION = re.compile(r'^(split|turn(fh|bh)|power(fh|bh)(slice)?(neutral|semi|open|run|cross)|(hit|follow)(fh|bh)(slice)?'
+                    r'|serve(stance|trophy|drop|hit|follow)|volley(prep|hit|follow|low)(fh|bh)|smash(set|hit|follow))$')
 
 RULES = [
     (re.compile(r'^sd_([a-z0-9]+)_([a-z]+)_(front|back)$'), 'sd'),
