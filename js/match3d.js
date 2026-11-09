@@ -598,7 +598,7 @@ export class MatchView {
       const m = s.mv?.[j], p = this.players[j], top = m?.top || 4.8, reach = m?.reach || 1.1, react = m?.react ?? 0.22;
       let b = null;
       for (const [t, x, z, y] of path) {
-        if (y > 2.4 || (y < 0.05 && t > fl.t1 + 0.7)) continue;   // 너무 높거나 다 굴러가 버린 공
+        if (y > 2.4 || (t > fl.t1 && (t > fl.t1 + 1.1 || y < 0.1))) continue;   // 너무 높거나, 두 번 튀어 끝난 공(바운드 뒤 1.1초까지만 칠 수 있다)
         if (Math.abs(x) > 10.4 || z < -18.9 || z > 20.4) continue;   // 펜스 너머
         const def = Math.hypot(x - p.x, z - p.z) - reach - run(t - react, top);
         if (!b || def < b.def) b = { t, x, z, y, def, top, react, reach };
@@ -615,33 +615,34 @@ export class MatchView {
       const X = [b.x + (dx / dd) * off, b.z + (dz / dd) * off];
       if (b.t < fl.t1 - 0.05 && b.def <= 0.3) plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top * 0.9, k: 'let', chase: 0, def: b.def };
       else plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top, k: 'let', chase: 1, def: b.def, stopAt: outBy > 0.45 ? fl.t1 + 0.22 : Math.max(fl.t1 + 0.35, b.t - 0.05) };
-      const o = ids.find(i => i !== j), po = this.players[o];
-      plan[o] = { x: po.x + (b.x - po.x) * 0.2, z: po.z + (b.z - po.z) * 0.1, t0: 0.3, v: 2.5, k: 'shift' };
+      const o = ids.find(i => i !== j), po = this.players[o], d = Math.hypot(b.x - po.x, b.z - po.z) || 1, go = Math.min(d, Math.max(0.6, d * 0.2));
+      plan[o] = { x: po.x + ((b.x - po.x) / d) * go, z: po.z + ((b.z - po.z) / d) * go * 0.5, t0: 0.28, v: 3.5, k: 'shift' };
       return plan;
     }
-    // 위너: 둘 중 '닿지는 않지만 가장 가까이 갈 수 있는' 사람이 전속력으로 쫓아 몸을 던진다(전위 머리 위를 넘어 뒤로 가는 공은 후위가).
-    // 그런 사람이 없고 손이 닿을 만했던 사람만 있으면, 그 사람이 역동작으로 한 박자 늦게 쫓아가 조금 모자라게 몸을 던진다.
-    // 도저히 못 닿는 공은 몇 걸음 쫓다 선다. 공이 곁(머리 위)을 지나가던 다른 사람은 그 자리에서 손을 뻗는다
+    // 위너: 닿을 가능성이 있는 사람은 모두 공 쪽으로 쫓아가 몸을 던진다(둘 사이로 오는 공은 둘 다 움직인다).
+    // - 손이 닿을 만했던 사람: 공 바로 앞(팔 길이 + 조금)까지 가서 몸을 던진다. 이미 그 안에 있어도 한두 걸음은 나간다.
+    //   시간이 남으면 잠깐 반대로 쏠렸다가(역동작) 공 쪽으로 계속 움직인다(playShot).
+    // - 조금 모자라는 사람: 공이 지나갈 곳으로 전속력으로 달려가 몸을 던진다.
+    // - 도저히 못 닿는 공: 가장 가까운 사람이 몇 걸음 쫓다 서고, 다른 사람은 공 쪽으로 조금 돌아선다.
+    // 사용자(2026-11-09): 잘 친 공이라도 그쪽으로 살짝 움직이는 느낌은 있어야 한다
     const SHORT = 0.35, c = ids.map(i => [i, best(i)]).filter(([, q]) => q);
     if (!c.length) return null;
-    const real = c.filter(([, q]) => q.def >= SHORT && q.def <= 3.5).sort((x, y) => x[1].def - y[1].def);
-    const near = c.filter(([, q]) => q.def < SHORT).sort((x, y) => y[1].def - x[1].def);
-    const [j, b] = real[0] || near[0] || [...c].sort((x, y) => x[1].def - y[1].def)[0];
-    const p = this.players[j], d0 = Math.hypot(b.x - p.x, b.z - p.z) || 1;
-    if (b.def > 3.5) {
-      const go = Math.min(d0, 1.8);
-      plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top * 0.85, k: 'miss', giveUp: 1, tLunge: Math.min(b.t, b.react + 0.9), def: b.def };
-    } else if (b.def < SHORT) {
-      // 닿을 뻔한 공: 공 바로 앞(팔 길이 + 조금)까지만 가고 몸을 던진다. 시간이 남으면 반대쪽으로 쏠렸다가 출발한다(playShot의 역동작)
-      const go = Math.max(0, d0 - b.reach - SHORT);
-      plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
-    } else plan[j] = { x: b.x, z: b.z, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
-    const o = ids.find(i => i !== j), po = this.players[o], bo = c.find(([i]) => i === o)?.[1];
-    if (bo && bo.def < 1.2) {
-      // 곁(머리 위)을 지나가는 공: 그 자리에서 공 쪽으로 몸을 날린다
-      const d = Math.hypot(bo.x - po.x, bo.z - po.z) || 1, go = Math.min(0.6, d);
-      plan[o] = { x: po.x + ((bo.x - po.x) / d) * go, z: po.z + ((bo.z - po.z) / d) * go, t0: bo.react, v: bo.top, k: 'miss', tLunge: Math.max(bo.react + 0.1, bo.t - 0.08), pt: [bo.x, bo.z], def: bo.def };
-    } else plan[o] = { x: po.x + (b.x - po.x) * 0.15, z: po.z + (b.z - po.z) * 0.08, t0: 0.3, v: 2.5, k: 'shift' };
+    const first = [...c].sort((x, y) => x[1].def - y[1].def)[0][0];
+    for (const [j, b] of c) {
+      const p = this.players[j], d0 = Math.hypot(b.x - p.x, b.z - p.z) || 1;
+      if (b.def < SHORT) {
+        const go = Math.max(Math.min(d0 - 0.3, 1.0), d0 - b.reach - SHORT, 0);
+        plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
+      } else if (b.def <= 3.5) {
+        plan[j] = { x: b.x, z: b.z, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
+      } else if (j === first) {
+        const go = Math.min(d0, 1.8);
+        plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top * 0.85, k: 'miss', giveUp: 1, tLunge: Math.min(b.t, b.react + 0.9), def: b.def };
+      } else {
+        const go = Math.min(d0, Math.max(0.6, d0 * 0.15));
+        plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go * 0.5, t0: 0.28, v: 3.5, k: 'shift' };
+      }
+    }
     return plan;
   }
 
@@ -681,9 +682,12 @@ export class MatchView {
     // 위너가 맞는 사람 곁을 지나가면 가만히 보내지 않는다. 어떻게든 라켓을 대거나(틱) 몸에 맞는다(퍽). 점수는 그대로 친 쪽 것이다
     // (거의 닿을 뻔한 공만. 멀리 지나가는 공에 라켓을 대려고 사람이 날아가지 않게)
     let touch = null;
-    if ((s.res === 'win' || s.res === 'poach') && arc && s.victim !== undefined && s.mv?.[s.victim] && (!cp || (cp[s.victim]?.k === 'miss' && cp[s.victim].def < 0.9))) {
-      const mv = cp?.[s.victim] || s.mv[s.victim], q = nearest(arc, [mv.x, mv.z], 2.3, 0.25);
-      if (q && q.d < 2.8 && h01([s.from[0] + q.p[0] * 3.1, s.from[1] + q.p[1] * 1.7]) < 0.4) touch = { j: s.victim, ...q, kind: (s.dir === 'body' && h01([q.p[0] * 5.1, q.p[1] * 2.3]) < 0.5) || ((s.type === 'smash' || s.res === 'poach') && q.d < 1.0) ? 'body' : 'frame' };
+    // 라켓·몸에 맞을 사람: 공이 가장 가까이 지나가는 사람(엔진이 정한 사람이 아닐 수도 있다. 공이 곧장 날아온 사람은 몸에 맞기 쉽다)
+    let tj = s.victim;
+    if (cp) { const near = Object.entries(cp).filter(([, m]) => m.k === 'miss' && m.def < 0.9).sort((x, y) => x[1].def - y[1].def)[0]; tj = near ? +near[0] : -1; }
+    if ((s.res === 'win' || s.res === 'poach') && arc && tj >= 0 && (cp?.[tj] || s.mv?.[tj])) {
+      const mv = cp?.[tj] || s.mv[tj], q = nearest(arc, [mv.x, mv.z], 2.3, 0.25);
+      if (q && q.d < 2.8 && h01([s.from[0] + q.p[0] * 3.1, s.from[1] + q.p[1] * 1.7]) < 0.4) touch = { j: tj, ...q, kind: (s.dir === 'body' && h01([q.p[0] * 5.1, q.p[1] * 2.3]) < 0.5) || ((s.type === 'smash' || s.res === 'poach') && q.d < 1.0) || (cp?.[tj]?.def ?? 0) < -2 ? 'body' : 'frame' };
     }
     {
       if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], fl.h0, s.from[1], v);
@@ -748,12 +752,14 @@ export class MatchView {
       }
       const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : m.tLunge ?? Math.max(m.t0 + 0.05, tPass * (m.k === 'confuse' ? 0.55 : 0.8));
       // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
+      // 역동작은 잠깐(0.3초쯤)만. 그 뒤로는 공 쪽으로 계속 움직이다 몸을 던진다(사용자 2026-11-09: 잘 친 공이라도 그쪽으로 움직이는 느낌이 있어야)
       if (m.k === 'miss') {
         const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true);
         if (go - m.t0 > 0.2 && D > 0.3) {
-          const wx = (tx - p.x) / D, wz = (tz - p.z) / D, wf = Math.min(0.55, (go - m.t0) * 1.2);
+          const wx = (tx - p.x) / D, wz = (tz - p.z) / D, wf = Math.min(0.35, (go - m.t0) * 0.8);
           this.later(m.t0, () => this.runTo(j, p.x - wx * wf, p.z - wz * wf, 0, 2.6));
-          t0 = go;
+          t0 = Math.min(go, m.t0 + 0.3);
+          sp = Math.min(m.v, cruise(D + wf, Math.max(0.2, lungeAt - 0.05 - t0), true));
         }
       }
       this.later(t0, () => this.runTo(j, tx, tz, 0, sp, opt));
