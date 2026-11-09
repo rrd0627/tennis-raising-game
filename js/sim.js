@@ -435,7 +435,7 @@ export class MatchSim {
       const d = Math.hypot(m.x - at[j][0], m.z - at[j][1]);
       const k = d > 0.01 ? Math.min(1, Math.max(0, ft - m.t0) * m.v / d) : 1;
       at[j] = [at[j][0] + (m.x - at[j][0]) * k, at[j][1] + (m.z - at[j][1]) * k];
-      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}), ...(m.chase ? { chase: 1 } : {}) };
+      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}), ...(m.chase ? { chase: 1 } : {}), ...(m.body ? { top: r2(m.body.top), reach: r2(m.body.reach), react: r2(m.body.react) } : {}) };
     });
     // 팀마다 밀어붙이는 정도. 친 쪽의 공이 좋으면 오르고 상대는 내려가는데, 샷마다 조금씩만 움직인다
     const lvl = [0, 0];
@@ -493,8 +493,9 @@ export class MatchSim {
       const X = near(j), t0 = body[j].react, u = unit(at[j], X), ch = lands(j);
       const tAll = ch ? ft + after / Math.max(4, v * 0.55) : ft;
       const go = clamp(Math.min(gap(j) - 0.7, Math.max(0, tAll - t0 - 0.1) * body[j].top * 0.9), 0.35, ch ? 7 : 4.5);
-      plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: body[j].top * (ch ? 0.95 : 0.85), k: 'let', ...(ch ? { chase: 1 } : {}) };
-      plan[o] = { x: at[o][0] + (X[0] - at[o][0]) * 0.12, z: at[o][1], t0: body[o].react * 1.2, v: body[o].recov, k: 'shift' };
+      // body: 중계가 실제 공 길을 보고 누가 어디까지 쫓을지 다시 정할 때 쓴다(js/match3d.js chasePlan)
+      plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: body[j].top * (ch ? 0.95 : 0.85), k: 'let', ...(ch ? { chase: 1 } : {}), body: body[j] };
+      plan[o] = { x: at[o][0] + (X[0] - at[o][0]) * 0.12, z: at[o][1], t0: body[o].react * 1.2, v: body[o].recov, k: 'shift', body: body[o] };
       plan.who = j;
       return plan;
     };
@@ -503,7 +504,7 @@ export class MatchSim {
       const t0 = body[j].react + late, d = Math.hypot(X[0] - at[j][0], X[1] - at[j][1]);
       const go = Math.max(0, Math.min((ft - t0 - 0.18) * body[j].top, d - body[j].reach - 0.35));
       const w = unit(at[j], X);
-      return { x: at[j][0] + w[0] * go, z: at[j][1] + w[1] * go, t0, v: body[j].top, k: 'miss' };
+      return { x: at[j][0] + w[0] * go, z: at[j][1] + w[1] * go, t0, v: body[j].top, k: 'miss', body: body[j] };
     };
     let winner = null, endType = null, endBy = null, lastByTeam = [null, null];
     const tempoOf = t => TUNE.tempo[t.choices.tempo] || TUNE.tempo.normal;

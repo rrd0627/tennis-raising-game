@@ -545,6 +545,70 @@ export class MatchView {
     }));
   }
 
+  // 끝나는 공(위너·아웃·에이스): 받는 쪽은 엔진이 정한 자리가 아니라 실제 공 길(튀고 굴러가는 데까지)을 보고 쫓아간다.
+  // 사용자(2026-11-09): 나가는지 확실하지 않으면 멈추지 않는다. 실제처럼.
+  // 공 길 위에서 가장 가까이 닿을 수 있는 곳을 찾아 전속력으로 달린다(첫발만큼 늦게 출발, 스피드만큼, 유연성만큼 뻗음: 엔진의 몸 값).
+  // 아웃: 둘 중 더 닿을 만한 사람이 쫓는다. 곁을 지나 뒤에 떨어지는 공은 준비하다 보내고(판단), 앞에 떨어지는 공은
+  //   확실히 나간 공(0.45m 넘게)이면 떨어지는 것을 보고 멈추고, 아슬아슬하면 공 옆까지 끝까지 쫓는다.
+  // 위너: 맞는 사람이 공을 쫓아 전속력으로 달리다 몸을 던진다. 닿을 뻔했으면 그만큼 늦게 읽은 것으로(조금 모자라게).
+  //   도저히 못 닿는 공은 몇 걸음 쫓다 선다. 승패와 난수에는 쓰지 않는다
+  chasePlan(s, fl) {
+    const team = s.h < 2 ? 1 : 0, ids = [team * 2, team * 2 + 1];
+    const path = [];
+    for (let t = 0.1; t <= fl.dur + 1e-6; t += 1 / 30) { const [x, z, y] = fl.at(t); path.push([t, x, z, y]); }
+    if (fl.end) { const st = Float64Array.from(fl.end); let t = fl.dur; for (let k = 0; k < 45; k++) { for (let q = 0; q < 4; q++) stepFree(st, 1 / 120, this.surface); t += 1 / 30; path.push([t, st[0], st[2], st[1]]); } }
+    const run = (tau, top) => (tau <= 0 ? 0 : tau < top / ACC ? 0.5 * ACC * tau * tau : top * tau - top * top / (2 * ACC));
+    const best = j => {
+      const m = s.mv?.[j], p = this.players[j], top = m?.top || 4.8, reach = m?.reach || 1.1, react = m?.react ?? 0.22;
+      let b = null;
+      for (const [t, x, z, y] of path) {
+        if (y > 2.4 || (y < 0.05 && t > fl.t1 + 0.7)) continue;   // 너무 높거나 다 굴러가 버린 공
+        if (Math.abs(x) > 10.4 || z < -18.9 || z > 20.4) continue;   // 펜스 너머
+        const def = Math.hypot(x - p.x, z - p.z) - reach - run(t - react, top);
+        if (!b || def < b.def) b = { t, x, z, y, def, top, react, reach };
+      }
+      return b;
+    };
+    const plan = {};
+    if (s.res === 'out') {
+      const c = ids.map(j => [j, best(j)]).filter(([, b]) => b).sort((a, b) => a[1].def - b[1].def);
+      if (!c.length) return null;
+      const [j, b] = c[0], p = this.players[j], B = s.bounce || s.to;
+      const outBy = Math.max(Math.abs(B[0]) - 5.485, Math.abs(B[1]) - 11.885);
+      const dx = p.x - b.x, dz = p.z - b.z, dd = Math.hypot(dx, dz) || 1, off = Math.min(0.7, dd);
+      const X = [b.x + (dx / dd) * off, b.z + (dz / dd) * off];
+      if (b.t < fl.t1 - 0.05 && b.def <= 0.3) plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top * 0.9, k: 'let', chase: 0, def: b.def };
+      else plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top, k: 'let', chase: 1, def: b.def, stopAt: outBy > 0.45 ? fl.t1 + 0.22 : Math.max(fl.t1 + 0.35, b.t - 0.05) };
+      const o = ids.find(i => i !== j), po = this.players[o];
+      plan[o] = { x: po.x + (b.x - po.x) * 0.2, z: po.z + (b.z - po.z) * 0.1, t0: 0.3, v: 2.5, k: 'shift' };
+      return plan;
+    }
+    // 위너: 둘 중 '닿지는 않지만 가장 가까이 갈 수 있는' 사람이 전속력으로 쫓아 몸을 던진다(전위 머리 위를 넘어 뒤로 가는 공은 후위가).
+    // 그런 사람이 없고 손이 닿을 만했던 사람만 있으면, 그 사람이 역동작으로 한 박자 늦게 쫓아가 조금 모자라게 몸을 던진다.
+    // 도저히 못 닿는 공은 몇 걸음 쫓다 선다. 공이 곁(머리 위)을 지나가던 다른 사람은 그 자리에서 손을 뻗는다
+    const SHORT = 0.35, c = ids.map(i => [i, best(i)]).filter(([, q]) => q);
+    if (!c.length) return null;
+    const real = c.filter(([, q]) => q.def >= SHORT && q.def <= 3.5).sort((x, y) => x[1].def - y[1].def);
+    const near = c.filter(([, q]) => q.def < SHORT).sort((x, y) => y[1].def - x[1].def);
+    const [j, b] = real[0] || near[0] || [...c].sort((x, y) => x[1].def - y[1].def)[0];
+    const p = this.players[j], d0 = Math.hypot(b.x - p.x, b.z - p.z) || 1;
+    if (b.def > 3.5) {
+      const go = Math.min(d0, 1.8);
+      plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top * 0.85, k: 'miss', giveUp: 1, tLunge: Math.min(b.t, b.react + 0.9), def: b.def };
+    } else if (b.def < SHORT) {
+      // 닿을 뻔한 공: 공 바로 앞(팔 길이 + 조금)까지만 가고 몸을 던진다. 시간이 남으면 반대쪽으로 쏠렸다가 출발한다(playShot의 역동작)
+      const go = Math.max(0, d0 - b.reach - SHORT);
+      plan[j] = { x: p.x + ((b.x - p.x) / d0) * go, z: p.z + ((b.z - p.z) / d0) * go, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
+    } else plan[j] = { x: b.x, z: b.z, t0: b.react, v: b.top, k: 'miss', tLunge: Math.max(b.react + 0.1, b.t - 0.1), pt: [b.x, b.z], def: b.def };
+    const o = ids.find(i => i !== j), po = this.players[o], bo = c.find(([i]) => i === o)?.[1];
+    if (bo && bo.def < 1.2) {
+      // 곁(머리 위)을 지나가는 공: 그 자리에서 공 쪽으로 몸을 날린다
+      const d = Math.hypot(bo.x - po.x, bo.z - po.z) || 1, go = Math.min(0.6, d);
+      plan[o] = { x: po.x + ((bo.x - po.x) / d) * go, z: po.z + ((bo.z - po.z) / d) * go, t0: bo.react, v: bo.top, k: 'miss', tLunge: Math.max(bo.react + 0.1, bo.t - 0.08), pt: [bo.x, bo.z], def: bo.def };
+    } else plan[o] = { x: po.x + (b.x - po.x) * 0.15, z: po.z + (b.z - po.z) * 0.08, t0: 0.3, v: 2.5, k: 'shift' };
+    return plan;
+  }
+
   // 샷 하나 재생. next = 다음 타자의 샷 (다음 샷을 알아야 그 선수가 공 옆에 선다), prev = 이 공을 보낸 샷
   async playShot(s, next, prev) {
     const isServe = s.type === 'serve' || s.type === 'serve2';
@@ -575,10 +639,13 @@ export class MatchView {
     if (s.type === 'smash' || ends) this.punch = Math.max(this.punch, 0.13);
     else if (v >= 13) this.punch = Math.max(this.punch, 0.06);
     const arc = s.res === 'net' || s.res === 'fault' || s.res === 'df' ? null : fl;
+    // 끝나는 공(위너·아웃·에이스): 받는 쪽은 실제 공 길을 보고 끝까지 쫓아간다(chasePlan)
+    const cp = !next && ['win', 'out', 'ace', 'poach'].includes(s.res) ? this.chasePlan(s, fl) : null;
     // 위너가 맞는 사람 곁을 지나가면 가만히 보내지 않는다. 어떻게든 라켓을 대거나(틱) 몸에 맞는다(퍽). 점수는 그대로 친 쪽 것이다
+    // (거의 닿을 뻔한 공만. 멀리 지나가는 공에 라켓을 대려고 사람이 날아가지 않게)
     let touch = null;
-    if ((s.res === 'win' || s.res === 'poach') && arc && s.victim !== undefined && s.mv?.[s.victim]) {
-      const mv = s.mv[s.victim], q = nearest(arc, [mv.x, mv.z], 2.3, 0.25);
+    if ((s.res === 'win' || s.res === 'poach') && arc && s.victim !== undefined && s.mv?.[s.victim] && (!cp || (cp[s.victim]?.k === 'miss' && cp[s.victim].def < 0.9))) {
+      const mv = cp?.[s.victim] || s.mv[s.victim], q = nearest(arc, [mv.x, mv.z], 2.3, 0.25);
       if (q && q.d < 2.8 && h01([s.from[0] + q.p[0] * 3.1, s.from[1] + q.p[1] * 1.7]) < 0.4) touch = { j: s.victim, ...q, kind: (s.dir === 'body' && h01([q.p[0] * 5.1, q.p[1] * 2.3]) < 0.5) || ((s.type === 'smash' || s.res === 'poach') && q.d < 1.0) ? 'body' : 'frame' };
     }
     {
@@ -591,7 +658,7 @@ export class MatchView {
     }
     // 움직임은 엔진이 능력치로 정한 대로: 첫발만큼 늦게 출발해서 스피드만큼 뛴다(js/rally.js)
     for (let j = 0; j < 4; j++) {
-      const m = s.mv?.[j];
+      const m = cp?.[j] ? { ...s.mv?.[j], ...cp[j] } : s.mv?.[j];
       // 상대편은 타구 순간 스텝을 밟는다
       if ((j < 2) !== (s.h < 2)) this.splitStep(j);
       if (!m) continue;
@@ -609,7 +676,7 @@ export class MatchView {
       // 떨어진 것을 보고 달리던 만큼 조금 더 가서 선다. 폴트는 떨어지자마자 제자리로 돌아간다(아래)
       if (m.chase) {
         opt = { brake: false };
-        if (s.res !== 'fault') this.later(Math.max(m.t0 + 0.1, fl.t1 + 0.08), () => {
+        if (s.res !== 'fault') this.later(Math.max(m.t0 + 0.1, m.stopAt ?? fl.t1 + 0.08), () => {
           const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz), k = Math.min(d, 0.25 + p.vel * 0.12);
           if (d > 0.01) this.runTo(j, p.x + dx / d * k, p.z + dz / d * k, 0, Math.max(1.2, p.vel), { brake: true });
           p.crouch = 0; this.setPose(j, 'ready', 0);
@@ -642,7 +709,7 @@ export class MatchView {
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14);
         opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, prepFor(next.type), 0); } : null };
       }
-      const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : Math.max(m.t0 + 0.05, tPass * (m.k === 'confuse' ? 0.55 : 0.8));
+      const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : m.tLunge ?? Math.max(m.t0 + 0.05, tPass * (m.k === 'confuse' ? 0.55 : 0.8));
       // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
       if (m.k === 'miss') {
         const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true);
@@ -656,11 +723,16 @@ export class MatchView {
       if (m.k === 'miss' || m.k === 'confuse') {
         const ball = s.bounce || s.to;
         const hitBody = touch && j === touch.j && touch.kind === 'body';
-        this.later(lungeAt, () => { if (hitBody) { this.setPose(j, 'sad', 700); p.sq = 0.12; } else if (m.k === 'miss') this.lunge(j, touch && j === touch.j ? touch.p : ball); else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); } });
+        this.later(lungeAt, () => {
+          if (hitBody) { this.setPose(j, 'sad', 700); p.sq = 0.12; }
+          else if (m.k === 'miss' && m.giveUp) { const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz), k = Math.min(d, 0.3 + p.vel * 0.12); if (d > 0.01) this.runTo(j, p.x + dx / d * k, p.z + dz / d * k, 0, Math.max(1.2, p.vel)); this.setPose(j, 'ready', 0); }
+          else if (m.k === 'miss') this.lunge(j, touch && j === touch.j ? touch.p : m.pt || ball);
+          else { p.tx = p.x; p.tz = p.z; this.setPose(j, 'ready'); }
+        });
       }
     }
     if (arc) for (let j = 0; j < 4; j++) {
-      if ((j < 2) === (s.h < 2) || j === next?.h || j === s.victim || s.mv?.[j]?.k === 'let') continue;
+      if ((j < 2) === (s.h < 2) || j === next?.h || j === s.victim || s.mv?.[j]?.k === 'let' || cp?.[j]) continue;
       const p = this.players[j], q = nearest(arc, [p.x, p.z], 2.2, 0.2);
       if (!q || q.d < 0.9 || q.d > 2.6) continue;
       const right = (j < 2 ? 1 : -1) * (q.p[0] - p.x) >= 0;
