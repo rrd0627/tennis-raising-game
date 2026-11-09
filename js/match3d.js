@@ -117,8 +117,17 @@ export class MatchView {
     const hfov = 2 * Math.atan(needW / 2 / dist);
     const vfov = 2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180 / Math.PI;
     this.baseFov = Math.max(40, Math.min(70, vfov));
-    this.camera.fov = this.baseFov * (this.fovCur || 1);
+    // 1인칭: 사람이 집중해서 보는 폭처럼 가로로 약 55도(세로 화면이면 세로 화각이 커진다. 하늘·바닥이 너무 넓지 않게 80도까지)
+    this.fpvFov = Math.max(50, Math.min(80, 2 * Math.atan(Math.tan(55 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
+    this.camera.fov = (this.fpv ? this.fpvFov : this.baseFov) * (this.fovCur || 1);
     this.camera.updateProjectionMatrix();
+  }
+  // 시점 바꾸기: 1인칭(주인공 눈높이에서 공을 따라 봄) ↔ 중계(코트 전체). 주인공 그림은 1인칭에서 숨긴다
+  setFpv(on) {
+    this.fpv = !!on;
+    this.camCut = true;
+    if (this.fpv) this.fovCur = 1;
+    if (this.players) this.placeAll();
   }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight;
@@ -278,6 +287,11 @@ export class MatchView {
     }
     this.myRing.position.set(this.players[0].x, 0.014, this.players[0].z);
     for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) a.position.set(this.players[i].x, 0.016, this.players[i].z); }
+    // 1인칭에서는 주인공이 카메라 자리에 있으므로 그림과 발밑 표시를 숨긴다
+    const me = this.players[0], hide = !!this.fpv;
+    me.sp.visible = !hide; me.shadow.visible = !hide; this.myRing.visible = !hide;
+    if (hide) me.emote.visible = false;
+    if (this.auras?.[0]) this.auras[0].visible = !hide;
   }
   // 작전이 힘을 내는 동안 발밑에 빛나는 고리(우리 팀 분홍, 상대 파랑). null이면 끈다
   setAura(i, on) {
@@ -328,7 +342,9 @@ export class MatchView {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     sp.position.set(x, y, z); sp.renderOrder = 5;
     this.scene.add(sp);
-    this.pops.push({ kind: 'flash', sp, t: 0, life: 0.2, size: clamp(0.5 + v * 0.04, 0.7, 1.7) });
+    // 카메라 바로 앞(1인칭에서 내가 친 공)이면 화면을 덮지 않게 작게
+    const near = clamp(this.camera.position.distanceTo(sp.position) / 3, 0.25, 1);
+    this.pops.push({ kind: 'flash', sp, t: 0, life: 0.2, size: clamp(0.5 + v * 0.04, 0.7, 1.7) * near });
   }
 
   setPose(i, pose, ms = 0) {
@@ -448,6 +464,19 @@ export class MatchView {
     const sx = this.camX || 0, sz = this.camZ || 0;
     const t = new THREE.Vector3(), l = new THREE.Vector3();
     let zoom = 1;
+    // 1인칭: 주인공 눈높이(1.55m)에서 앞을 본다. 뛰면 조금 들썩인다.
+    // 공이 앞쪽에 있으면 고개를 돌려 공을 따라가고, 가까이 오면 다시 앞을 본다(눈앞에서 고개가 휙 돌지 않게)
+    if (this.fpv && this.players) {
+      const p = this.players[0];
+      t.set(p.x, 1.55 + Math.abs(Math.sin(p.stride)) * 0.05 + p.hop * 0.8, p.z);
+      let lx = p.x * 0.35, ly = 1.0, lz = p.z - 12;
+      if (this.ball.visible) {
+        const b = this.ball.position, ahead = p.z - b.z;
+        if (ahead > 1.2) { const w = clamp((ahead - 1.2) / 3.5, 0, 1); lx = lerp(lx, b.x, w * 0.75); ly = lerp(ly, clamp(b.y, 0.4, 3.5), w * 0.6); lz = lerp(lz, b.z, w * 0.5); }
+      }
+      l.set(lx, ly, lz);
+      return { t, l, zoom };
+    }
     switch (this.camMode) {
       case 'serveUs': t.set(sx * 0.8, 3.3, sz + 5.6); l.set(sx * 0.3, 1.1, -2.5); zoom = 0.9; break;
       case 'serveThem': t.set(sx * 0.35, 6.4, 15); l.set(sx * 0.85, 1.2, sz); zoom = 0.5; break;
@@ -784,7 +813,9 @@ export class MatchView {
         if (p) {
           const W = this.el.clientWidth, w = q.w || (q.w = q.el.offsetWidth);
           const v = new THREE.Vector3(p.x, 2.2, p.z).project(this.camera);
-          const x = clamp((v.x + 1) / 2 * W, w / 2 + 4, W - w / 2 - 4), y = (1 - v.y) / 2 * this.el.clientHeight;
+          // 1인칭에서 내 글자는 화면 아래 가운데(내 머리 위는 카메라 자리라서)
+          const mine = this.fpv && q.j === 0;
+          const x = mine ? W / 2 : clamp((v.x + 1) / 2 * W, w / 2 + 4, W - w / 2 - 4), y = mine ? this.el.clientHeight * 0.8 : (1 - v.y) / 2 * this.el.clientHeight;
           const pop = q.t < 0.08 ? 0.75 + q.t / 0.08 * 0.25 : 1;
           q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
         }
@@ -798,7 +829,9 @@ export class MatchView {
         q.off = (q.off ?? want) + (want - (q.off ?? want)) * Math.min(1, dt * 12);
         if (p) {
           const v = new THREE.Vector3(p.x, 2.3, p.z).project(this.camera);
-          const x = (v.x + 1) / 2 * this.el.clientWidth, y = (1 - v.y) / 2 * this.el.clientHeight - Math.min(16, q.t * 24) - q.lift - q.off;
+          const mine = this.fpv && q.j === 0;
+          const x = mine ? this.el.clientWidth / 2 : (v.x + 1) / 2 * this.el.clientWidth;
+          const y = (mine ? this.el.clientHeight * 0.8 : (1 - v.y) / 2 * this.el.clientHeight) - Math.min(16, q.t * 24) - q.lift - q.off;
           q.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${pop.toFixed(3)})`;
         }
         q.el.style.opacity = k > 0.75 ? Math.max(0, (1 - k) / 0.25).toFixed(3) : '1';
@@ -815,13 +848,14 @@ export class MatchView {
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
     // 카메라: 시점이 바뀌면 부드럽게 따라가고, 끊어 보여 줄 때(cut)는 바로 옮긴다
     const { t: target, l: look, zoom } = this.camTarget();
-    const kp = this.camCut ? 1 : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
+    // 1인칭은 몸에 붙어 있으므로 바로 따라가고, 고개는 부드럽게 돌린다
+    const kp = this.camCut || this.fpv ? 1 : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
     this.camera.position.lerp(target, kp);
     this.curLook = this.curLook || look.clone();
-    this.curLook.lerp(look, this.camCut ? 1 : 0.12);
-    // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다
+    this.curLook.lerp(look, this.camCut ? 1 : this.fpv ? 0.1 : 0.12);
+    // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다(1인칭은 펀치를 반만)
     this.fovCur += (zoom - this.fovCur) * (this.camCut ? 1 : 0.09);
-    const fov = this.baseFov * this.fovCur * (1 - this.punch);
+    const fov = (this.fpv ? this.fpvFov : this.baseFov) * this.fovCur * (1 - this.punch * (this.fpv ? 0.5 : 1));
     if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.punch = this.punch > 0.002 ? this.punch * Math.pow(0.004, dt) : 0;
     this.camCut = false;
