@@ -120,16 +120,21 @@ export class MatchView {
     this.baseFov = Math.max(40, Math.min(70, vfov));
     // 1인칭: 사람이 집중해서 보는 폭처럼 가로로 약 55도(세로 화면이면 세로 화각이 커진다. 하늘·바닥이 너무 넓지 않게 80도까지)
     this.fpvFov = Math.max(50, Math.min(80, 2 * Math.atan(Math.tan(55 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
-    this.camera.fov = (this.fpv ? this.fpvFov : this.baseFov) * (this.fovCur || 1);
+    // 3인칭: 주인공 뒤에서 앞쪽 코트를 넓게(가로 약 66도)
+    this.tpsFov = Math.max(52, Math.min(84, 2 * Math.atan(Math.tan(66 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
+    this.camera.fov = this.viewFov() * (this.fovCur || 1);
     this.camera.updateProjectionMatrix();
   }
-  // 시점 바꾸기: 1인칭(주인공 눈높이에서 공을 따라 봄) ↔ 중계(코트 전체). 주인공 그림은 1인칭에서 숨긴다
-  setFpv(on) {
-    this.fpv = !!on;
+  // 시점 바꾸기: 중계(코트 전체) / 3인칭(주인공 바로 뒤에서) / 1인칭(주인공 눈높이). 주인공 그림은 1인칭에서만 숨긴다
+  setView(mode) {
+    this.view3 = mode === 'fpv' || mode === 'tps' ? mode : 'tv';
+    this.fpv = this.view3 === 'fpv';
     this.camCut = true;
-    if (this.fpv) this.fovCur = 1;
+    if (this.view3 !== 'tv') this.fovCur = 1;
     if (this.players) this.placeAll();
   }
+  setFpv(on) { this.setView(on ? 'fpv' : 'tv'); }
+  viewFov() { return this.view3 === 'fpv' ? this.fpvFov : this.view3 === 'tps' ? this.tpsFov : this.baseFov; }
   resize() {
     const w = this.el.clientWidth, h = this.el.clientHeight;
     if (!w || !h) return;
@@ -457,17 +462,24 @@ export class MatchView {
     const sx = this.camX || 0, sz = this.camZ || 0;
     const t = new THREE.Vector3(), l = new THREE.Vector3();
     let zoom = 1;
-    // 1인칭: 주인공 눈높이(1.55m)에서 앞을 본다. 뛰면 조금 들썩인다.
-    // 공이 앞쪽에 있으면 고개를 돌려 공을 따라가고, 가까이 오면 다시 앞을 본다(눈앞에서 고개가 휙 돌지 않게)
-    if (this.fpv && this.players) {
+    // 1인칭: 주인공 눈높이(1.55m)에서 앞을 본다. 멀미가 나지 않게 눈높이는 들썩이지 않고(뛰거나 뛰어올라도),
+    // 공은 고개를 조금만 돌려 따라가며(높은 공도 위로 많이 젖히지 않는다), 가까이 오면 다시 앞을 본다
+    if (this.view3 === 'fpv' && this.players) {
       const p = this.players[0];
-      t.set(p.x, 1.55 + Math.abs(Math.sin(p.stride)) * 0.05 + p.hop * 0.8, p.z);
+      t.set(p.x, 1.55, p.z);
       let lx = p.x * 0.35, ly = 1.0, lz = p.z - 12;
       if (this.ball.visible) {
         const b = this.ball.position, ahead = p.z - b.z;
-        if (ahead > 1.2) { const w = clamp((ahead - 1.2) / 3.5, 0, 1); lx = lerp(lx, b.x, w * 0.75); ly = lerp(ly, clamp(b.y, 0.4, 3.5), w * 0.6); lz = lerp(lz, b.z, w * 0.5); }
+        if (ahead > 1.2) { const w = clamp((ahead - 1.2) / 4, 0, 1); lx = lerp(lx, b.x, w * 0.5); ly = lerp(ly, clamp(b.y, 0.5, 2.4), w * 0.3); lz = lerp(lz, b.z, w * 0.35); }
       }
       l.set(lx, ly, lz);
+      return { t, l, zoom };
+    }
+    // 3인칭: 주인공 바로 뒤 조금 위에서 앞쪽 코트를 본다. 주인공을 천천히 따라가고(옆으로는 덜), 공 쪽으로는 아주 조금만 돈다
+    if (this.view3 === 'tps' && this.players) {
+      const p = this.players[0], bx2 = this.ball.visible ? this.ball.position.x : p.x;
+      t.set(clamp(p.x * 0.75 + bx2 * 0.08, -8.5, 8.5), 3.1, Math.min(p.z + 5, 19));
+      l.set(p.x * 0.45 + bx2 * 0.2, 0.7, p.z - 11);
       return { t, l, zoom };
     }
     switch (this.camMode) {
@@ -859,14 +871,16 @@ export class MatchView {
     for (const f of [...this.fx]) { f.life -= dt; f.obj.material.opacity = Math.max(0, f.life / 1.2) * 0.8; if (f.life <= 0) { this.scene.remove(f.obj); this.fx.splice(this.fx.indexOf(f), 1); } }
     // 카메라: 시점이 바뀌면 부드럽게 따라가고, 끊어 보여 줄 때(cut)는 바로 옮긴다
     const { t: target, l: look, zoom } = this.camTarget();
-    // 1인칭은 몸에 붙어 있으므로 바로 따라가고, 고개는 부드럽게 돌린다
-    const kp = this.camCut || this.fpv ? 1 : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
+    // 1인칭·3인칭은 멀미가 나지 않게 몸을 부드럽게 따라가고(급히 멈추거나 방향을 틀어도 화면은 미끄러지듯), 고개는 더 천천히 돌린다.
+    // 줌 펀치와 화면 흔들림은 중계에서만 쓴다
+    const tv = !this.view3 || this.view3 === 'tv', ease1 = tc => 1 - Math.exp(-dt / tc);
+    const kp = this.camCut ? 1 : this.view3 === 'fpv' ? ease1(0.12) : this.view3 === 'tps' ? ease1(0.35) : this.camMode === 'main' ? 0.08 : this.camMode === 'push' ? 0.1 : 0.06;
     this.camera.position.lerp(target, kp);
     this.curLook = this.curLook || look.clone();
-    this.curLook.lerp(look, this.camCut ? 1 : this.fpv ? 0.1 : 0.12);
-    // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다(1인칭은 펀치를 반만)
+    this.curLook.lerp(look, this.camCut ? 1 : this.view3 === 'fpv' ? ease1(0.35) : this.view3 === 'tps' ? ease1(0.5) : 0.12);
+    // 화각: 당겨 찍는 시점은 좁게, 줌 펀치는 맞는 순간 좁아졌다가 돌아온다(중계만)
     this.fovCur += (zoom - this.fovCur) * (this.camCut ? 1 : 0.09);
-    const fov = (this.fpv ? this.fpvFov : this.baseFov) * this.fovCur * (1 - this.punch * (this.fpv ? 0.5 : 1));
+    const fov = this.viewFov() * this.fovCur * (1 - (tv ? this.punch : 0));
     if (Math.abs(fov - this.camera.fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.punch = this.punch > 0.002 ? this.punch * Math.pow(0.004, dt) : 0;
     this.camCut = false;
@@ -880,8 +894,7 @@ export class MatchView {
     // 스매시·에이스·위너 때 화면이 살짝 흔들린다
     let off = null;
     if (this.shake > 0.004) {
-      off = new THREE.Vector3((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake, 0);
-      this.camera.position.add(off);
+      if (tv) { off = new THREE.Vector3((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake, 0); this.camera.position.add(off); }
       this.shake *= Math.pow(0.02, dt);
     } else this.shake = 0;
     this.renderer.render(this.scene, this.camera);

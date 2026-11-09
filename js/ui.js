@@ -50,20 +50,23 @@ export function start() {
   render();
   app.addEventListener('click', onClick);
   app.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'pname') app.querySelector('[data-a=profileName]')?.click(); });
-  // 경기 중 V 키: 시점 바꾸기(1인칭 ↔ 중계)
+  // 경기 중 V 키: 시점 바꾸기(중계 → 3인칭 → 1인칭)
   window.addEventListener('keydown', e => { if ((e.key === 'v' || e.key === 'V' || e.key === 'ㅍ') && M?.view && !e.target.closest?.('input, textarea')) toggleCam(); });
 }
-// 시점: 1인칭(주인공 눈높이) ↔ 중계(코트 전체). 고른 시점은 이 기기에 기억해 다음 경기에도 쓴다
-const CAM_KEY = 'tennis.fpv';
-function camPref() { try { return localStorage.getItem(CAM_KEY) === '1'; } catch { return false; } }
-function camLabel(fpv) { return fpv ? '📺 중계로' : '👀 1인칭으로'; }
+// 시점: 중계(코트 전체) → 3인칭(주인공 바로 뒤) → 1인칭(주인공 눈높이) 순서로 돈다. 버튼에는 누르면 바뀔 시점이 쓰여 있다.
+// 고른 시점은 이 기기에 기억해 다음 경기에도 쓴다(예전 1인칭 기억 'tennis.fpv'도 읽는다)
+const CAM_KEY = 'tennis.cam', CAM_NEXT = { tv: 'tps', tps: 'fpv', fpv: 'tv' };
+const CAM_LABEL = { tv: '🎥 3인칭으로', tps: '👀 1인칭으로', fpv: '📺 중계로' };
+function camPref() {
+  try { const v = localStorage.getItem(CAM_KEY); if (CAM_NEXT[v]) return v; return localStorage.getItem('tennis.fpv') === '1' ? 'fpv' : 'tv'; } catch { return 'tv'; }
+}
+function camShow(mode) { const b = document.getElementById('camtoggle'); if (b) { b.hidden = false; b.textContent = CAM_LABEL[mode]; b.classList.toggle('on', mode !== 'tv'); } }
 function toggleCam() {
   if (!M?.view) return;
-  const on = !M.view.fpv;
-  M.view.setFpv(on);
-  try { localStorage.setItem(CAM_KEY, on ? '1' : '0'); } catch { }
-  const b = document.getElementById('camtoggle');
-  if (b) { b.textContent = camLabel(on); b.classList.toggle('on', on); }
+  const mode = CAM_NEXT[M.view.view3 || 'tv'];
+  M.view.setView(mode);
+  try { localStorage.setItem(CAM_KEY, mode); } catch { }
+  camShow(mode);
 }
 
 function render() {
@@ -1075,10 +1078,9 @@ async function runMatch() {
       M.view = new MatchView(stage, { surface: tr.surface || 'hard', banner: `${tr.name} ${tr.div}부` });
       await M.view.setPlayers(players);
       // 시점 바꾸기 버튼(V 키도 됨). 지난번에 고른 시점으로 시작한다
-      const fpv = camPref();
-      M.view.setFpv(fpv);
-      const cb = document.getElementById('camtoggle');
-      if (cb) { cb.hidden = false; cb.textContent = camLabel(fpv); cb.classList.toggle('on', fpv); }
+      const cam = camPref();
+      M.view.setView(cam);
+      camShow(cam);
     } catch (err) { console.warn(err); M.view = null; }
   }
   if (!M.view) stage.classList.add('textmode');
