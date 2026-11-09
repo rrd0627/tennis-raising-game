@@ -7,6 +7,9 @@
 
 - 배경이 투명하지 않으면 #FF00FF 단색이나, 가장자리에서 이어진 단색 배경을 지운다.
 - 전신(sd_)은 768x768 칸에서 머리 꼭대기와 발끝 높이를 맞춘다. 캔버스 크기가 그림마다 달라도 포즈끼리 키가 같아진다.
+- 치는 동작을 나눈 그림(split, turn, power, hit, follow)은 한 동작 안에서 차례로 바뀌므로 그림마다 키를 맞추지 않는다
+  (쪼그린 자세가 커지면 안 된다). 같은 캐릭터·방향의 묶음을 한 비율로 줄이고(묶음 키의 중앙값이 준비 자세 키와 같게),
+  발끝 높이와 머리 가운데만 맞춘다. 라켓이 잘리지 않게 1152x768 칸에 둔다.
 - 결과는 WebP로 art/sd, art/chr, art/fairy, art/bg, art/intro 에 저장하고, 원본은 art/incoming/done/ 으로 옮긴다.
 - 그림마다 art/SOURCES.md 에 날짜와 도구를 남긴다.
 
@@ -35,6 +38,8 @@ HEAD = 0.30     # 머리 꼭대기 높이. 머리부터 발끝까지가 칸의 6
 CHR = 512       # 대화용 얼굴
 FAIRY = 384     # 요정
 BG_W = 1024     # 배경과 인트로 컷의 최대 너비
+MOTION_W = 1152  # 부분 동작 칸 너비(높이는 SD). 게임은 가운데 아래를 발밑으로 본다
+MOTION = re.compile(r'^(split|turn(fh|bh)|power(fh|bh)(slice)?(neutral|semi|open|run|cross)|(hit|follow)(fh|bh)(slice)?)$')
 
 RULES = [
     (re.compile(r'^sd_([a-z0-9]+)_([a-z]+)_(front|back)$'), 'sd'),
@@ -164,6 +169,29 @@ def place_sd(im):
     return out
 
 
+def motion_height(im):
+    box = im.getchannel('A').getbbox()
+    top, _ = head_of(im)
+    return box[3] - top
+
+
+def place_motion(im, s):
+    """부분 동작: 묶음 비율 s로 줄여 발끝을 FOOT 높이, 머리를 가운데에 둔다. 칸을 넘으면 넘친 픽셀 수를 같이 돌려준다."""
+    box = im.getchannel('A').getbbox()
+    if not box:
+        return None, 0
+    _, cx = head_of(im)
+    cut = im.crop(box)
+    cut = cut.resize((max(1, round(cut.width * s)), max(1, round(cut.height * s))), Image.LANCZOS)
+    x, y = round(MOTION_W / 2 - (cx - box[0]) * s), round(SD * FOOT) - cut.height
+    over = max(0, -x, x + cut.width - MOTION_W, -y)
+    out = Image.new('RGBA', (MOTION_W, SD), (0, 0, 0, 0))
+    sx, sy = max(0, -x), max(0, -y)
+    ex, ey = min(cut.width, MOTION_W - x), min(cut.height, SD - y)
+    out.alpha_composite(cut, (x + sx, y + sy), (sx, sy, ex, ey))
+    return out, over
+
+
 def scene(im):
     im = im.convert('RGB')
     if im.width > BG_W:
@@ -182,6 +210,17 @@ def main():
         manifest.setdefault(k, {})
     manifest.setdefault('intro', [])
     done, warn, sources = [], [], []
+    # 부분 동작 묶음(캐릭터, 방향)마다 비율 하나: 묶음 키의 중앙값이 준비 자세 키(SD*(FOOT-HEAD))가 되게
+    groups = {}
+    for f in files:
+        kind, g = classify(f.stem)
+        if kind == 'sd' and MOTION.match(g[1]):
+            groups.setdefault((g[0], g[2]), []).append(f)
+    motion_s = {}
+    for key, fs in groups.items():
+        hs = sorted(motion_height(remove_bg(Image.open(f))[0]) for f in fs)
+        motion_s[key] = SD * (FOOT - HEAD) / hs[len(hs) // 2]
+        print(f'부분 동작 {key[0]} {key[1]}: {len(fs)}장, 비율 {motion_s[key]:.3f}')
     for f in files:
         kind, g = classify(f.stem)
         if not kind:
@@ -209,7 +248,12 @@ def main():
             im, ok = remove_bg(src)
             if not ok:
                 warn.append(f'{f.name}: 배경을 다 지우지 못했을 수 있음. 투명 배경이나 #FF00FF 배경으로 다시 받기를 권함')
-            out = place_sd(im) if kind == 'sd' else fit(im, CHR if kind == 'chr' else FAIRY)
+            if kind == 'sd' and MOTION.match(pose):
+                out, over = place_motion(im, motion_s[(char, facing)])
+                if over:
+                    warn.append(f'{f.name}: 칸을 {over}px 넘어 조금 잘림')
+            else:
+                out = place_sd(im) if kind == 'sd' else fit(im, CHR if kind == 'chr' else FAIRY)
             if out is None:
                 warn.append(f'{f.name}: 그림이 비어 있어 건너뜀')
                 continue

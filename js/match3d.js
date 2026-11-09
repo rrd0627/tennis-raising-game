@@ -1,7 +1,7 @@
 // 3D 중계 뷰 — 3D 코트 + 2D 빌보드 캐릭터 (기획 문서 7장)
 // 엔진이 만든 포인트 로그를 받아 재생만 한다.
 import * as THREE from 'three';
-import { sdFrames, emoteCanvas } from './art.js';
+import { sdFrames, sdMotionFrames, emoteCanvas } from './art.js';
 import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 import { loadStadium, stadiumData, buildStadium, toonMaterial } from './stadium.js';
@@ -56,6 +56,30 @@ function poseFor(type, side) {
   if (/^bh_/.test(type)) return 'bh';
   if (/^fh_/.test(type)) return 'fh';
   return side < 0 ? 'bh' : 'fh';
+}
+// 치는 동작을 나눈 그림(부분 동작): 스플릿 → 유닛턴 → 파워 포지션(스탠스별) → 임팩트 → 팔로스로.
+// 드라이브(세게 치는 샷)는 드라이브 세트(백핸드 두 손), 슬라이스·칩·드롭샷·수비 로브는 한 손 슬라이스 세트. 발리·스매시·서브는 예전 그림
+const DRIVE_SHOT = /^(fh_drive|bh_drive|passing|return|topspin_lob|swing_volley)$/;
+const SLICE_SHOT = /^(fh_slice|bh_slice|chip_return|dropshot|def_lob)$/;
+// 엔진의 스탠스(stanceOf) → 그림 이름. 드라이브는 크로스가 없어 뉴트럴, 백핸드 드라이브와 슬라이스는 세미오픈이 없어 오픈으로
+const STANCE_KEY = { '뉴트럴': 'neutral', '세미오픈': 'semi', '오픈': 'open', '달리면서': 'run', '크로스': 'cross' };
+function swingOf(type, stance, wing) {
+  if (wing !== 'fh' && wing !== 'bh') return null;
+  const slice = SLICE_SHOT.test(type);
+  if (!slice && !DRIVE_SHOT.test(type)) return null;
+  let st = STANCE_KEY[stance] || (wing === 'fh' && !slice ? 'semi' : 'neutral');
+  if (st === 'semi' && (slice || wing === 'bh')) st = 'open';
+  if (st === 'cross' && !slice) st = 'neutral';
+  const sl = slice ? 'slice' : '';
+  return { type, turn: `turn${wing}`, power: `power${wing}${sl}${st}`, hit: `hit${wing}${sl}`, follow: `follow${wing}${sl}` };
+}
+// 그림이 없으면 대신 쓸 그림: 파워 포지션은 그 스탠스 → 뉴트럴 → 유닛턴, 임팩트·팔로스로는 예전 포핸드·백핸드 그림
+// (슬라이스 세트가 없을 때 두 손 드라이브 그림으로 대신하지 않는다), 스플릿·유닛턴은 준비 자세
+function fallbackPose(pose) {
+  let m;
+  if ((m = /^power(fh|bh)(slice)?(\w+)$/.exec(pose))) return m[3] !== 'neutral' ? `power${m[1]}${m[2] || ''}neutral` : `turn${m[1]}`;
+  if ((m = /^(?:hit|follow)(fh|bh)(?:slice)?$/.exec(pose))) return m[1];
+  return 'ready';
 }
 const lerp = (a, b, t) => a + (b - a) * t;
 function glowCanvas() {
@@ -343,7 +367,7 @@ export class MatchView {
       const info = players[i];
       const frames = await sdFrames(info.charId || `npc${i}`, info.look, i < 2 ? 'back' : 'front');
       const tex = {};
-      for (const [k, cnv] of Object.entries(frames)) tex[k] = this.canvasTex(cnv);
+      for (const [k, cnv] of Object.entries(frames)) { tex[k] = this.canvasTex(cnv); tex[k].userData.trim = cnv.trim; }
       // alphaTest: 그림의 빈 곳이 뒤에 있는 것(발밑 고리, 그림자)을 가리지 않게
       const mat = new THREE.SpriteMaterial({ map: tex.ready, transparent: true, alphaTest: 0.08 });
       const sp = new THREE.Sprite(mat);
@@ -360,6 +384,18 @@ export class MatchView {
       list.push({ sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.players = list;
+    for (let i = 0; i < 4; i++) this.setPose(i, 'ready');
+    // 치는 동작을 나눈 그림은 경기가 시작된 뒤 불러 와서 들어오는 대로 쓴다(그동안은 예전 그림).
+    // 주인공 말고는 조금 작게 올린다(멀리 보이므로, 그래픽 메모리를 아끼려고)
+    for (let i = 0; i < 4; i++) {
+      const info = players[i];
+      sdMotionFrames(info.charId || `npc${i}`, info.look, i < 2 ? 'back' : 'front', i === 0 ? 1 : 0.7).then(fr => {
+        if (!this.alive) return;
+        const p = list[i];
+        for (const [k, cnv] of Object.entries(fr)) { const t = this.canvasTex(cnv); t.userData.trim = cnv.trim; this.renderer.initTexture(t); p.tex[k] = t; }
+        if (Object.keys(fr).length) p.motion = true;
+      });
+    }
     this.emoteTex = {};
     for (const k of ['sweat', 'fire', 'cloud', 'heart', 'bang']) this.emoteTex[k] = this.canvasTex(emoteCanvas(k));
     // 주인공 표시 링
@@ -374,7 +410,8 @@ export class MatchView {
       // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
       const y = Math.abs(Math.sin(p.stride)) * 0.14 + p.hop;
       p.sp.position.set(p.x, y, p.z);
-      if (p.base) p.sp.scale.set(p.base * (1 + p.sq * 0.5 + p.crouch * 0.03), p.base * (1 - p.sq - p.crouch * 0.07), 1);
+      // 그림은 빈 곳을 잘라 올렸으므로(trim) 잘린 크기만큼만 키운다
+      if (p.base) p.sp.scale.set(p.base * (p.trim?.uw ?? 1) * (1 + p.sq * 0.5 + p.crouch * 0.03), p.base * (p.trim?.vh ?? 1) * (1 - p.sq - p.crouch * 0.07), 1);
       p.sp.material.rotation = p.lean + p.kick;
       p.shadow.position.set(p.x, 0.012, p.z);
       p.emote.position.set(p.x, 2.35 + y, p.z);
@@ -445,11 +482,19 @@ export class MatchView {
     this.pops.push({ kind: 'flash', sp, t: 0, life: 0.2, size: clamp(0.5 + v * 0.04, 0.7, 1.7) * near });
   }
 
-  setPose(i, pose, ms = 0) {
-    const p = this.players[i];
-    p.pose = pose; p.sp.material.map = p.tex[pose] || p.tex.ready; p.sp.material.needsUpdate = true;
+  // 그 그림이 없으면 비슷한 그림으로(fallbackPose)
+  texOf(p, pose) { let k = pose; for (let n = 0; n < 4 && !p.tex[k]; n++) k = fallbackPose(k); return p.tex[k] || p.tex.ready; }
+  setPose(i, pose, ms = 0, keepSeq = false) {
+    const p = this.players[i], t = this.texOf(p, pose), tr = t.userData.trim;
+    p.pose = pose; p.sp.material.map = t; p.sp.material.needsUpdate = true;
+    // 잘린 그림: 발밑(원래 칸의 가운데 아래 2%)이 늘 같은 자리에 오게
+    p.trim = tr || null;
+    if (tr) p.sp.center.set((tr.cx - tr.u0) / tr.uw, (0.02 - tr.v0) / tr.vh); else p.sp.center.set(0.5, 0.02);
     p.poseUntil = ms ? performance.now() + ms / this.speed : 0;
+    if (!keepSeq) p.seq = null;
   }
+  // 동작을 차례로 보여 준다: [[그림, ms], ...]. 끝나면 준비 자세
+  playPoses(i, seq) { const [f, ...rest] = seq; this.setPose(i, f[0], f[1]); this.players[i].seq = rest; }
   showEmote(i, kind, ms = 1600) {
     const p = this.players[i];
     if (!kind) { p.emote.visible = false; return; }
@@ -467,12 +512,12 @@ export class MatchView {
     p.speed = speed || (within > 0 ? clamp(d / within, RUN_SPEED * 0.6, MAX_RUN_SPEED) : RUN_SPEED);
   }
   // 상대가 치는 순간의 작은 스텝
-  splitStep(i) { const p = this.players[i]; p.hop = 0.2; p.crouch = 0; p.splitting = true; }
+  splitStep(i) { const p = this.players[i]; p.hop = 0.2; p.crouch = 0; p.splitting = true; this.setPose(i, 'split', 260); }
   // 닿지 못한 공에 몸을 던진다
   lunge(i, toward) {
     const p = this.players[i], right = (i < 2 ? 1 : -1) * (toward[0] - p.x) >= 0;
-    this.setPose(i, right ? 'fh' : 'bh', 700);
-    p.kick = (i < 2 ? 1 : -1) * (right ? 0.5 : -0.5);
+    this.setPose(i, right ? 'hitfh' : 'hitbh', 700);
+    p.kick = (i < 2 ? 1 : -1) * (right ? 0.5 : -0.5) * (p.motion ? 0.6 : 1);
     p.tx = p.x + Math.sign(toward[0] - p.x) * 0.35; p.tz = p.z; p.speed = 3;
   }
 
@@ -632,7 +677,7 @@ export class MatchView {
       const [x, z] = i === s0.h ? s0.from : start[i];
       const p = this.players[i];
       this.setPose(i, 'ready'); this.showEmote(i, null);
-      p.stride = 0; p.hop = 0; p.kick = 0; p.lean = 0;
+      p.stride = 0; p.hop = 0; p.kick = 0; p.lean = 0; p.swing = null;
       p.x = p.tx = x; p.z = p.tz = z;
     }
     this.placeAll();
@@ -752,8 +797,13 @@ export class MatchView {
     // 스윙: 타구 순간 몸을 돌리고 잠깐 뒤 준비 자세로. 쭉 뻗어 받은 공이면 몸이 더 기운다
     const hitter = this.players[s.h];
     const stretched = prev?.mv?.[s.h]?.k === 'reach';
-    this.setPose(s.h, poseFor(s.type, side), 380);
-    hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22) * (stretched ? 2 : 1) * (hitter.crouch ? 1.4 : 1);
+    // 받으러 갈 때 정해 둔 동작(swing)이 있으면 임팩트 → 팔로스로, 없으면(발리·스매시·서브) 예전 그림 하나
+    const sw = hitter.swing?.type === s.type ? hitter.swing : null;
+    hitter.swing = null;
+    if (sw) this.playPoses(s.h, [[sw.hit, 90], [sw.follow, 430]]);
+    else this.setPose(s.h, poseFor(s.type, side), 380);
+    // 몸 전체를 기울이는 것은 동작 그림이 있으면 조금만(그림이 이미 몸을 돌리고 있다)
+    hitter.kick = (s.h < 2 ? 1 : -1) * (side < 0 ? -0.22 : 0.22) * (stretched ? 2 : 1) * (hitter.crouch ? 1.4 : 1) * (hitter.motion ? 0.35 : 1);
     if (hitter.crouch) { hitter.crouch = 0; hitter.sq = 0.06; }
     // 스탠스: 뉴트럴은 네트 쪽으로, 크로스는 공을 가로질러 디디고, 세미오픈은 조금, 오픈은 옆으로 버틴다. 달리면서는 그대로 지나간다
     const stance = s.info?.stance, fz = s.h < 2 ? -1 : 1, lx = Math.sign(s.to[0] - s.from[0]) || 1;
@@ -798,7 +848,7 @@ export class MatchView {
       if (!m) continue;
       const p = this.players[j];
       let tx = m.x, tz = m.z, sp = m.v, t0 = m.t0;
-      let opt = {};
+      let opt = {}, turnAt = -1;
       // 라켓이나 몸에 맞을 사람은 공이 지나는 곳 바로 옆까지 간다
       if (touch && j === touch.j) {
         const [bx, bz] = touch.p, dx = m.x - bx, dz = m.z - bz, dd = Math.hypot(dx, dz) || 1, off = touch.kind === 'body' ? 0.2 : 0.75;
@@ -840,8 +890,14 @@ export class MatchView {
         sp = cruise(D, T, set);
         // 멈추지 못하는 사람은 공 자리를 지나쳐 계속 달린다(치는 순간에도 움직이고 있다)
         if (!set && D > 0.3) { tx += (tx - p.x) / D * 0.7; tz += (tz - p.z) / D * 0.7; }
-        const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14);
-        opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, prepFor(next.type), 0); } : null };
+        const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14) * (p.motion ? 0.35 : 1);
+        // 치는 동작: 달려가며 유닛턴, 멈춰 서면 그 스탠스의 파워 포지션을 미리 잡아 둔다(사용자 2026-11-09).
+        // 멈추지 못하는 사람은 공이 오기 직전에야 파워 포지션(아래 lead)
+        const sw = swingOf(next.type, next.info?.stance, wingOf(next.type, j < 2 ? 0 : 1, next.from, [p.x, p.z]));
+        p.swing = sw;
+        // 스플릿 스텝으로 내려앉은 채 기다리다가(첫발만큼) 움직이기 시작하면 유닛턴. 사이에 준비 자세로 돌아가지 않게
+        if (sw) { turnAt = Math.max(t0 + 0.02, 0.22); if (p.pose === 'split') { p.poseUntil = 0; p.seq = null; } }
+        opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, sw ? sw.power : prepFor(next.type), 0); } : null };
       }
       const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : m.tLunge ?? Math.max(m.t0 + 0.05, tPass * (m.k === 'confuse' ? 0.55 : 0.8));
       // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
@@ -856,6 +912,7 @@ export class MatchView {
         }
       }
       this.later(t0, () => this.runTo(j, tx, tz, 0, sp, opt));
+      if (turnAt >= 0) { const sw = p.swing; this.later(Math.max(turnAt, t0), () => { if (p.swing === sw && !p.crouch) this.setPose(j, sw.turn); }); }
       if (m.k === 'miss' || m.k === 'confuse') {
         const ball = s.bounce || s.to;
         const hitBody = touch && j === touch.j && touch.kind === 'body';
@@ -872,7 +929,7 @@ export class MatchView {
       const p = this.players[j], q = nearest(arc, [p.x, p.z], 2.2, 0.2);
       if (!q || q.d < 0.9 || q.d > 2.6) continue;
       const right = (j < 2 ? 1 : -1) * (q.p[0] - p.x) >= 0;
-      this.later(Math.max(0.1, q.t - 0.14), () => { this.setPose(j, Math.abs(p.z) < 7 ? 'volley' : right ? 'fh' : 'bh', 320); p.kick = (j < 2 ? 1 : -1) * (right ? 0.35 : -0.35); p.hop = Math.max(p.hop, 0.07); });
+      this.later(Math.max(0.1, q.t - 0.14), () => { this.setPose(j, Math.abs(p.z) < 7 ? 'volley' : right ? 'hitfh' : 'hitbh', 320); p.kick = (j < 2 ? 1 : -1) * (right ? 0.35 : -0.35) * (p.motion ? 0.5 : 1); p.hop = Math.max(p.hop, 0.07); });
     }
     // 나가는 공을 쳐 버렸다(판단 실수)
     if (s.outBall) this.later(Math.max(0, dur - 0.06), () => this.popText(s.to[0], 2.0, s.to[1], '아웃 볼!', 'out'));
@@ -884,8 +941,8 @@ export class MatchView {
     // 받을 선수는 공이 닿기 직전에 준비 자세를 잡는다
     if (next && next.h !== undefined && next.h !== s.h) {
       const pv = this.players[next.h];
-      const lead = Math.max(0, dur - 0.22);
-      this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { if (pv.crouch) return; this.setPose(next.h, prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12); } });
+      const lead = Math.max(0, dur - 0.24);
+      this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { if (pv.crouch) return; const sw = pv.swing?.type === next.type ? pv.swing : null; this.setPose(next.h, sw ? sw.power : prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12) * (pv.motion ? 0.35 : 1); } });
     }
     if (s.res === 'net') {
       // 네트에 걸린 공은 앞으로 가던 힘을 잃고 떨어져 튄다
@@ -1034,7 +1091,7 @@ export class MatchView {
         if (wasUp && p.hop === 0 && p.splitting) { p.splitting = false; p.sq = Math.max(p.sq, 0.1); }   // 스플릿 스텝 착지
         p.sq = Math.max(0, p.sq - pdt * 0.5);
         p.kick *= Math.max(0, 1 - pdt * 7);
-        if (p.poseUntil && now > p.poseUntil) { p.poseUntil = 0; this.setPose(i, 'ready'); }
+        if (p.poseUntil && now > p.poseUntil) { p.poseUntil = 0; const nx = p.seq?.shift(); if (nx) this.setPose(i, nx[0], nx[1], true); else this.setPose(i, 'ready'); }
         if (p.emoteUntil && now > p.emoteUntil) { p.emoteUntil = 0; p.emote.visible = false; }
       }
       this.placeAll();
@@ -1137,6 +1194,7 @@ export class MatchView {
     for (const tw of this.tweens) tw.done && tw.done();
     this.tweens = [];
     this.scene.traverse(o => { o.geometry?.dispose(); if (o.material) for (const m of [o.material].flat()) { m.map?.dispose(); m.gradientMap?.dispose(); m.dispose(); } });
+    for (const p of this.players || []) for (const t of Object.values(p.tex)) t.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const q of this.pops) q.el?.remove();

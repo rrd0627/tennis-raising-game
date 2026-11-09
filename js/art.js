@@ -177,6 +177,44 @@ export async function portraitURL(charId, look, expr = 'base') {
   return portraitCanvas(look, expr, 192).toDataURL();
 }
 
+// 그림의 빈 곳을 잘라 낸다(경기에서 그림 수십 장을 올려도 그래픽 메모리가 넘치지 않게).
+// 잘린 그림에는 원래 칸에서의 자리를 높이 단위로 붙인다: u0, v0(아래에서), uw, vh, cx(발밑 가운데). scale: 해상도 배율
+function trimSprite(src, scale = 1, tint = null) {
+  const W = src.naturalWidth || src.width, H = src.naturalHeight || src.height;
+  const full = document.createElement('canvas'); full.width = W; full.height = H;
+  const g = full.getContext('2d', { willReadFrequently: true }); g.drawImage(src, 0, 0);
+  const a = g.getImageData(0, 0, W, H).data, st = 3;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y += st) for (let x = 0; x < W; x += st) if (a[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return full;
+  x0 = Math.max(0, x0 - st - 2); y0 = Math.max(0, y0 - st - 2); x1 = Math.min(W, x1 + st + 3); y1 = Math.min(H, y1 + st + 3);
+  const cw = x1 - x0, ch = y1 - y0;
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(cw * scale)); c.height = Math.max(1, Math.round(ch * scale));
+  c.getContext('2d').drawImage(full, x0, y0, cw, ch, 0, 0, c.width, c.height);
+  if (tint) tintNeutral(c, tint);
+  c.trim = { u0: x0 / H, v0: (H - y1) / H, uw: cw / H, vh: ch / H, cx: W / 2 / H };
+  return c;
+}
+// 치는 동작을 나눈 그림(부분 동작 스프라이트 요청서). 등록된 캐릭터만 있고, 없으면 경기가 예전 그림으로 대신한다(match3d.js)
+export const MOTION_POSES = ['split', 'turnfh', 'turnbh',
+  'powerfhneutral', 'powerfhsemi', 'powerfhopen', 'powerfhrun', 'powerbhneutral', 'powerbhopen', 'powerbhrun', 'hitfh', 'hitbh', 'followfh', 'followbh',
+  'powerfhslicecross', 'powerfhsliceneutral', 'powerfhsliceopen', 'powerfhslicerun', 'powerbhslicecross', 'powerbhsliceneutral', 'powerbhsliceopen', 'powerbhslicerun',
+  'hitfhslice', 'hitbhslice', 'followfhslice', 'followbhslice'];
+// 부분 동작은 경기가 시작된 뒤에 천천히 불러 온다(기다리지 않게). 다 읽은 그림은 붙잡아 두지 않는다
+export async function sdMotionFrames(charId, look, facing, scale = 1) {
+  const out = {};
+  const entry = manifest.sd?.[charId];
+  if (!entry || entry.image) return out;
+  const tint = charId === 'oppa' || charId === 'oppb' ? look.outfit : null;
+  await Promise.all(MOTION_POSES.map(async p => {
+    const path = sdPath(charId, p, facing);
+    if (!path) return;
+    const im = await new Promise(res => { const m = new Image(); m.onload = () => res(m); m.onerror = () => res(null); m.src = path; });
+    if (im) out[p] = trimSprite(im, scale, tint);
+  }));
+  return out;
+}
+
 // 경기 스프라이트: manifest.sd[charId] 가 한 장씩 등록된 그림이거나 { image, json } 시트 (Aseprite 해시 JSON, 프레임 이름 `${pose}_${facing}`)
 // 상대 선수(oppa, oppb)는 흰색·회색 옷으로 그려 두고 여기서 상대마다 옷 색을 입힌다.
 export async function sdFrames(charId, look, facing) {
@@ -188,10 +226,7 @@ export async function sdFrames(charId, look, facing) {
       const path = sdPath(charId, p, facing);
       const im = path && await loadImage(path);
       if (!im) return;
-      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
-      c.getContext('2d').drawImage(im, 0, 0);
-      if (charId === 'oppa' || charId === 'oppb') tintNeutral(c, look.outfit);
-      out[p] = c;
+      out[p] = trimSprite(im, 1, charId === 'oppa' || charId === 'oppb' ? look.outfit : null);
     }));
   } else if (entry) {
     try {
