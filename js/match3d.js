@@ -120,8 +120,8 @@ export class MatchView {
     this.baseFov = Math.max(40, Math.min(70, vfov));
     // 1인칭: 사람이 집중해서 보는 폭처럼 가로로 약 55도(세로 화면이면 세로 화각이 커진다. 하늘·바닥이 너무 넓지 않게 80도까지)
     this.fpvFov = Math.max(50, Math.min(80, 2 * Math.atan(Math.tan(55 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
-    // 3인칭: 주인공 뒤에서 앞쪽 코트를 넓게(가로 약 66도)
-    this.tpsFov = Math.max(52, Math.min(84, 2 * Math.atan(Math.tan(66 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
+    // 3인칭(어깨 너머): 가로 약 62도
+    this.tpsFov = Math.max(50, Math.min(82, 2 * Math.atan(Math.tan(62 / 2 * Math.PI / 180) / aspect) * 180 / Math.PI));
     this.camera.fov = this.viewFov() * (this.fovCur || 1);
     this.camera.updateProjectionMatrix();
   }
@@ -297,6 +297,10 @@ export class MatchView {
     const me = this.players[0], hide = !!this.fpv;
     me.sp.visible = !hide; me.shadow.visible = !hide; this.myRing.visible = !hide;
     if (hide) me.emote.visible = false;
+    // 어깨 너머 시점에서는 주인공 머리 위 표시가 카메라 바로 앞이라 너무 크다. 작게, 머리 옆으로
+    const near = this.view3 === 'tps';
+    me.emote.scale.set(near ? 0.28 : 0.7, near ? 0.28 : 0.7, 1);
+    if (near) me.emote.position.set(me.x - 0.35, 1.95, me.z);
     if (this.auras?.[0]) this.auras[0].visible = !hide;
   }
   // 작전이 힘을 내는 동안 발밑에 빛나는 고리(우리 팀 분홍, 상대 파랑). null이면 끈다
@@ -475,11 +479,12 @@ export class MatchView {
       l.set(lx, ly, lz);
       return { t, l, zoom };
     }
-    // 3인칭: 주인공 바로 뒤 조금 위에서 앞쪽 코트를 본다. 주인공을 천천히 따라가고(옆으로는 덜), 공 쪽으로는 아주 조금만 돈다
+    // 3인칭(어깨 너머, 사용자 2026-11-09): 주인공 오른쪽 어깨 뒤(뒤 2.3m, 옆 0.8m, 높이 1.9m)에서 앞쪽 코트를 본다.
+    // 주인공은 화면 왼쪽 아래에 뒷모습으로 크게 보인다. 천천히 따라가고, 공 쪽으로는 아주 조금만 돈다
     if (this.view3 === 'tps' && this.players) {
       const p = this.players[0], bx2 = this.ball.visible ? this.ball.position.x : p.x;
-      t.set(clamp(p.x * 0.75 + bx2 * 0.08, -8.5, 8.5), 3.1, Math.min(p.z + 5, 19));
-      l.set(p.x * 0.45 + bx2 * 0.2, 0.7, p.z - 11);
+      t.set(clamp(p.x + 0.8, -9.8, 9.8), 1.9, Math.min(p.z + 2.3, 20.5));
+      l.set(p.x * 0.55 + 0.35 + bx2 * 0.18, 1.0, p.z - 12);
       return { t, l, zoom };
     }
     switch (this.camMode) {
