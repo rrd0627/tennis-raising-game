@@ -104,3 +104,4 @@
 | 2026-11-07 | art/sd/oppb/smash_front.webp | ChatGPT 이미지 생성 |
 | 2026-11-07 | art/sd/oppb/volley_front.webp | ChatGPT 이미지 생성 |
 | 2026-11-07 | art/sd/player/fh_front.webp | ChatGPT 이미지 생성 |
+| 2026-11-09 | art/stadium/stadium.glb | Blender 4.0.2 스크립트로 직접 모델링(tools/stadium/build_stadium.py) |

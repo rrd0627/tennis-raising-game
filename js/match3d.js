@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { sdFrames, emoteCanvas } from './art.js';
 import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
+import { loadStadium, stadiumData, buildStadium } from './stadium.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 const SURFACE = {
@@ -71,6 +72,7 @@ export class MatchView {
     this.speed = 1;
     this.surface = opts.surface || 'turf';
     this.banner = opts.banner || '';
+    this.crowdFill = opts.crowd;
     this.tweens = [];
     this.fx = [];
     this.pops = [];   // 능력치 글자와 타구 번쩍임
@@ -81,9 +83,13 @@ export class MatchView {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // 경기장 그림자(지붕, 전광판, 조명탑)는 움직이지 않으니 한 번만 그린다
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(48, w / h, 0.1, 300);
+    this.camera = new THREE.PerspectiveCamera(48, w / h, 0.1, 800);
     this.camBase = new THREE.Vector3(0, 14.5, 22.5);
     this.camLook = new THREE.Vector3(0, 0, -1.4);
     this.camMode = 'main';
@@ -159,20 +165,33 @@ export class MatchView {
 
   buildWorld() {
     const S = SURFACE[this.surface] || SURFACE.turf;
-    // 하늘
-    const sky = document.createElement('canvas'); sky.width = 4; sky.height = 256;
-    const g = sky.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 256);
-    gr.addColorStop(0, '#7ec8f2'); gr.addColorStop(0.7, '#cfeefe'); gr.addColorStop(1, '#f6fbff');
-    g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
-    this.scene.background = this.canvasTex(sky);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x88aa88, 1.1));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-8, 20, 10); this.scene.add(sun);
+    // 하늘: 카메라를 따라다니는 큰 공. 머리 위는 진한 파랑, 지평선은 밝게(우마무스메 경기장처럼 화사하게)
+    const skyG = new THREE.SphereGeometry(700, 32, 16), sp = skyG.attributes.position, skyC = [];
+    const SKY = [[-1, '#e9f7ff'], [0, '#e9f7ff'], [0.08, '#bfe6ff'], [0.3, '#7cc6f7'], [0.6, '#4aa6ee'], [1, '#358fe3']].map(([h, c]) => [h, new THREE.Color(c)]);
+    const tc = new THREE.Color();
+    for (let i = 0; i < sp.count; i++) {
+      const h = sp.getY(i) / 700;
+      let k = 1; while (k < SKY.length - 1 && SKY[k][0] < h) k++;
+      const [h0, c0] = SKY[k - 1], [h1, c1] = SKY[k];
+      tc.copy(c0).lerp(c1, clamp((h - h0) / (h1 - h0 || 1), 0, 1)); skyC.push(tc.r, tc.g, tc.b);
+    }
+    skyG.setAttribute('color', new THREE.Float32BufferAttribute(skyC, 3));
+    this.sky = new THREE.Mesh(skyG, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    this.sky.renderOrder = -10; this.scene.add(this.sky);
+    this.scene.background = new THREE.Color('#bfe6ff');
+    this.scene.fog = new THREE.Fog('#dff2ff', 140, 640);   // 먼 산과 구름은 하늘빛으로 옅게
+    // 아래를 보는 면(지붕 밑)은 땅에서 오는 빛을 받는다. 칙칙하지 않게 밝고 시원한 색. 위를 보는 코트는 예전과 같다
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c3e6, 1.1));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-8, 20, 10).multiplyScalar(3.2); this.scene.add(sun);
+    sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 5, far: 160 });
+    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
     // 바깥 바닥
     const outC = document.createElement('canvas'); outC.width = outC.height = 128;
     const oc = outC.getContext('2d'); oc.fillStyle = S.out; oc.fillRect(0, 0, 128, 128);
     for (let i = 0; i < 900; i++) { oc.fillStyle = S.grain; oc.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(22, 40), new THREE.MeshLambertMaterial({ map: this.canvasTex(outC, [6, 10]) }));
-    outer.rotation.x = -Math.PI / 2; this.scene.add(outer);
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(22.1, 40.7), new THREE.MeshLambertMaterial({ map: this.canvasTex(outC, [6, 10]) }));
+    outer.rotation.x = -Math.PI / 2; outer.position.z = 0.85; this.scene.add(outer);
     // 코트 + 라인
     const cw = 512, ch = Math.round(512 * (COURT_L + 2) / (COURT_W + 2));
     const cc = document.createElement('canvas'); cc.width = cw; cc.height = ch;
@@ -204,23 +223,46 @@ export class MatchView {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.07, 8), new THREE.MeshLambertMaterial({ color: 0x334433 }));
       post.position.set(x, 0.53, 0); this.scene.add(post);
     }
+    // 코트 바깥: Blender로 만든 툰풍 경기장(js/stadium.js). 아직 못 불러왔으면 예전 배경을 두었다가 바꾼다
+    if (stadiumData()) this.addStadium(stadiumData());
+    else {
+      this.buildFence();
+      loadStadium().then(d => { if (d && this.alive && !this.stadium) this.addStadium(d); });
+    }
+  }
+  addStadium(d) {
+    if (this.surround) {
+      this.scene.remove(this.surround);
+      this.surround.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
+      this.surround = null; this.crowds = null;
+    }
+    this.stadium = buildStadium(d, { banner: this.banner || '동호인 테니스 대회', crowd: this.crowdFill });
+    this.scene.add(this.stadium.group);
+    if (this.board) this.stadium.setBoard(this.board);
+    this.renderer.shadowMap.needsUpdate = true;
+  }
+  // 전광판 점수: { rows: [{ name, games, point, serve }], label }
+  setBoard(b) { this.board = b; this.stadium?.setBoard(b); }
+  // 예전 배경(펜스, 현수막, 본부석, 관중 판). 경기장 모델을 못 불러올 때만 쓴다
+  buildFence() {
+    const sur = this.surround = new THREE.Group(); this.scene.add(sur);
     // 펜스 + 배너
     const fc = document.createElement('canvas'); fc.width = 64; fc.height = 64;
     const f = fc.getContext('2d'); f.strokeStyle = 'rgba(40,60,50,0.55)'; f.lineWidth = 2;
     for (let i = -64; i <= 128; i += 12) { f.beginPath(); f.moveTo(i, 0); f.lineTo(i + 64, 64); f.stroke(); f.beginPath(); f.moveTo(i + 64, 0); f.lineTo(i, 64); f.stroke(); }
     const fenceMat = new THREE.MeshBasicMaterial({ map: this.canvasTex(fc, [30, 4]), transparent: true, depthWrite: false, side: THREE.DoubleSide });
     const back = new THREE.Mesh(new THREE.PlaneGeometry(22, 4), fenceMat);
-    back.position.set(0, 2, -19.5); this.scene.add(back);
-    for (const x of [-11, 11]) { const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 4), fenceMat); side.rotation.y = Math.PI / 2; side.position.set(x, 2, 0); this.scene.add(side); }
+    back.position.set(0, 2, -19.5); sur.add(back);
+    for (const x of [-11, 11]) { const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 4), fenceMat); side.rotation.y = Math.PI / 2; side.position.set(x, 2, 0); sur.add(side); }
     const wind = new THREE.Mesh(new THREE.PlaneGeometry(22, 1.6), new THREE.MeshLambertMaterial({ color: 0x1f5a3c }));
-    wind.position.set(0, 0.8, -19.45); this.scene.add(wind);
+    wind.position.set(0, 0.8, -19.45); sur.add(wind);
     const bc = document.createElement('canvas'); bc.width = 1024; bc.height = 96;
     const b = bc.getContext('2d'); b.fillStyle = '#ffffff'; b.fillRect(0, 0, 1024, 96);
     b.fillStyle = '#ff5b8a'; b.fillRect(0, 0, 1024, 12); b.fillRect(0, 84, 1024, 12);
     b.fillStyle = '#20324a'; b.font = 'bold 48px "Noto Sans KR", sans-serif'; b.textAlign = 'center'; b.textBaseline = 'middle';
     b.fillText(this.banner || '동호인 테니스 대회', 512, 50);
     const banner = new THREE.Mesh(new THREE.PlaneGeometry(12, 1.1), new THREE.MeshBasicMaterial({ map: this.canvasTex(bc) }));
-    banner.position.set(0, 1.0, -19.4); this.scene.add(banner);
+    banner.position.set(0, 1.0, -19.4); sur.add(banner);
     // 본부석 텐트 (2D 판)
     const tc = document.createElement('canvas'); tc.width = 256; tc.height = 192;
     const t = tc.getContext('2d');
@@ -229,7 +271,7 @@ export class MatchView {
     t.fillStyle = '#20324a'; t.font = 'bold 30px sans-serif'; t.textAlign = 'center'; t.fillText('본부석', 128, 130);
     t.fillStyle = '#8b6b4a'; t.fillRect(40, 150, 176, 14);
     const tent = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.canvasTex(tc) }));
-    tent.scale.set(5, 3.75, 1); tent.position.set(-7.5, 1.6, -22); this.scene.add(tent);
+    tent.scale.set(5, 3.75, 1); tent.position.set(-7.5, 1.6, -22); sur.add(tent);
     // 관중 판
     const pc = document.createElement('canvas'); pc.width = 512; pc.height = 96;
     const p = pc.getContext('2d');
@@ -240,7 +282,7 @@ export class MatchView {
     this.crowds = [];
     for (const [x, y, z, w, h] of [[5.5, 0.85, -21, 9, 1.7], [-2.6, 0.8, -21.4, 6.5, 1.5], [-12.8, 0.8, -8.5, 6, 1.3], [12.8, 0.8, -7.5, 6, 1.3]]) {
       const crowd = new THREE.Sprite(new THREE.SpriteMaterial({ map: crowdTex, transparent: true }));
-      crowd.scale.set(w, h, 1); crowd.position.set(x, y, z); this.scene.add(crowd);
+      crowd.scale.set(w, h, 1); crowd.position.set(x, y, z); sur.add(crowd);
       this.crowds.push({ sp: crowd, y, ph: this.crowds.length * 1.7 });
     }
   }
@@ -1011,7 +1053,10 @@ export class MatchView {
     this.camCut = false;
     this.camera.lookAt(this.curLook);
     // 관중: 좋은 포인트가 나면 들썩인다
-    if (this.crowds) {
+    if (this.stadium) {
+      this.stadium.update(dt, this.crowdAmp);
+      this.crowdAmp = this.crowdAmp > 0.01 ? this.crowdAmp * Math.pow(0.12, dt) : 0;
+    } else if (this.crowds) {
       this.crowdT = (this.crowdT || 0) + dt;
       for (const c of this.crowds) c.sp.position.y = c.y + (this.crowdAmp > 0.01 ? Math.max(0, Math.sin(this.crowdT * 17 + c.ph)) * 0.22 * Math.min(1.2, this.crowdAmp) : 0);
       this.crowdAmp = this.crowdAmp > 0.01 ? this.crowdAmp * Math.pow(0.12, dt) : 0;
@@ -1029,6 +1074,7 @@ export class MatchView {
       const op = tv ? 1 : clamp((d - 1.0) / 1.6, 0.18, 1);
       if (Math.abs(m.opacity - op) > 0.01) { m.transparent = true; m.opacity = op; }
     }
+    this.sky.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
     if (off) this.camera.position.sub(off);
   }
@@ -1039,6 +1085,7 @@ export class MatchView {
     window.removeEventListener('resize', this.onResize);
     for (const tw of this.tweens) tw.done && tw.done();
     this.tweens = [];
+    this.scene.traverse(o => { o.geometry?.dispose(); if (o.material) for (const m of [o.material].flat()) { m.map?.dispose(); m.gradientMap?.dispose(); m.dispose(); } });
     this.renderer.dispose();
     this.renderer.domElement.remove();
     for (const q of this.pops) q.el?.remove();

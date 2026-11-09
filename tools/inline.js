@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const css = readFileSync('css/style.css', 'utf8');
 const js = readFileSync('dist/bundle.js', 'utf8').replaceAll('</script', '<\\/script');
+// 경기장 모델(art/stadium/stadium.glb)은 더블클릭으로 열면 fetch로 못 읽으니 글자(base64)로 넣는다
+const glb = readFileSync('art/stadium/stadium.glb').toString('base64');
 const html = `<!doctype html>
 <html lang="ko">
 <head>
@@ -16,6 +18,7 @@ ${css}
 </head>
 <body>
 <div id="app"></div>
+<script>window.__STADIUM_GLB = '${glb}';</script>
 <script>
 ${js}
 </script>

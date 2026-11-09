@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경기장 미리보기</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; }
+  #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  #bar { position: fixed; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; }
+  #bar button { font: 600 13px sans-serif; padding: 6px 10px; border-radius: 8px; border: 0; background: #fff; }
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<!-- 경기장 모델만 보는 개발용 화면: npm run serve 뒤 http://localhost:8080/tools/stadium/view.html?cam=tv&surface=hard&crowd=0.8 -->
+<div id="stage"></div>
+<div id="bar"></div>
+<script type="module">
+import { MatchView } from '../../js/match3d.js';
+import { loadStadium } from '../../js/stadium.js';
+import { PLAYER_LOOK } from '../../js/art.js';
+const q = new URLSearchParams(location.search);
+await loadStadium();
+const v = new MatchView(document.getElementById('stage'), { surface: q.get('surface') || 'hard', banner: '전국 한빛배 국화부', crowd: +(q.get('crowd') || 0.8) });
+const look = (o, b) => ({ hair: '#3a2a22', outfit: o, skin: '#ffe0cc', band: b || '#ffffff' });
+await v.setPlayers([{ charId: 'player', look: PLAYER_LOOK }, { charId: 'p2', look: look('#5cbcff') }, { charId: 'oppa', look: look('#3f6fd8') }, { charId: 'oppb', look: look('#ffd24f') }]);
+v.setBoard({ label: '결승', rows: [{ name: '한별 · 김하나', games: 5, point: '30', serve: true }, { name: '상대 · 상대', games: 4, point: '15' }] });
+const CAMS = { tv: () => { v.setView('tv'); v.setCamera('main', true); }, serveUs: () => { v.setView('tv'); v.setCamera('serveUs', true); }, serveThem: () => { v.setView('tv'); v.setCamera('serveThem', true); }, tps: () => v.setView('tps'), fpv: () => v.setView('fpv') };
+const bar = document.getElementById('bar');
+for (const k of Object.keys(CAMS)) { const b = document.createElement('button'); b.textContent = k; b.onclick = CAMS[k]; bar.append(b); }
+{ const b = document.createElement('button'); b.textContent = '환호'; b.onclick = () => v.cheerCrowd(1.2); bar.append(b); }
+(CAMS[q.get('cam') || 'tv'] || CAMS.tv)();
+window.__view = v; window.__cams = CAMS; window.__ready = true;
+</script>
+</body>
+</html>

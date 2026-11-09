@@ -1075,7 +1075,7 @@ async function runMatch() {
   ];
   if (webglOK()) {
     try {
-      M.view = new MatchView(stage, { surface: tr.surface || 'hard', banner: `${tr.name} ${tr.div}부` });
+      M.view = new MatchView(stage, { surface: tr.surface || 'hard', banner: `${tr.name} ${tr.div}부`, crowd: crowdOf(tr) });
       await M.view.setPlayers(players);
       // 시점 바꾸기 버튼(V 키도 됨). 지난번에 고른 시점으로 시작한다
       const cam = camPref();
@@ -1180,6 +1180,11 @@ async function runMatch() {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// 관중석이 얼마나 차나: 동네 대회 예선은 듬성듬성, 전국대회 결승은 꽉 찬다(연출만)
+function crowdOf(tr) {
+  const lv = tr.level || 1, left = tr.stage === 'ko' ? (tr.koRounds || 1) - (tr.koRound || 0) : 9;
+  return Math.min(1, 0.12 + lv * 0.11 + (left <= 1 ? 0.22 : left <= 2 ? 0.12 : left <= 3 ? 0.05 : 0) + (tr.finale ? 0.2 * tr.finale : 0));
+}
 function hud(pt) {
   if (!M) return;
   const sim = M.sim, P = sim.P;
@@ -1189,6 +1194,8 @@ function hud(pt) {
   const ps = pt ? pt.score.split(' - ') : ['', ''];
   const sv = M.curServe ?? sim.serveTeam;
   const gm = pt ? pt.games : sim.games;
+  // 경기장 전광판에도 같은 점수
+  M.view?.setBoard?.({ label: G.stageLabel(tr), rows: [0, 1].map(t => ({ name: `${P[t * 2].name} · ${P[t * 2 + 1].name}`, games: gm[t], point: pt ? ps[t] : '', serve: sv === t && !sim.over })) });
   box.innerHTML = `<small>${esc(tr.name)} · ${G.stageLabel(tr)}</small>
     <div class="sr"><span>${sv === 0 && !sim.over ? '●' : ''}</span><b>${esc(P[0].name)} · ${esc(P[1].name)}</b><em>${gm[0]}</em><i>${pt ? ps[0] : ''}</i></div>
     <div class="sr"><span>${sv === 1 && !sim.over ? '●' : ''}</span><b>${esc(P[2].name)} · ${esc(P[3].name)}</b><em>${gm[1]}</em><i>${pt ? ps[1] : ''}</i></div>
