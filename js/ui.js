@@ -1259,8 +1259,10 @@ function crowd(pt) {
 }
 // 샷 글자: 칠 때마다 그 선수 머리 위에 무엇을 쳤는지(그 샷 능력치와 등급), 함께 쓰인 능력치(코스·파워·압박감 내성),
 // 스탠스, 공 빠르기(km/h), 회전(rpm, 탑스핀·백스핀), 정확도(%)를 띄운다. 빠르기와 회전은 중계가 그리는 공(js/ball.js)과 같은 값이다
+// 1인칭·3인칭에서는 내(주인공) 샷 글자만 띄운다. 상대가 뭘 칠지는 공을 보고 예측하고 반응해야 하니까(사용자, 2026-11-09)
 function shotCard(s) {
   if (!M?.view || !s.info?.use?.length || M.skipGame) return;
+  if (M.view.view3 && M.view.view3 !== 'tv' && s.h !== 0) return;
   const kmh = launchKmh(s), rpm = spinRpm(s), a = s.info.acc;
   const [[n0, g0], ...rest] = s.info.use;
   const chip = ([n, g]) => `<span>${esc(n)}<b class="g${g}">${g}</b></span>`;

@@ -568,6 +568,8 @@ export class MatchView {
     // 공은 실제 물리로 푼 궤적으로 간다(js/ball.js). 포인트를 시작할 때 차례로 풀어 둔다
     const fl = flyOf(s) || solveShot(s, s.res === 'fault' || s.res === 'df' ? null : next, /^serve/.test(s.type) ? 2.6 : 1.0, this.surface);
     const dur = fl.dur;
+    // 끝나는 공은 바운드 뒤 펜스까지 굴러가는 시간까지 dur에 들어 있다. 몸을 던지는 때와 글자는 엔진 시간(지나가는 때)에 맞춘다
+    const tPass = next ? dur : Math.min(dur, fl.T || dur);
     // 줌 펀치: 세게 친 공, 스매시, 끝내는 공은 맞는 순간 화면이 확 당겨졌다 돌아온다
     const ends = !next && ['win', 'ace', 'poach', 'center'].includes(s.res);
     if (s.type === 'smash' || ends) this.punch = Math.max(this.punch, 0.13);
@@ -583,7 +585,9 @@ export class MatchView {
       if (s.res !== 'fault' && s.res !== 'df') this.flash(s.from[0], fl.h0, s.from[1], v);
       if (s.type === 'smash' || s.res === 'ace') this.shake = Math.max(this.shake, 0.16);
       else if (s.res === 'win' || s.res === 'poach') this.shake = Math.max(this.shake, v >= 13 ? 0.1 : 0.06);
-      for (const c of s.call || []) { if (c.end) this.later(Math.max(0, dur - 0.08), () => this.popCall(c)); else this.popCall(c); }
+      // 능력치 글자. 1인칭·3인칭에서는 상대 샷에 붙은 상대 글자를 치는 순간이 아니라 공이 닿을 때 띄운다(미리 알려 주지 않게)
+      const hold = this.view3 && this.view3 !== 'tv' && s.h >= 2;
+      for (const c of s.call || []) { if (c.end || (hold && c.j >= 2)) this.later(Math.max(0, tPass - 0.08), () => this.popCall(c)); else this.popCall(c); }
     }
     // 움직임은 엔진이 능력치로 정한 대로: 첫발만큼 늦게 출발해서 스피드만큼 뛴다(js/rally.js)
     for (let j = 0; j < 4; j++) {
@@ -638,7 +642,7 @@ export class MatchView {
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14);
         opt = { brake: set, onArrive: set ? () => { p.crouch = 1; p.kick = coil; this.setPose(j, prepFor(next.type), 0); } : null };
       }
-      const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : Math.max(m.t0 + 0.05, dur * (m.k === 'confuse' ? 0.55 : 0.8));
+      const lungeAt = touch && j === touch.j ? Math.max(m.t0 + 0.05, touch.t - 0.12) : Math.max(m.t0 + 0.05, tPass * (m.k === 'confuse' ? 0.55 : 0.8));
       // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
       if (m.k === 'miss') {
         const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true);
