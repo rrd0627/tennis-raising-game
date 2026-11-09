@@ -576,9 +576,14 @@ export class MatchView {
     // 위로는 조금만 든다(높은 공을 올려다보면 주인공이 화면 아래로 빠진다). 세로 화면이 넓어 높은 공도 대개 화면 안에 있다
     const yawT = clamp(Math.atan2(dx, -dz), -1.2, 1.2), pitchT = clamp(Math.atan2(gy - HEAD, hd) - 0.08, -0.45, 0.06);
     const cut = this.camCut || this.tpsYaw === undefined, k = tc => (cut ? 1 : 1 - Math.exp(-dt / tc)), cap = 2.4 * dt;
-    if (cut) { this.tpsYaw = yawT; this.tpsPitch = pitchT; this.tpsSideCur = this.tpsSide || 1; }
-    this.tpsYaw += cut ? 0 : clamp((yawT - this.tpsYaw) * k(0.22), -cap, cap);
-    this.tpsPitch += cut ? 0 : clamp((pitchT - this.tpsPitch) * k(0.3), -cap, cap);
+    if (cut) { this.tpsYaw = this.tpsAimYaw = yawT; this.tpsPitch = this.tpsAimPitch = pitchT; this.tpsSideCur = this.tpsSide || 1; }
+    // 공(볼 곳)이 화면 가운데 근처에 있으면 카메라는 가만히 있다(사용자 2026-11-09: 공을 너무 따라다닌다).
+    // 가운데에서 좌우 14도, 위아래 7도를 넘어 나갈 때만 그 가장자리에 걸리도록 고개를 돌린다
+    const DZY = 0.24, DZP = 0.12, ey = yawT - this.tpsAimYaw, ep = pitchT - this.tpsAimPitch;
+    if (Math.abs(ey) > DZY) this.tpsAimYaw = yawT - Math.sign(ey) * DZY;
+    if (Math.abs(ep) > DZP) this.tpsAimPitch = pitchT - Math.sign(ep) * DZP;
+    this.tpsYaw += cut ? 0 : clamp((this.tpsAimYaw - this.tpsYaw) * k(0.22), -cap, cap);
+    this.tpsPitch += cut ? 0 : clamp((this.tpsAimPitch - this.tpsPitch) * k(0.3), -cap, cap);
     this.tpsSideCur += ((this.tpsSide || 1) - this.tpsSideCur) * k(0.3);
     const y = this.tpsYaw, pt = this.tpsPitch, fx = Math.sin(y), fz = -Math.cos(y), rx = Math.cos(y), rz = Math.sin(y), sd = SIDE * this.tpsSideCur;
     const t = new THREE.Vector3(clamp(p.x - fx * BACK + rx * sd, -10.4, 10.4), HEAD + UP, clamp(p.z - fz * BACK + rz * sd, -18.9, 20.6));
