@@ -125,7 +125,7 @@ export function netHit(s) { s[5] *= -0.08; s[3] *= 0.3; s[4] = Math.min(s[4], 0)
 // ── 궤적 풀기 ─────────────────────────────────────
 // ctx: 친 곳(x0, z0), 높이 h0, 가는 방향(ux, uz). 회전축은 진행 방향과 수직(옆으로 휘는 회전은 아직 없다)
 const SS = new Float64Array(9);
-let netY = 9, netX = 0;
+let netY = 9, netX = 0, topY = 0;
 function launchState(out, c, vs, vy, w) {
   out[0] = c.x0; out[1] = c.h0; out[2] = c.z0; out[3] = c.ux * vs; out[4] = vy; out[5] = c.uz * vs;
   out[6] = w * c.uz; out[7] = 0; out[8] = -w * c.ux;
@@ -135,10 +135,11 @@ const along = (c, s) => (s[0] - c.x0) * c.ux + (s[2] - c.z0) * c.uz;
 function stateAt(c, vs, vy, w, t) {
   launchState(SS, c, vs, vy, w);
   const n = Math.max(1, Math.ceil(t / DT)), h = t / n;
-  netY = 9; netX = 0;
+  netY = 9; netX = 0; topY = SS[1];
   for (let i = 0; i < n; i++) {
     const z0 = SS[2], y0 = SS[1], x0 = SS[0];
     rk4(SS, h);
+    if (SS[1] > topY) topY = SS[1];
     if (z0 * SS[2] < 0) { const f = z0 / (z0 - SS[2]); netY = y0 + (SS[1] - y0) * f; netX = x0 + (SS[0] - x0) * f; }
   }
   return SS;
@@ -210,6 +211,7 @@ function matchTime(c, T, w, sf) {
   return Math.abs(B.F) < Math.abs(A.F) ? B : A;
 }
 const CLEAR = 0.1;   // 네트 위로 이만큼은 지나가야 한다(공 크기)
+const APEX_OUT = 3.4, APEX_LOB = 7.5;   // 길게 나가는 공(로브)이 이보다 높이 뜨면 더 세게 친 공으로 푼다
 const SKIM = 0.03;   // 넷 코드: 테이프를 스친다
 
 // 샷 하나의 궤적. s = 엔진 샷, next = 그 공을 받는 샷(없으면 끝나는 공), h0 = 치는 높이
@@ -254,6 +256,20 @@ export function solveShot(s, next, h0, surface = 'turf', skim = false) {
     // 끝나는 공(위너·아웃·에이스): 바운드까지는 엔진 시간대로, 그 뒤는 물리대로 간다
     const t1 = T * c.split;
     let best = null;
+    // 길게 나가는 공은 너무 세게(회전은 덜) 쳐서 나간 공이다. 같은 빠르기로 그 깊이까지 보내려면 로브처럼 높이 떠야 하니,
+    // 더 빠르고 낮게 날아가게 푼다(라켓을 떠나는 빠르기가 그만큼 높게 나온다)
+    if (s.res === 'out' && !/drop/.test(s.type)) {
+      const cap = /lob|moon/.test(s.type) ? APEX_LOB : APEX_OUT;
+      for (const tf of [1, 0.9, 0.82, 0.75, 0.68, 0.62, 0.56]) {
+        const k = tf < 1 ? 0.75 : 1, w = rpm0 * k * RPM, g = aim(c, w, c.d1, 0, t1 * tf);
+        stateAt(c, g[0], g[1], w, t1 * tf);
+        const m = c.net ? netY - netH(netX) : 9, r = { g, k, t1: t1 * tf, m, top: topY };
+        if (m < CLEAR) break;
+        best = r;
+        if (topY <= cap) break;
+      }
+      if (best) return record(c, best.g, rpm0 * best.k * RPM, { t1: best.t1, end: 'land', sf, T });
+    }
     for (const [k, tf] of UP(rpm0 >= 0)) {
       const w = rpm0 * k * RPM, g = aim(c, w, c.d1, 0, t1 * tf);
       stateAt(c, g[0], g[1], w, t1 * tf);

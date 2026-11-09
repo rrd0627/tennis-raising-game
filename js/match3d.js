@@ -589,7 +589,17 @@ export class MatchView {
         sp = Math.max(m.v, cruise(Math.hypot(tx - p.x, tz - p.z), Math.max(0.2, touch.t - 0.05 - m.t0), true));
       }
       // 나가는 공: 받을 것처럼 공이 지나는 선 옆까지 가서 준비하다가, 지나가기 직전에 라켓을 거두고 한 발 물러선다(판단)
-      if (m.k === 'let' && s.res === 'out' && arc) {
+      // 그 사람 앞에 떨어지는 공(옆줄 밖으로 나가는 공, 폴트 서브): 들어왔다면 칠 곳(떨어진 곳 너머)으로 쫓아가다가,
+      // 떨어진 것을 보고 달리던 만큼 조금 더 가서 선다. 폴트는 떨어지자마자 제자리로 돌아간다(아래)
+      if (m.chase) {
+        opt = { brake: false };
+        if (s.res !== 'fault') this.later(Math.max(m.t0 + 0.1, fl.t1 + 0.08), () => {
+          const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz), k = Math.min(d, 0.25 + p.vel * 0.12);
+          if (d > 0.01) this.runTo(j, p.x + dx / d * k, p.z + dz / d * k, 0, Math.max(1.2, p.vel), { brake: true });
+          p.crouch = 0; this.setPose(j, 'ready', 0);
+        });
+      }
+      if (m.k === 'let' && !m.chase && s.res === 'out' && arc) {
         const q = nearest(arc, [m.x, m.z], 3, 0.2);
         if (q) {
           opt = { brake: true, onArrive: () => { p.crouch = 1; this.setPose(j, Math.abs(p.z) < 7 ? 'volley' : 'ready', 0); } };
