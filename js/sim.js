@@ -145,8 +145,12 @@ function toFence(P, w, L) {
 }
 // 서브 리턴: 바운드 뒤 공이 떴다가 내려올 때 친다(바운드에서 받는 곳까지 m). 깊게 들어온 서브일수록 뒤에서 받는다
 const retD = v => 5.4 + v * 0.05;
-function bounceOf(from, C, v, rz) {
-  const w = unit(from, C), bd = 2.0 + v * 0.06;
+// 바운드에서 받는 곳까지(m). 이 수준(동호인)은 튀어 오르는 공(라이징)을 잘 못 치고 꼭대기를 지나 떨어지는 공을 친다(사용자 2026-11-09).
+// 공이 튀어 오르는 모양은 들어온 공의 회전으로 다르다(js/ball.js로 잰 값): 탑스핀은 바운드 뒤 약 4.3m에서 꼭대기라 그 뒤 6~6.5m에서,
+// 슬라이스는 낮게 깔려 1.7m에서 꼭대기라 3m쯤에서, 발리처럼 회전이 적은 공은 그 사이, 스매시는 높이 튀어 멀리서 받는다
+const bounceD = (v, st = '') => (/slice|chip/.test(st) ? 2.4 + v * 0.05 : /volley/.test(st) ? 2.6 + v * 0.05 : st === 'smash' ? 5.6 + v * 0.04 : 4.7 + v * 0.11);
+function bounceOf(from, C, v, rz, st) {
+  const w = unit(from, C), bd = bounceD(v, st);
   let B = [C[0] - w[0] * bd, C[1] - w[1] * bd];
   let dx = 0, dz = 0;
   if (Math.abs(B[0]) > 5.25) dx = (Math.abs(B[0]) - 5.25) * -Math.sign(B[0]);
@@ -216,7 +220,7 @@ export class MatchSim {
       const lean = 0.3 + Math.max(0, press) * p.stats.poach / 400;
       return [clamp(xs * 2.2 + bx * lean, -4.4, 4.4), zs * (3.6 - Math.max(0, press) * 0.8 + Math.max(0, -press) * 0.6)];
     }
-    return [clamp(xs * 2.7 + bx * 0.3, -5, 5), zs * 11.2];
+    return [clamp(xs * 2.7 + bx * 0.3, -5, 5), zs * 12.2];   // 후위는 베이스라인 조금 뒤(떨어지는 공을 칠 자리)
   }
   // 공 빠르기: 샷 품질과 파워
   // 서브 공 빠르기(바운드까지 평균, m/s). 여자 동호인 서브는 느리다(사용자 경험, 2026-11-08).
@@ -236,21 +240,22 @@ export class MatchSim {
     const rz = this.zSign(R.team), side = this.xSign(R);
     const lob = LOBS.has(st), short = st === 'dropshot' || st === 'drop_volley';
     if (lob) {
-      const C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (10.0 + Math.min(f, 1.3) * 2.4)];
-      const B = onLineAtZ(from, C, rz * (C[1] * rz - 1.8));
+      // 로브는 높이 튀어 오른다. 꼭대기를 지나 떨어질 때 치려고 바운드 뒤 4.4m쯤 물러나서 받는다
+      const C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (11.4 + Math.min(f, 1.3) * 2.6)];
+      const B = onLineAtZ(from, C, rz * (C[1] * rz - 4.4));
       return { C, B, T: flightTime(from, C, B, v, st) };
     }
     if (short) {
       // 짧은 공: 네트 가까이 떨어진다. 뒤에서 달려오는 사람이 닿을 수 있게, 바운드 뒤 죽어 가는 공을 조금 더 깊은 곳에서 받는다
       let C = [clamp(P[0] * 0.7 + n1 * 1.2, -5, 5), rz * clamp(4.6 - Math.min(f, 1.3) * 2.2, 1.9, 4.6)];
-      let B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - 1.2));
+      let B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - (st === 'drop_volley' ? 1.2 : 1.7)));
       let T = flightTime(from, C, B, v, st);
       for (let it = 0; it < 4 && f < 1; it++) {
         const can = reachOf(body, T, late) * Math.max(f, 0.6), d = Math.hypot(C[0] - P[0], C[1] - P[1]);
         if (d <= can) break;
         const w = unit(C, P), z = clamp((C[1] + w[1] * (d - can)) * rz, C[1] * rz, 7.5);
         C = [C[0] + w[0] * (d - can), rz * z];
-        B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - 1.2));
+        B = onLineAtZ(from, C, rz * Math.max(1.0, C[1] * rz - (st === 'drop_volley' ? 1.2 : 1.7)));
         T = flightTime(from, C, B, v, st);
       }
       return { C, B, T };
@@ -264,7 +269,7 @@ export class MatchSim {
     else if (dir === 'body') u = [side * 0.4, 0.3 * rz];
     else u = [n1 >= 0 ? 1 : -1, (u2 - 0.5) * 0.8 * rz];
     const n = Math.hypot(u[0], u[1]); u = [u[0] / n, u[1] / n];
-    const [z0, z1] = volley ? [1.3, 5.6] : [6.5, 13.4];
+    const [z0, z1] = volley ? [1.3, 5.6] : [6.5, 15.0];   // 떨어지는 공을 치려고 베이스라인 뒤까지 물러난다
     // 받는 곳. 바운드 없이 받는 공(발리)은 옆줄 안쪽에서 받는다(옆줄 밖에서 발리하면 나가는 공을 친 것처럼 보인다, 사용자 2026-11-09)
     const xw = volley ? 5.25 : 6.4;
     const fit = c => [clamp(c[0], side > 0 ? -1.6 : -xw, side > 0 ? xw : 1.6), rz * clamp(c[1] * rz, z0, z1)];
@@ -272,7 +277,7 @@ export class MatchSim {
     for (let it = 0; it < 3; it++) {
       const want = dir === 'body' ? Math.min(0.6, f * 0.6) : f * reachOf(body, T, late);
       C = fit([P[0] + u[0] * want, P[1] + u[1] * want]);
-      if (!volley) ({ B, C } = bounceOf(from, C, v, rz));
+      if (!volley) ({ B, C } = bounceOf(from, C, v, rz, st));
       T = flightTime(from, C, B, v, st);
     }
     return { C, B, T };
@@ -472,7 +477,7 @@ export class MatchSim {
         if (d >= need) break;
         const sx = Math.sign(sp.C[0] - at[mi][0]) || -Math.sign(at[mi][0]) || 1;
         let C = [clamp(sp.C[0] + sx * (need - d) * 1.6, -5.4, 5.4), sp.C[1]], B = sp.B;
-        if (B) ({ B, C } = bounceOf(from, C, v, rz));
+        if (B) ({ B, C } = bounceOf(from, C, v, rz, st));
         sp = { C, B, T: flightTime(from, C, B, v, st) };
       }
       return sp;
