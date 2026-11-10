@@ -12,6 +12,12 @@
   .bar button, .bar a { pointer-events: auto; font: inherit; padding: 6px 9px; border-radius: 8px; border: 0; background: #fff; color: #223; box-shadow: 0 1px 3px #0003; text-decoration: none; }
   .bar button.on { background: #ff7aa8; color: #fff; }
   .bar small { align-self: center; color: #234; font-weight: 700; margin-right: 2px; }
+  .bar input { pointer-events: auto; }
+  .bar span.t { align-self: center; color: #234; font-weight: 700; background: #fffc; padding: 4px 7px; border-radius: 6px; }
+  .hl { position: fixed; z-index: 4; pointer-events: none; font: 700 11px sans-serif; color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; transform: translate(9px, -50%); white-space: nowrap; display: none; }
+  .hl.sel { color: #ffe36e; font-size: 13px; }
+  #edOut { position: fixed; left: 8px; right: 8px; bottom: 60px; z-index: 6; display: none; background: #fff; border-radius: 8px; padding: 8px; box-shadow: 0 2px 8px #0005; }
+  #edOut textarea { width: 100%; height: 90px; font: 11px monospace; box-sizing: border-box; }
   #note { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 5; color: #223; background: #fffd; padding: 5px 9px; border-radius: 6px; line-height: 1.5; }
 </style>
 <script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
@@ -19,10 +25,11 @@
 <body>
 <!-- 3D 캐릭터에 스윙(포핸드·백핸드·발리·서브·스매시)을 입히고 공 높이·거리에 맞춰 IK로 라켓 가운데를 공에 맞히는 시험 화면(개발용).
      동작은 손으로 짠 임시 동작이다(실제는 촬영한 동작으로 바꾼다). 경기 결과와는 상관없다.
-     http://localhost:8080/tools/char3d/swing.html?shot=fh|bh|fv|bv|sv|sm&cam=q34|side|back|front|tps|tv|top|hand&ik=1&ball=auto|mid|low|high|far|near|early|late&t=0(멈춤)&speed=0.5
+     http://localhost:8080/tools/char3d/swing.html?shot=fh|bh|fv|bv|sv|sm&cam=q34|side|back|front|tps|tv|top|hand&ik=1&ball=auto|mid|low|high|far|near|early|late&t=0(멈춤)&speed=0.5&edit=1(관절 잡기)
      동작을 고친 뒤에는 node tools/char3d/jointcheck.mjs로 관절 범위·튐·뚫음을 확인한다 -->
 <div id="stage"></div>
-<div id="ui"><div class="bar" id="bar0"><a href="../../?check">← 확인 목록</a></div><div class="bar" id="barS"><small>샷</small></div><div class="bar" id="bar1"><small>공</small></div><div class="bar" id="bar2"><small>시점</small></div><div class="bar" id="bar3"></div></div>
+<div id="ui"><div class="bar" id="bar0"><a href="../../?check">← 확인 목록</a></div><div class="bar" id="barS"><small>샷</small></div><div class="bar" id="bar1"><small>공</small></div><div class="bar" id="bar2"><small>시점</small></div><div class="bar" id="bar3"></div><div class="bar" id="barE"></div><div class="bar" id="barR"></div></div>
+<div id="edOut"><div style="margin-bottom:5px">고친 것(그대로 복사해서 보내 주세요)</div><textarea readonly></textarea><div class="bar"><button id="edOutClose">닫기</button></div></div>
 <div id="note">캐릭터를 불러오는 중… (약 11MB)</div>
 <script type="module">
 import * as THREE from 'three';
@@ -383,6 +390,19 @@ SHOTS.push({
 
 // 지금 샷: 정의에 미리 계산한 값을 더한다
 let S = null;
+// 관절 잡기에서 고친 것: 샷마다 {시각: {칸: 값}}. 이 기기(localStorage)에 남고, 샷을 고를 때 정의 위에 덮는다
+const EDIT_STORE = 'swing.edits.v1';
+let EDITS = {}; try { EDITS = JSON.parse(localStorage.getItem(EDIT_STORE) || '{}') || {}; } catch { EDITS = {}; }
+function withEdits(keys, id) {
+  const K = keys.map(k => ({ ...k }));
+  for (const [ts, f] of Object.entries(EDITS[id] || {})) {
+    const t = +ts; let k = K.find(k => Math.abs(k.t - t) < 1e-6);
+    if (!k) { k = { t }; K.push(k); }
+    Object.assign(k, JSON.parse(JSON.stringify(f)));
+    if (f.rp) delete k.rpc; if (f.lp) delete k.lpc;
+  }
+  return K.sort((a, b) => a.t - b.t);
+}
 const sampleKeys = (L, t, key, sub) => {
   const n = L.length; t = clamp(t, L[0].t, L[n - 1].t);
   let i = 0; while (i < n - 2 && L[i + 1].t <= t) i++;
@@ -738,7 +758,7 @@ function autoFaces() {
 function setShot(id) {
   const d = SHOTS.find(s => s.id === id) || SHOTS[0];
   const gm = gripOf(d.bevel);
-  S = { ...d, K: d.keys.map(k => ({ ...k })), CH: {}, gripQ: new THREE.Quaternion().setFromRotationMatrix(gm), ROLL: null };
+  S = { ...d, K: withEdits(d.keys, d.id), CH: {}, gripQ: new THREE.Quaternion().setFromRotationMatrix(gm), ROLL: null };
   racket.matrix.copy(gm).setPosition(GRIP_POS);
   for (const k of S.K) if (k.s) k.hq = racketQuatFor(V3(...k.s), V3(...k.f)).multiply(gripAt(k.t).invert()).toArray();
   { let p = null; for (const k of S.K) if (k.hq) { if (p && p[0] * k.hq[0] + p[1] * k.hq[1] + p[2] * k.hq[2] + p[3] * k.hq[3] < 0) k.hq = k.hq.map(v => -v); p = k.hq; } }   // 같은 반구로(뒤집히지 않게)
@@ -825,6 +845,7 @@ const CAMS = {
 const CAM_NAME = { q34: '뒤 비스듬히', side: '옆', back: '뒤', front: '앞', tps: '어깨 너머', tv: '중계', top: '위', hand: '손 가까이' };
 const camFollow = V3();
 function applyCam(k) {
+  if (k === 'free') { const c = Math.cos(FREE.pitch); cam.position.copy(FREE.tgt).add(V3(Math.sin(FREE.yaw) * c, Math.sin(FREE.pitch), Math.cos(FREE.yaw) * c).multiplyScalar(FREE.dist)); cam.up.set(0, 1, 0); cam.lookAt(FREE.tgt); return; }
   const c = CAMS[k];
   if (c.follow) { camFollow.lerp(wp(c.follow).add(V3(0.04, 0, 0)), 0.25); cam.position.copy(camFollow).add(V3(...c.p)); cam.up.set(0, 1, 0); cam.lookAt(camFollow); return; }
   const sh = k === 'tv' ? V3() : V3(...S.cam), t = V3(...c.t).add(sh), p = V3(...c.p).add(sh);
@@ -861,6 +882,7 @@ function frame(now) {
 }
 function tick(dt) {
   let t;
+  if (ED.on) frozen = ED.t;
   if (frozen != null) t = frozen; else { clock += dt * speed; if (clock > S.LOOP) { clock -= S.LOOP; rep++; trailHist.length = 0; } t = S.T0 + clock; }
   const order = (seq || S.order).filter(k => S.balls[k]), key = ballMode === 'auto' ? order[rep % order.length] : ballMode;
   const C = S.C0.clone().add(V3(...S.balls[key][1]));
@@ -878,6 +900,7 @@ function tick(dt) {
   hitMark.visible = Math.abs(t) < 0.12; hitMark.position.copy(C); hitMark.lookAt(cam.position);
   hitMark.material.color.set(hit ? 0x33dd77 : 0xff3366);
   applyCam(camK);
+  if (ED.on) { edUpdate(t); renderer.render(scene, cam); return; }
   note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작은 손으로 짠 임시 동작(실제는 촬영 동작으로)`;
   renderer.render(scene, cam);
 }
@@ -886,10 +909,172 @@ requestAnimationFrame(frame);
 window.__rec = { start: (order) => { manual = true; frozen = null; clock = 0; rep = 0; seq = order || null; trailHist.length = 0; ballMode = 'auto'; }, step: dt => tick(dt), get rep() { return rep; } };
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
 window.__swing = { set: o => { if (o.shot && o.shot !== S.id) chooseShot(o.shot); if (o.t !== undefined) frozen = o.t; if (o.ball) ballMode = o.ball; if (o.cam) camK = o.cam; if (o.ik != null) useIK = o.ik; if (o.speed) speed = o.speed; } };
+// ── 관절 잡기(편집): 멈춘 채로 손·팔꿈치·라켓·발·골반을 끌어 옮기면 그 시각의 키가 된다(키가 없는 시각이면 새 키).
+// 빈 곳을 끌면 화면이 돌고, 휠·두 손가락으로 확대한다. 고친 것은 이 기기에 남고 '고친 것 복사'로 보낼 수 있다
+const ED = { on: false, t: 0, sel: null, drag: null, undo: [] };
+const FREE = { yaw: 0, pitch: 0.2, dist: 3.5, tgt: V3(-0.2, 0.95, 0.3) };
+const r3 = a => a.map(v => +(+v).toFixed(3));
+const tKey = t => +(+t).toFixed(3);
+const isKey = t => S.K.some(k => Math.abs(k.t - tKey(t)) < 1e-6);
+function keyAt(t) { t = tKey(t); let k = S.K.find(k => Math.abs(k.t - t) < 1e-6); if (!k) { k = { t }; S.K.push(k); S.K.sort((a, b) => a.t - b.t); } S.CH = {}; return k; }
+function setEdit(t, field, val) { const E = EDITS[S.id] || (EDITS[S.id] = {}); (E[tKey(t)] || (E[tKey(t)] = {}))[field] = val; }
+function saveEdits() { try { localStorage.setItem(EDIT_STORE, JSON.stringify(EDITS)); } catch { } }
+function pushUndo() { ED.undo.push([S.id, JSON.stringify(EDITS[S.id] || {})]); if (ED.undo.length > 60) ED.undo.shift(); }
+function commitEdits() { saveEdits(); setShot(S.id); edBars(); }
+const HANDLES = [
+  ['rh', '오른손', 0xff4f86], ['rp', '오른팔꿈치', 0xff9a3c], ['rk', '라켓', 0xd81b60], ['lh', '왼손', 0x3d8bff], ['lp', '왼팔꿈치', 0x2ec4d6],
+  ['hip', '골반', 0xf5c400], ['chest', '가슴', 0x9b5cff], ['rf', '오른발', 0x1fa85a], ['lf', '왼발', 0x7ed957],
+].map(([id, name, color]) => {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.92 }));
+  mesh.renderOrder = 20; mesh.visible = false; scene.add(mesh);
+  const lab = document.createElement('div'); lab.className = 'hl'; lab.textContent = name; document.body.append(lab);
+  const h = { id, name, mesh, lab }; mesh.userData.h = h; return h;
+});
+const elbowRing = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(64 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xffb15c, depthTest: false, transparent: true, opacity: 0.85 }));
+elbowRing.renderOrder = 19; elbowRing.frustumCulled = false; elbowRing.visible = false; scene.add(elbowRing);
+function drawElbowRing() {
+  const side = ED.sel === 'rp' ? 'right' : ED.sel === 'lp' ? 'left' : null; elbowRing.visible = !!side; if (!side) return;
+  const L = LIMB[side + 'Arm'], S0 = wp(side + 'UpperArm'), dir = wp(side + 'Hand').sub(S0), d = clamp(dir.length(), 1e-3, L.l1 + L.l2); dir.normalize();
+  const x = (L.l1 * L.l1 - L.l2 * L.l2 + d * d) / (2 * d), r = Math.sqrt(Math.max(0, L.l1 * L.l1 - x * x)), c = S0.clone().add(dir.clone().multiplyScalar(x));
+  const u = (Math.abs(dir.y) < 0.9 ? V3(0, 1, 0) : V3(1, 0, 0)).cross(dir).normalize(), v = dir.clone().cross(u), a = elbowRing.geometry.attributes.position;
+  for (let i = 0; i < 64; i++) { const th = i / 64 * Math.PI * 2, p = c.clone().add(u.clone().multiplyScalar(Math.cos(th) * r)).add(v.clone().multiplyScalar(Math.sin(th) * r)); a.setXYZ(i, p.x, p.y, p.z); }
+  a.needsUpdate = true;
+}
+function handlePos(id, t) {
+  switch (id) {
+    case 'rh': return wp('rightHand'); case 'lh': return wp('leftHand'); case 'rp': return wp('rightLowerArm'); case 'lp': return wp('leftLowerArm');
+    case 'rk': racket.updateMatrixWorld(true); return V3(0, SWEET + 0.02, 0).applyMatrix4(racket.matrixWorld);
+    case 'hip': return wp('hips'); case 'chest': return wp('upperChest').add(V3(0, 0.12, 0));
+    default: { const f = sample(t, id); return V3(f[0], 0.02, f[1]); }
+  }
+}
+function edUpdate(t) {
+  for (const h of HANDLES) {
+    if (ED.drag?.h !== h) h.mesh.position.copy(handlePos(h.id, t));
+    h.mesh.visible = true; h.mesh.scale.setScalar(ED.sel === h.id ? 1.45 : 1);
+    const v = h.mesh.position.clone().project(cam), on = v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2;
+    h.lab.style.display = on ? 'block' : 'none'; h.lab.classList.toggle('sel', ED.sel === h.id);
+    if (on) { h.lab.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; h.lab.style.top = ((1 - v.y) / 2 * innerHeight) + 'px'; }
+  }
+  drawElbowRing();
+  const sl = document.getElementById('edT'); if (sl) { if (+sl.min !== S.T0 || +sl.max !== S.T1) { sl.min = S.T0; sl.max = S.T1; } if (document.activeElement !== sl) sl.value = ED.t; }
+  const lb = document.getElementById('edTL'); if (lb) lb.textContent = `${tKey(ED.t).toFixed(3)}초 ${isKey(ED.t) ? '· 키' : '· 키 아님(고치면 새 키)'}`;
+  const sel = HANDLES.find(h => h.id === ED.sel);
+  note.innerHTML = `<b>관절 잡기</b> · ${S.name} · ${tKey(ED.t).toFixed(3)}초${sel ? ' · 고른 것: ' + sel.name : ''} · 고친 키 ${Object.keys(EDITS[S.id] || {}).length}개<br>`
+    + `동그라미를 끌면 옮겨지고(발은 바닥 위로, 팔꿈치는 주황 원 위로), 겹친 동그라미는 한 번 더 누르면 바뀐다. 빈 곳을 끌면 화면이 돈다. 휠·두 손가락으로 확대. 고친 것은 이 기기에 남는다. 다 되면 '고친 것 복사'를 눌러 보내 주세요.`;
+}
+// 끌어 놓은 자리(P)를 그 시각의 키로
+function applyDrag(id, P, t) {
+  const k = keyAt(t);
+  if (id === 'rh' || id === 'lh') { k[id] = r3(P.toArray()); setEdit(t, id, k[id]); }
+  else if (id === 'rp' || id === 'lp') {
+    const side = id === 'rp' ? 'right' : 'left', sk = id === 'rp' ? 'rsw' : 'lsw';
+    const sh = wp(side + 'UpperArm'), ax = wp(side + 'Hand').sub(sh).normalize(), pole = P.clone().sub(sh);
+    const cur = has(sk) ? sample(t, sk)[0] : 0;
+    k[sk] = [cur + wrapD(swOf(side, ax, pole) - cur)]; k[id] = r3(pole.normalize().toArray()); delete k[id + 'c']; k[id + 'Auto'] = false;
+    setEdit(t, id, k[id]);
+  } else if (id === 'rk') {
+    const o = V3().applyMatrix4(racket.matrixWorld), sv = P.clone().sub(o).normalize();
+    const f0 = V3(0, 0, 1).applyQuaternion(racketAt(t)); let f = f0.sub(sv.clone().multiplyScalar(f0.dot(sv)));
+    if (f.length() < 0.2) f = V3(0, 1, 0).cross(sv); f.normalize();
+    k.s = r3(sv.toArray()); k.f = r3(f.toArray());
+    const hq = racketQuatFor(sv, f).multiply(gripAt(t).invert()); if (hq.dot(handAt(t)) < 0) hq.set(-hq.x, -hq.y, -hq.z, -hq.w);
+    k.hq = hq.toArray(); setEdit(t, 's', k.s); setEdit(t, 'f', k.f);
+  } else if (id === 'rf' || id === 'lf') { const c = ED.drag.v0; k[id] = r3([P.x, P.z, c[2], c[3]]); setEdit(t, id, k[id]); }
+  else if (id === 'hip') { const c = ED.drag.v0, d = P.clone().sub(ED.drag.p0); k.hip = r3([c[0] + d.x, c[1] + d.y, c[2] + d.z, c[3]]); setEdit(t, 'hip', k.hip); }
+  S.CH = {};
+}
+// 고른 것을 돌리기 등(버튼)
+function nudge(field, idx, dv) { pushUndo(); const t = ED.t, v = sample(t, field).slice(); v[idx] += dv; const k = keyAt(t); k[field] = r3(v); setEdit(t, field, k[field]); commitEdits(); }
+function setVal(field, val) { pushUndo(); const k = keyAt(ED.t); k[field] = val; setEdit(ED.t, field, val); commitEdits(); }
+const barE = document.getElementById('barE'), barR = document.getElementById('barR'), edOut = document.getElementById('edOut');
+document.getElementById('edOutClose').onclick = () => edOut.style.display = 'none';
+function edBars() {
+  barE.innerHTML = ''; barR.innerHTML = '';
+  if (!ED.on) return;
+  const keysT = [...new Set(S.K.map(k => k.t))].sort((a, b) => a - b);
+  btn(barE, '◀ 키', () => { const p = keysT.filter(x => x < tKey(ED.t) - 1e-6).pop(); if (p != null) ED.t = p; });
+  const sl = document.createElement('input'); sl.type = 'range'; sl.id = 'edT'; sl.min = S.T0; sl.max = S.T1; sl.step = 0.005; sl.value = ED.t; sl.style.width = 'min(46vw, 320px)';
+  sl.oninput = () => ED.t = +sl.value; barE.append(sl);
+  btn(barE, '키 ▶', () => { const n = keysT.find(x => x > tKey(ED.t) + 1e-6); if (n != null) ED.t = n; });
+  const lb = document.createElement('span'); lb.className = 't'; lb.id = 'edTL'; barE.append(lb);
+  btn(barE, '되돌리기', () => { const u = ED.undo.pop(); if (!u) return; EDITS[u[0]] = JSON.parse(u[1]); if (u[0] !== S.id) chooseShot(u[0]); commitEdits(); });
+  btn(barE, '이 시각 고친 것 지우기', () => { const E = EDITS[S.id]; if (!E || !E[tKey(ED.t)]) return; pushUndo(); delete E[tKey(ED.t)]; commitEdits(); });
+  btn(barE, '고친 것 복사', () => {
+    const txt = JSON.stringify({ shot: S.id, edits: EDITS[S.id] || {} });
+    const ta = edOut.querySelector('textarea'); ta.value = txt; edOut.style.display = 'block'; ta.focus(); ta.select();
+    navigator.clipboard?.writeText(txt).then(() => { edOut.firstChild.textContent = '고친 것(클립보드에 복사했어요. 그대로 붙여 보내 주세요)'; }, () => { });
+  });
+  btn(barE, '이 샷 처음대로', () => { if (!confirm(`${S.name}에서 고친 것을 모두 지울까요?`)) return; pushUndo(); delete EDITS[S.id]; commitEdits(); });
+  const sel = ED.sel;
+  if (sel === 'rf' || sel === 'lf') { btn(barR, '발끝 왼쪽으로 10°', () => nudge(sel, 2, 10)); btn(barR, '발끝 오른쪽으로 10°', () => nudge(sel, 2, -10)); }
+  if (sel === 'hip') { btn(barR, '골반 왼쪽으로 돌기 5°', () => nudge('hip', 3, 5)); btn(barR, '골반 오른쪽으로 돌기 5°', () => nudge('hip', 3, -5)); }
+  if (sel === 'chest') {
+    btn(barR, '가슴 왼쪽으로 돌기 5°', () => nudge('chest', 0, 5)); btn(barR, '가슴 오른쪽으로 돌기 5°', () => nudge('chest', 0, -5));
+    btn(barR, '더 숙이기 5°', () => nudge('chest', 1, 5)); btn(barR, '덜 숙이기 5°', () => nudge('chest', 1, -5));
+    btn(barR, '오른어깨 내리기 5°', () => nudge('chest', 2, 5)); btn(barR, '오른어깨 올리기 5°', () => nudge('chest', 2, -5));
+  }
+  if (sel === 'lh') { btn(barR, '왼손: 라켓 목 잡기', () => setVal('lh', 'throat')); btn(barR, '왼손: 손잡이 위 잡기(양손)', () => setVal('lh', 'grip2')); btn(barR, '왼손: 놓기', () => setVal('lh', r3(wp('leftHand').toArray()))); }
+  if (sel === 'rp' || sel === 'lp') btn(barR, '이 키 팔꿈치는 알아서', () => setVal(sel, 'auto'));
+}
+function toFree() {
+  if (camK === 'free') return;
+  const tgt = wp('hips').add(V3(0, 0.25, 0)), v = cam.position.clone().sub(tgt);
+  FREE.tgt.copy(tgt); FREE.dist = v.length(); FREE.yaw = Math.atan2(v.x, v.z); FREE.pitch = Math.asin(clamp(v.y / FREE.dist, -1, 1));
+  camK = 'free'; for (const b of bar2.querySelectorAll('button')) b.classList.remove('on');
+}
+function edToggle(on) {
+  ED.on = on; edBtn.classList.toggle('on', on); edBtn.textContent = on ? '관절 잡기 끝' : '관절 잡기';
+  if (on) { ED.t = frozen != null ? frozen : S.T0 + clock; frozen = ED.t; ballMode = 'mid'; ballButtons(); }
+  else { frozen = null; ED.sel = null; ED.drag = null; elbowRing.visible = false; for (const h of HANDLES) { h.mesh.visible = false; h.lab.style.display = 'none'; } }
+  edBars();
+}
+const edBtn = btn(bar3, '관절 잡기', () => edToggle(!ED.on));
+{
+  const cvs = renderer.domElement, ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), pts = new Map();
+  cvs.style.touchAction = 'none';
+  const rayAt = e => { ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, cam); return ray; };
+  cvs.addEventListener('pointerdown', e => {
+    if (!ED.on) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]); try { cvs.setPointerCapture(e.pointerId); } catch { }
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; toFree(); ED.drag = { pinch: Math.hypot(a[0] - b[0], a[1] - b[1]), d0: FREE.dist }; return; }
+    const near = HANDLES.map(h => { const v = h.mesh.position.clone().project(cam); return { h, d: Math.hypot((v.x + 1) / 2 * innerWidth - e.clientX, (1 - v.y) / 2 * innerHeight - e.clientY), z: v.z }; })
+      .filter(c => c.z < 1 && c.d < 26).sort((a, b) => a.d - b.d).map(c => c.h);
+    rayAt(e);
+    if (near.length) {
+      const h = near.find(h => h.id === ED.sel) || near[0], p0 = h.mesh.position.clone(), foot = h.id === 'rf' || h.id === 'lf', wasSel = ED.sel === h.id;
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(foot ? V3(0, 1, 0) : cam.getWorldDirection(V3()), p0);
+      const at = ray.ray.intersectPlane(plane, V3()) || p0.clone();
+      ED.sel = h.id; ED.drag = { h, near, wasSel, plane, p0, off: p0.clone().sub(at), v0: h.id === 'hip' ? sample(ED.t, 'hip') : foot ? sample(ED.t, h.id) : null, moved: false, undo: false };
+      edBars();
+    } else { toFree(); ED.drag = { orbit: true, x: e.clientX, y: e.clientY, yaw: FREE.yaw, pitch: FREE.pitch }; }
+  });
+  cvs.addEventListener('pointermove', e => {
+    if (!ED.on || !ED.drag) return;
+    if (pts.has(e.pointerId)) pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const d = ED.drag;
+    if (d.pinch) { if (pts.size < 2) return; const [a, b] = [...pts.values()]; FREE.dist = clamp(d.d0 * d.pinch / Math.max(20, Math.hypot(a[0] - b[0], a[1] - b[1])), 0.6, 12); return; }
+    if (d.orbit) { FREE.yaw = d.yaw - (e.clientX - d.x) * 0.008; FREE.pitch = clamp(d.pitch + (e.clientY - d.y) * 0.006, -1.2, 1.45); return; }
+    if (d.h.id === 'chest') return;   // 가슴은 버튼으로 돌린다
+    const at = rayAt(e).ray.intersectPlane(d.plane, V3()); if (!at) return;
+    if (!d.undo) { pushUndo(); d.undo = true; }
+    const P = at.add(d.off); d.h.mesh.position.copy(P); applyDrag(d.h.id, P, ED.t); d.moved = true;
+  });
+  const up = e => {
+    pts.delete(e.pointerId);
+    if (!ED.drag) return;
+    const d = ED.drag; if (d.pinch && pts.size > 0) return;
+    ED.drag = null; if (d.h && d.moved) commitEdits();
+    else if (d.h && d.wasSel && d.near.length > 1) { ED.sel = d.near[(d.near.indexOf(d.h) + 1) % d.near.length].id; edBars(); }
+  };
+  cvs.addEventListener('pointerup', up); cvs.addEventListener('pointercancel', up);
+  cvs.addEventListener('wheel', e => { if (!ED.on) return; e.preventDefault(); toFree(); FREE.dist = clamp(FREE.dist * Math.exp(e.deltaY * 0.001), 0.6, 12); }, { passive: false });
+}
+if (q.get('edit') === '1') edToggle(true);
 // 관절 검사(개발용): 자세를 시간마다 만들어 관절 각도와 튀는 곳을 잰다. 샷마다 값이 바뀌므로 읽을 때마다 지금 샷 것을 준다
 window.__dbg = {
   wrist, LIMB, ik, sample, sampleQ, handQuatFor, gripQL, GRIP_POS, HOLD, THREE, pose, lookAt, lookTarget, sweetFrom, B, BONES, ALLB, racket, vrm, SWEET, ANKLE, SHOTS, shoulderRot, elbowIn, handBall,
-  setIK: v => { useIK = v; }, setShot: id => chooseShot(id),
+  setIK: v => { useIK = v; }, setShot: id => chooseShot(id), ED, HANDLES, applyDrag, commitEdits, edToggle, cam, get EDITS() { return EDITS; },
   get S() { return S; }, get K() { return S.K; }, get T0() { return S.T0; }, get T1() { return S.T1; }, get LOOP() { return S.LOOP; }, get C0() { return S.C0; },
   get ORDER() { return S.order; }, get BALLS() { return ballsOf(); }, get gripQ() { return gripAt(0); }, gripAt, handAt, racketAt, bevelAt,
   ballAt: (t, C, hit) => S.ball === 'toss' && t < S.toss ? handBall() : BALL_PATH[S.ball](t, C, hit),
