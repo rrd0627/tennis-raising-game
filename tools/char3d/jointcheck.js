@@ -64,7 +64,7 @@
   const RIM = []; for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; RIM.push(V(Math.cos(a) * 0.128, SWEET + 0.02 + Math.sin(a) * 0.168, 0)); }
   for (const y of [0.1, 0.2, 0.3]) RIM.push(V(0, y, 0));
   const WATCH = ['rightHand', 'rightLowerArm', 'leftHand', 'leftLowerArm', 'rightLowerLeg', 'leftLowerLeg', 'rightFoot', 'leftFoot', 'head', 'hips'];
-  const out = { slide: {}, frames: 0, viol: {}, jumpsW: [], jumpsP: [], peaksW: {}, peaksP: {}, pen: {}, miss: {}, ranges: {} };
+  const out = { arm: { ev: [], peak: {} }, slide: {}, frames: 0, viol: {}, jumpsW: [], jumpsP: [], peaksW: {}, peaksP: {}, pen: {}, miss: {}, ranges: {} };
   const viol = (k, v, t, ball) => { const lim = LIM[k]; if (!lim) return; const ex = v < lim[0] ? v - lim[0] : v > lim[1] ? v - lim[1] : 0; if (!ex) return;
     const r = out.viol[k] || (out.viol[k] = { n: 0, worst: 0, at: null, lim, list: {} }); r.n++; r.list[ball] = (r.list[ball] || 0) + 1; if (Math.abs(ex) > Math.abs(r.worst)) { r.worst = ex; r.at = [ball, +t.toFixed(3), +v.toFixed(1)]; } };
   let prev = null;
@@ -78,6 +78,14 @@
       const bp = ballAt(Math.min(t, 1.2), C, hit);
       lookAt(lookTarget ? lookTarget(t, C, bp, hit) : (t < 0.12 ? bp : C.clone().add(V(0.3, 0.1, 3))));
       const ang = angles();
+      // 팔: 가슴 기준 위팔·아래팔 방향, 팔꿈치 굽힘, 어깨-손목 축에서 팔꿈치가 나온 쪽(팔꿈치가 축 둘레로 도는 빠르기를 잰다)
+      const chq = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(chq); const chi = chq.clone().invert(), armNow = {};
+      for (const sd of ['right', 'left']) {
+        const sh = wpos(sd + 'UpperArm'), el = wpos(sd + 'LowerArm'), wr = wpos(sd + 'Hand');
+        const u = el.clone().sub(sh).normalize().applyQuaternion(chi), f = wr.clone().sub(el).normalize().applyQuaternion(chi);
+        const ax = wr.clone().sub(sh).applyQuaternion(chi).normalize(), e = el.clone().sub(sh).applyQuaternion(chi), perp = e.sub(ax.clone().multiplyScalar(e.dot(ax)));
+        armNow[sd] = { u, f, ax, perp, flex: Math.acos(Math.max(-1, Math.min(1, u.dot(f)))) * R };
+      }
       for (const [kk, v] of Object.entries(ang)) { viol(kk, v, t, key); const rg = out.ranges[kk] || (out.ranges[kk] = [1e9, -1e9]); rg[0] = Math.min(rg[0], v); rg[1] = Math.max(rg[1], v); }
       if (r.miss > 0.005) { const m = out.miss.arm || (out.miss.arm = { n: 0, worst: 0, at: null }); m.n++; if (r.miss > m.worst) { m.worst = r.miss; m.at = [key, +t.toFixed(3)]; } }
       r.legMiss.forEach((lm, i) => { if (lm > 0.005) { const m = out.miss['leg' + i] || (out.miss['leg' + i] = { n: 0, worst: 0, at: null }); m.n++; if (lm > m.worst) { m.worst = lm; m.at = [key, +t.toFixed(3)]; } } });
@@ -114,12 +122,23 @@
           if (p.y < 0.006 && prev && prev.fp && prev.fp[kk] && prev.fp[kk].y < 0.006) { const sp = Math.hypot(p.x - prev.fp[kk].x, p.z - prev.fp[kk].z) / DT; const e = out.slide[kk] || (out.slide[kk] = { dist: 0, max: 0, at: null, sub: 0 }); e.dist += sp * DT; if (sp > 0.15) e.sub += sp * DT; if (sp > e.max) { e.max = +sp.toFixed(2); e.at = [key, +t.toFixed(3)]; } }
           if (p.y < -0.01) { const e = out.slide[kk + '_under'] || (out.slide[kk + '_under'] = { max: 0, at: null }); if (-p.y > e.max) { e.max = +(-p.y).toFixed(3); e.at = [key, +t.toFixed(3)]; } }
           (cur.fp || (cur.fp = {}))[kk] = p; } }
+      cur.arm = armNow;
+      if (prev && prev.arm) for (const sd of ['right', 'left']) {
+        const a = armNow[sd], b = prev.arm[sd], ang = (x, y) => Math.acos(Math.max(-1, Math.min(1, x.dot(y)))) * R / DT;
+        const r = { upper: ang(a.u, b.u), fore: ang(a.f, b.f), flex: Math.abs(a.flex - b.flex) / DT, swivel: 0 };
+        if (a.perp.length() > 0.03 && b.perp.length() > 0.03) { const bp = b.perp.clone().sub(a.ax.clone().multiplyScalar(b.perp.dot(a.ax))); if (bp.length() > 0.02) r.swivel = ang(a.perp.clone().normalize(), bp.normalize()); }
+        for (const [m, v] of Object.entries(r)) { const kk = sd[0] + '_' + m, pk = out.arm.peak[kk]; if (!pk || v > pk[0]) out.arm.peak[kk] = [Math.round(v), key, +t.toFixed(3)]; }
+        // 임팩트 앞뒤(±0.06초)가 아닌데 너무 빠른 것: 팔꿈치가 축 둘레로 600, 위팔 800, 아래팔 1500, 팔꿈치 굽힘 1000도/초
+        const LIMV = { swivel: 600, upper: 800, fore: 1500, flex: 1000 };
+        if (Math.abs(t) > 0.06) for (const [m, lim] of Object.entries(LIMV)) if (r[m] > lim) out.arm.ev.push([sd[0] + '_' + m, key, +t.toFixed(3), Math.round(r[m])]);
+      }
       prev = cur; out.frames++;
     }
   }
   // 튐은 같은 관절·공의 연속 프레임을 한 사건으로 묶는다
   const group = list => { const g = []; for (const e of list) { const l = g[g.length - 1]; if (l && l[0] === e[0] && l[1] === e[1] && Math.abs(e[2] - l.tEnd) < 0.01) { l.tEnd = e[2]; if (e[3] > l[3]) { l[3] = e[3]; l[4] = e[4]; l[5] = e[5]; } l.n++; } else { const c = e.slice(); c.tEnd = e[2]; c.n = 1; g.push(c); } } return g.map(e => [...e, e.n, e.tEnd]); };
   out.jumpsW = group(out.jumpsW); out.jumpsP = group(out.jumpsP);
+  { const g = []; for (const e of out.arm.ev) { const l = g[g.length - 1]; if (l && l[0] === e[0] && l[1] === e[1] && e[2] - l.t1 < 0.01) { l.t1 = e[2]; l[3] = Math.max(l[3], e[3]); } else { const c = e.slice(); c.t1 = e[2]; g.push(c); } } out.arm.ev = g.map(e => [e[0], e[1], e[2], e.t1, e[3]]); }
   for (const k in out.ranges) out.ranges[k] = out.ranges[k].map(v => +v.toFixed(1));
   return out;
 })()

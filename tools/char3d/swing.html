@@ -198,8 +198,10 @@ const BH_KEYS = [
   { t: -0.98, hip: [0, -0.12, 0, 5], chest: [3, 10, 0], rf: [-0.245, 0.13, -8, 0], lf: [0.255, 0.11, 10, 0], rh: [-0.12, 0.93, 0.16], s: [0.2, 0.5, 1], f: [1, 0, -0.2], rp: 'auto', lh: 'throat', lp: 'auto' },
   { t: -0.92, bevel: [-135] },
   { t: -0.9, lf: [0.29, 0.09, 20, 0.045] },
-  { t: -0.86, rf: [-0.21, 0.155, 8, 0.035], lh: [-0.05, 1.0, 0.26], lp: 'auto' },
-  { t: -0.72, hip: [0.05, -0.1, -0.03, 42], chest: [38, 9, 0], rf: [-0.18, 0.175, 22, 0], lf: [0.47, -0.04, 56, 0.07], rh: [0.18, 1.0, -0.05], s: [0.3, 0.9, -0.1], f: [-0.1, -0.35, 1], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: -0.86, rf: [-0.21, 0.155, 8, 0.035] },
+  { t: -0.8, lh: [0.06, 1.03, 0.16], lp: 'auto' },
+  { t: -0.72, hip: [0.05, -0.1, -0.03, 42], chest: [38, 9, 0], rf: [-0.18, 0.175, 22, 0], lf: [0.47, -0.04, 56, 0.07], rh: [0.18, 1.0, -0.05], s: [0.3, 0.9, -0.1], f: [-0.1, -0.35, 1], rp: 'auto', lh: [0.14, 1.06, 0.03], lp: 'auto' },
+  { t: -0.6, lh: 'grip2', lp: 'auto' },
   { t: -0.56, lf: [0.51, -0.062, 60, 0.025] },
   { t: -0.4, hip: [0.09, -0.12, -0.04, 54], chest: [46, 8, -2], rf: [-0.18, 0.175, 25, 0], lf: [0.515, -0.065, 60, 0], rh: [0.2, 1.02, -0.1], s: [-0.19, 0.91, -0.38], f: [-0.49, 0.24, 0.84], rp: 'auto', lh: 'grip2', lp: 'auto' },
   { t: -0.28, rp: 'auto', lp: 'auto' },
@@ -239,7 +241,8 @@ const FV_KEYS = [
   { t: -0.75, hip: [0, -0.15, 0, 0], chest: [0, 15, 0], rf: [-0.25, 0.12, -10, 0], lf: [0.25, 0.13, 10, 0], rh: [-0.1, 1.02, 0.22], s: [0.1, 0.85, 0.5], f: [1, 0, -0.2], rp: 'auto', lh: 'throat', lp: 'auto' },
   // 유닛턴: 어깨를 조금 돌리고 라켓을 오른어깨 옆에 세운다. 왼손은 목을 놓고 앞에 둔다
   { t: -0.55, hip: [-0.02, -0.14, 0, -25], chest: [-18, 15, 4], rh: [-0.3, 1.1, 0.12], s: [-0.3, 0.9, 0.2], f: [0.2, 0.3, 1], rp: 'auto', lh: 'throat', lp: 'auto' },
-  { t: -0.42, lh: [-0.04, 1.1, 0.36], lp: 'auto', lf: [0.25, 0.13, 6, 0] },
+  { t: -0.42, lf: [0.25, 0.13, 6, 0] },
+  { t: -0.34, lh: [-0.04, 1.1, 0.36], lp: 'auto' },
   // 왼발을 공 쪽(앞)으로 내디딘다(먼저 들고 옮긴다)
   { t: -0.37, lf: [0.25, 0.145, 4, 0.03] },
   { t: -0.3, lf: [0.24, 0.22, -2, 0.05] },
@@ -310,8 +313,8 @@ const SV_KEYS = [
   { t: -0.55, hip: [0.03, -0.16, -0.03, -75], chest: [-25, -8, 15], rheel: [0], lheel: [0], rh: [-0.3, 1.3, -0.16], s: [-0.1, 0.95, -0.1], f: [-0.9, 0.0, 0.4], rp: 'auto', lh: [0.03, 1.78, 0.3], lp: 'auto' },
   { t: -0.4, rh: [-0.26, 1.34, -0.14], s: [0, 0.1, -1], f: [-0.95, 0, 0.1], rp: 'auto' },
   // 라켓 드롭: 무릎을 펴며 골반이 앞으로 돌고, 라켓 머리는 등 뒤로 떨어진다(팔꿈치는 위를 본다)
-  { t: -0.25, hip: [0.02, -0.08, 0.02, -40], chest: [-15, -4, 10], rheel: [8], lheel: [8], rf: [-0.25, -0.12, -85, 0], rh: [-0.2, 1.36, -0.1], s: [-0.2, -0.89, -0.4], f: [-0.9, 0.1, -0.3], rp: 'auto', lh: [0.08, 1.38, 0.26], lp: 'auto' },
-  { t: -0.09, rh: [-0.17, 1.55, 0.08], s: [0.31, 0.44, -0.84], f: [-0.4, 0.85, 0.3], rp: 'auto' },
+  { t: -0.25, hip: [0.02, -0.08, 0.02, -40], chest: [-15, -4, 10], rheel: [8], lheel: [8], rf: [-0.25, -0.12, -85, 0], rh: [-0.2, 1.36, -0.1], s: [-0.2, -0.89, -0.4], f: [-0.9, 0.1, -0.3], rp: 'auto', lh: [0.06, 1.52, 0.28], lp: 'auto' },
+  { t: -0.09, rh: [-0.17, 1.55, 0.08], s: [0.31, 0.44, -0.84], f: [-0.4, 0.85, 0.3], rp: 'auto', lh: [0.1, 1.25, 0.22], lp: 'auto' },
   // 임팩트: 오른어깨 위 조금 앞, 팔을 뻗고 뒤꿈치를 든다
   { t: 0, hip: [0, -0.02, 0.08, -10], chest: [5, 8, 0], rheel: [25], lheel: [25], rf: [-0.25, -0.12, -62, 0], rh: [-0.15, 1.6, 0.18], s: [-0.05, 0.9, 0.42], f: [0, -0.4, 0.92], rp: 'auto', lh: [0.12, 1.06, 0.16], lp: 'auto' },
   // 엎침: 라켓이 오른쪽 앞 아래로 돌아 나간다
@@ -342,19 +345,20 @@ SHOTS.push({
 const SM_READY = { ...FV_READY, rheel: [0], lheel: [0] };
 const SM_KEYS = [
   { t: -1.4, ...SM_READY },
-  { t: -1.25, lh: 'throat', lp: 'auto' },
-  { t: -1.15, hip: [0, -0.08, -0.05, -55], chest: [-20, 6, 5], lf: [0.17, 0.14, -25, 0], rh: [-0.2, 1.2, 0.0], s: [-0.1, 0.95, 0.2], f: [-0.9, 0, 0.3], rp: 'auto', lh: [0.0, 1.32, 0.3], lp: 'auto' },
+  { t: -1.28, lh: 'throat', lp: 'auto' },
+  { t: -1.15, hip: [0, -0.08, -0.05, -55], chest: [-20, 6, 5], lf: [0.17, 0.14, -25, 0], rh: [-0.2, 1.2, 0.0], s: [-0.1, 0.95, 0.2], f: [-0.9, 0, 0.3], rp: 'auto', lh: [-0.02, 1.22, 0.32], lp: 'auto' },
+  { t: -1.05, lh: [0.0, 1.36, 0.31], lp: 'auto' },
   { t: -1.1, rf: [-0.28, -0.08, -60, 0.05] },
   { t: -1.0, rf: [-0.315, -0.22, -77, 0.025] },
-  { t: -0.95, hip: [0.01, -0.1, -0.08, -62], chest: [-22, 0, 10], rf: [-0.32, -0.25, -80, 0], rh: [-0.28, 1.32, -0.12], s: [-0.1, 0.95, -0.15], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.04, 1.7, 0.28], lp: 'auto' },
+  { t: -0.95, hip: [0.01, -0.1, -0.08, -62], chest: [-22, 0, 10], rf: [-0.32, -0.25, -80, 0], rh: [-0.28, 1.32, -0.12], s: [-0.1, 0.95, -0.15], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.03, 1.56, 0.29], lp: 'auto' },
   // 작은 걸음으로 공 밑에 들어간다(트로피를 지킨 채)
-  { t: -0.75, lf: [0.17, 0.16, -25, 0.03] },
-  { t: -0.6, hip: [0.02, -0.12, -0.06, -65], lf: [0.16, 0.16, -27, 0], rh: [-0.29, 1.31, -0.13], s: [-0.1, 0.95, -0.12], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.04, 1.74, 0.3], lp: 'auto' },
-  { t: -0.3, hip: [0.02, -0.15, -0.05, -66], chest: [-24, -6, 14], rh: [-0.3, 1.29, -0.15], s: [-0.1, 0.95, -0.1], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.04, 1.76, 0.3], lp: 'auto', rheel: [0], lheel: [0] },
+  { t: -0.82, lf: [0.17, 0.16, -25, 0.03] },
+  { t: -0.7, hip: [0.02, -0.12, -0.06, -65], lf: [0.16, 0.16, -27, 0], rh: [-0.29, 1.31, -0.13], s: [-0.1, 0.95, -0.12], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.04, 1.74, 0.3], lp: 'auto' },
+  { t: -0.5, hip: [0.02, -0.15, -0.05, -66], chest: [-24, -6, 14], rh: [-0.3, 1.29, -0.15], s: [-0.1, 0.95, -0.1], f: [-0.9, 0, 0.4], rp: 'auto', lh: [0.04, 1.76, 0.3], lp: 'auto', rheel: [0], lheel: [0] },
   // 라켓 드롭 → 위로
-  { t: -0.22, rh: [-0.26, 1.34, -0.14], s: [0, 0.1, -1], f: [-0.95, 0, 0.1], rp: 'auto' },
-  { t: -0.15, hip: [0.02, -0.08, 0.02, -40], chest: [-15, -4, 10], rheel: [8], lheel: [8], rf: [-0.32, -0.25, -75, 0], rh: [-0.2, 1.36, -0.08], s: [-0.2, -0.89, -0.4], f: [-0.9, 0.1, -0.3], rp: 'auto', lh: [0.08, 1.4, 0.26], lp: 'auto' },
-  { t: -0.06, rh: [-0.17, 1.55, 0.08], s: [0.31, 0.44, -0.84], f: [-0.4, 0.85, 0.3], rp: 'auto' },
+  { t: -0.38, rh: [-0.26, 1.34, -0.14], s: [0, 0.1, -1], f: [-0.95, 0, 0.1], rp: 'auto' },
+  { t: -0.25, hip: [0.02, -0.08, 0.02, -40], chest: [-15, -4, 10], rheel: [8], lheel: [8], rf: [-0.32, -0.25, -75, 0], rh: [-0.2, 1.36, -0.08], s: [-0.2, -0.89, -0.4], f: [-0.9, 0.1, -0.3], rp: 'auto', lh: [0.06, 1.55, 0.28], lp: 'auto' },
+  { t: -0.09, rh: [-0.17, 1.55, 0.08], s: [0.31, 0.44, -0.84], f: [-0.4, 0.85, 0.3], rp: 'auto', lh: [0.1, 1.25, 0.22], lp: 'auto' },
   // 임팩트: 오른어깨 위 앞, 줄 면은 조금 아래(내려 친다)
   { t: 0, hip: [0, -0.02, 0.08, -12], chest: [5, 10, 0], rheel: [22], lheel: [22], rf: [-0.32, -0.25, -60, 0], rh: [-0.15, 1.6, 0.2], s: [-0.05, 0.88, 0.47], f: [0, -0.55, 0.84], rp: 'auto', lh: [0.12, 1.06, 0.16], lp: 'auto' },
   { t: 0.12, rf: [-0.32, -0.25, -50, 0] },
@@ -489,6 +493,19 @@ function shoulderRot(side) {
   const F = V3(0.3 * sx, 0.3, 1).applyQuaternion(ch), fn = F.sub(d.clone().multiplyScalar(F.dot(d))).normalize();
   return -sx * Math.atan2(fn.clone().cross(bb).dot(d), fn.dot(bb)) / D;
 }
+// 팔꿈치 스위블: 어깨-손목 축 둘레로 팔꿈치가 나온 쪽의 각(도). 기준 방향은 가슴에 붙은 방향을 그 축으로 가장 짧게 돌려 얻는다
+// (오른팔이 왼쪽 위 뒤를 가리킬 때만 정해지지 않는데, 거의 쓰지 않는 쪽이다). 키 사이는 이 각을 이어서 팔꿈치가 축 둘레로 고르게 돈다
+const SW_REST = { right: { a: V3(-0.4, -0.6, 0.7).normalize(), g: V3(-0.5, -0.6, -0.6) }, left: { a: V3(0.4, -0.6, 0.7).normalize(), g: V3(0.5, -0.6, -0.6) } };
+for (const r of Object.values(SW_REST)) r.r = r.g.clone().sub(r.a.clone().multiplyScalar(r.g.dot(r.a))).normalize();
+function swRef(side, ax) {
+  const ch = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(ch);
+  const R = SW_REST[side], axC = ax.clone().applyQuaternion(ch.clone().invert());
+  const ref = R.r.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(R.a, axC)).applyQuaternion(ch);
+  return ref.sub(ax.clone().multiplyScalar(ref.dot(ax))).normalize();
+}
+const poleFromSw = (side, ax, deg) => swRef(side, ax).applyAxisAngle(ax, deg * D);
+function swOf(side, ax, p) { const ref = swRef(side, ax), v = p.clone().sub(ax.clone().multiplyScalar(p.dot(ax))); return Math.atan2(ref.clone().cross(v).dot(ax), ref.dot(v)) / D; }
+const wrapD = a => ((a % 360) + 540) % 360 - 180;
 // 팔꿈치가 몸통에 너무 가까운 양(m)
 function elbowIn(side) { const el = wp(side + 'LowerArm'), a = wp('hips').add(V3(0, 0.05, 0)), b = wp('neck'), ab = b.clone().sub(a), u = clamp(el.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1); return Math.max(0, 0.16 - el.distanceTo(a.clone().add(ab.multiplyScalar(u)))); }
 // 라켓 방향(s)은 그대로 두고 라켓을 그 축으로 돌려(줄 면이 보는 쪽) 손목이 가장 편한 각을 고른다. lam이 크면 처음 정한 면에 가깝게(임팩트 근처)
@@ -585,7 +602,9 @@ function pose(t, ballKey, collect, over) {
     const want0 = S.C0.clone().add(dl).sub(sweetFrom(V3(), hq0));
     rh.add(want0.sub(V3(...S.K7.rh)).sub(S0).multiplyScalar(w));
   }
-  const rp = over?.rp || V3(...sample(t, 'rp')), sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gq)), lam = 0.0005 + 0.02 * faceW(t);
+  const lp = tg => over?.lp || (has('lsw') ? poleFromSw('left', tg.clone().sub(wp('leftUpperArm')).normalize(), sample(t, 'lsw')[0]) : V3(...sample(t, 'lp')));
+  const rpAt = tg => over?.rp || (has('rsw') ? poleFromSw('right', tg.clone().sub(wp('rightUpperArm')).normalize(), sample(t, 'rsw')[0]) : V3(...sample(t, 'rp')));
+  const sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gq)), lam = 0.0005 + 0.02 * faceW(t);
   const hold = holdAt(t), tw = hold.w, two = hold.type === 'grip2' && tw > 0;
   // 라켓을 축으로 돌린 양(롤)은 미리 구한 기준 곡선에서. 임팩트 앞뒤에는 실제(손목 범위에 묶인) 라켓의 가운데가 원래 자리(공)에 오도록 손목 자리를 다시 잡는다
   const rollTh = over?.roll ?? (collect ? 0 : rollBase('R', t));
@@ -593,14 +612,13 @@ function pose(t, ballKey, collect, over) {
   const wantSweet = sweetFrom(rh, hq), wf = w * (1 - sstep(0.02, 0.16, t));
   let miss = 0, hqA = hq, tgt = rh;
   for (let it = 0; it < 6; it++) {
-    miss = ik(LIMB.rightArm, tgt, rp);
+    miss = ik(LIMB.rightArm, tgt, rpAt(tgt));
     if (collect && it === 0) {
       const cR = rollCost('right', hq, sDir, lam);
       if (two) {   // 양손이면 롤마다 왼팔을 실제로 맞춰 왼손목·왼어깨 부담도 함께 잰다
-        const lpv = V3(...sample(t, 'lp'));
         collect.R = ROLL_TH.map(th => {
           const r = wrist('right', new THREE.Quaternion().setFromAxisAngle(sDir, th * D).multiply(hq)), rq = r.clone().multiply(gq), o = GRIP_POS.clone().applyQuaternion(r).add(wp('rightHand'));
-          const h = holdOf('grip2', rq, o); ik(LIMB.leftArm, V3(...sample(t, 'lh', h.p.toArray())).lerp(h.p, tw), lpv); const rot = shoulderRot('left');
+          const h = holdOf('grip2', rq, o), lt = V3(...sample(t, 'lh', h.p.toArray())).lerp(h.p, tw); ik(LIMB.leftArm, lt, lp(lt)); const rot = shoulderRot('left');
           return cR(th) + holdWgt(tw) * (wristCost(wristAngles('left', lowerArmInv('left').multiply(h.q))) + ex(rot, -70, 80) ** 2 + 4e5 * elbowIn('left') ** 2);
         });
       } else collect.R = ROLL_TH.map(cR);
@@ -613,31 +631,30 @@ function pose(t, ballKey, collect, over) {
   setFingers('right', 1);
   // 왼팔: 라켓을 잡거나(오른손을 거울에 비춘 쥐는 법) 정한 자리로 뻗는다
   const rqW = hqA.clone().multiply(gq), rOrg = GRIP_POS.clone().applyQuaternion(hqA).add(wp('rightHand'));
-  const lp = () => over?.lp || V3(...sample(t, 'lp'));
+
   let hd = holdOf(hold.type, rqW, rOrg);
   const lhAt = h => V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)).lerp(h.p, tw);
-  ik(LIMB.leftArm, lhAt(hd), lp());
+  { const lt = lhAt(hd); ik(LIMB.leftArm, lt, lp(lt)); }
   if (collect) { const c = rollCost('left', hd.q, hd.sA, 0.0005); collect.L = ROLL_TH.map(th => HOLD[hold.type].free ? holdWgt(tw) * c(th) : 0); }
-  else if (tw > 0 && HOLD[hold.type].free) { hd = holdOf(hold.type, rqW, rOrg, rollBase('L', t)); ik(LIMB.leftArm, lhAt(hd), lp()); }
+  else if (tw > 0 && HOLD[hold.type].free) { hd = holdOf(hold.type, rqW, rOrg, rollBase('L', t)); const lt = lhAt(hd); ik(LIMB.leftArm, lt, lp(lt)); }
   wrist('left', hd.q, tw);
   setFingers('left', tw > 0 ? (1 - tw) * (has('lk') ? sample(t, 'lk')[0] : 0.2) + tw * HOLD[hold.type].curl : has('lk') ? sample(t, 'lk')[0] : 0.2);
   return { miss, hq: hqA, legMiss };
 }
-// 팔꿈치 방향 찾기: 'auto'인 키마다 어깨-손목 축 둘레 24쪽을 보고, 손목(롤까지 고른 뒤)·어깨 돌림·팔꿈치와 몸통·앞 키와의 차이를 따져 고른다
+// 팔꿈치 방향 찾기: 'auto'인 키마다 어깨-손목 축 둘레 24쪽을 보고, 손목(롤까지 고른 뒤)·어깨 돌림·팔꿈치와 몸통·머리를 따진다.
+// 키를 하나씩 고르지 않고 스윙 전체에서 함께 고른다(동적 계획법): 이웃한 키 사이에 팔꿈치가 축 둘레로 도는 빠르기(도/초)의 제곱도 비용이라 키 사이에서 휙 돌지 않는다
 function autoPoles() {
   if (!S.K.some(k => k.rpAuto || k.lpAuto)) return;
   for (const side of ['right', 'left']) {
-    const key = side === 'right' ? 'rp' : 'lp', flag = side === 'right' ? 'rpAuto' : 'lpAuto';
-    let prev = null;
-    for (const k of S.K.filter(k => k[key] !== undefined)) {
-      if (!k[flag]) { prev = V3(...k[key]).normalize(); continue; }
+    const key = side === 'right' ? 'rp' : 'lp', flag = side === 'right' ? 'rpAuto' : 'lpAuto', ks = S.K.filter(k => k[key] !== undefined);
+    if (!ks.some(k => k[flag])) continue;
+    const nodes = ks.map(k => {
       const t = k.t; pose(t, 'mid');
-      const L = LIMB[side + 'Arm'], target = wp(side + 'Hand'), sh = wp(L.up), ax = target.clone().sub(sh).normalize();
-      const ref = (prev || V3(0, -1, -0.3)).clone(), e1 = ref.sub(ax.clone().multiplyScalar(ref.dot(ax))).normalize(), e2 = ax.clone().cross(e1);
-      const hold = holdAt(t), lam = 0.0005 + 0.02 * faceW(t);
-      let best = null;
+      const L = LIMB[side + 'Arm'], target = wp(side + 'Hand'), ax = target.clone().sub(wp(L.up)).normalize();
+      if (!k[flag]) { const p = V3(...k[key]).normalize(); return [{ p, sw: swOf(side, ax, p), c: 0 }]; }
+      const hold = holdAt(t), lam = 0.0005 + 0.02 * faceW(t), out = [];
       for (let a = -180; a < 180; a += 15) {
-        const p = e1.clone().multiplyScalar(Math.cos(a * D)).add(e2.clone().multiplyScalar(Math.sin(a * D)));
+        const p = poleFromSw(side, ax, a);
         ik(L, target, p);
         let c = 0;
         if (side === 'right') {
@@ -652,14 +669,40 @@ function autoPoles() {
         // 위팔이 몸통 뒤로 많이 넘어가거나 팔꿈치가 머리에 닿는 것도 피한다
         const chq = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(chq); const ua = wp(L.mid).sub(wp(L.up)).normalize().applyQuaternion(chq.invert());
         const nearHead = Math.max(0, 0.17 - wp(L.mid).distanceTo(wp('head').add(V3(0, 0.08, 0))));
-        c += 2 * ex(rot, -70, S.shER || 80) ** 2 + 0.0005 * rot * rot + 4e5 * elbowIn(side) ** 2 + 3000 * Math.max(0, -ua.z - 0.5) ** 2 + 4e5 * nearHead ** 2 + (prev ? 0.004 * (Math.acos(clamp(p.dot(prev), -1, 1)) / D) ** 2 : 0);
-        if (!best || c < best.c) best = { c, p };
+        c += 2 * ex(rot, -70, S.shER || 80) ** 2 + 0.0005 * rot * rot + 4e5 * elbowIn(side) ** 2 + 3000 * Math.max(0, -ua.z - 0.5) ** 2 + 4e5 * nearHead ** 2;
+        out.push({ p, sw: a, c });
       }
-      k[key] = best.p.toArray().map(v => +v.toFixed(3)); prev = best.p; S.CH = {};
+      return out;
+    });
+    // 동적 계획법: 키 사이 스위블 빠르기의 제곱 × 0.0004(왼팔은 치는 팔이 아니라 0.002로 더 차분하게)
+    const acc = [nodes[0].map(n => n.c)], from = [];
+    for (let i = 1; i < nodes.length; i++) {
+      const dt = Math.max(0.03, ks[i].t - ks[i - 1].t);
+      acc.push([]); from.push([]);
+      nodes[i].forEach(n => { let bv = Infinity, bk = 0; nodes[i - 1].forEach((m, j) => { const v = acc[i - 1][j] + (side === 'left' ? 2e-3 : 4e-4) * (wrapD(n.sw - m.sw) / dt) ** 2; if (v < bv) { bv = v; bk = j; } }); acc[i].push(bv + n.c); from[i - 1].push(bk); });
     }
+    let j = acc[acc.length - 1].indexOf(Math.min(...acc[acc.length - 1]));
+    for (let i = nodes.length - 1; i >= 0; i--) { if (ks[i][flag]) ks[i][key] = nodes[i][j].p.toArray().map(v => +v.toFixed(3)); if (i > 0) j = from[i - 1][j]; }
+    S.CH = {};
   }
   const a = S.K[0], z = S.K[S.K.length - 1];   // 한 바퀴 돌아 이어지게
   if (z.rpAuto && a.rp) z.rp = a.rp.slice(); if (z.lpAuto && a.lp) z.lp = a.lp.slice(); S.CH = {};
+}
+// 팔꿈치 방향 키(rp/lp)를 그 키 때의 스위블 각(rsw/lsw)으로 바꾼다. 앞 키와 가까운 쪽으로 펼쳐서(±360) 키 사이에 짧은 쪽으로 돈다
+function toSwivel() {
+  const out = {};
+  for (const [side, key, sk] of [['right', 'rp', 'rsw'], ['left', 'lp', 'lsw']]) {
+    let prev = null; out[sk] = [];
+    for (const k of S.K.filter(k => k[key] !== undefined)) {
+      pose(k.t, 'mid');
+      const ax = wp(side + 'Hand').sub(wp(side + 'UpperArm')).normalize();
+      let a = swOf(side, ax, V3(...k[key]));
+      if (prev != null) a = prev + wrapD(a - prev);
+      out[sk].push([k, a]); prev = a;
+    }
+  }
+  for (const [sk, list] of Object.entries(out)) for (const [k, a] of list) k[sk] = [a];
+  S.CH = {};
 }
 // 줄 면 고르기(autoFace인 샷): 임팩트(0초) 말고 라켓 방향이 정해진 키마다, 그 방향 둘레로 돌린 줄 면 36쪽을 보고
 // 손목(오른팔꿈치 12쪽 중 가장 좋은 것으로)·어깨 부담과 앞 키 손 회전과의 차이를 따져 고른다. 키 사이 손 회전이 엉뚱한 길로 돌지 않게
@@ -707,6 +750,7 @@ function setShot(id) {
   S.CH = {};
   autoFaces();
   autoPoles();
+  toSwivel();
   buildRoll();
   S.FAR = (BALL_FROM[S.ball] || BALL_FROM.ground)(S.C0);
   if (S.ball === 'toss') { pose(S.toss, 'mid'); S.tossAt = handBall(); }
