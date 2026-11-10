@@ -7,11 +7,12 @@
 <style>
   html, body { margin: 0; height: 100%; background: #9fd0f0; font: 600 13px sans-serif; }
   #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
-  .bar { position: fixed; left: 8px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100vw - 16px); }
-  #bar1 { top: 8px; } #bar2 { top: 44px; } #bar3 { top: 80px; }
-  .bar button { font: inherit; padding: 6px 9px; border-radius: 8px; border: 0; background: #fff; box-shadow: 0 1px 3px #0003; }
+  #ui { position: fixed; left: 8px; right: 8px; top: 8px; z-index: 5; display: flex; flex-direction: column; gap: 5px; pointer-events: none; }
+  .bar { display: flex; gap: 5px; flex-wrap: wrap; }
+  .bar button, .bar a { pointer-events: auto; font: inherit; padding: 6px 9px; border-radius: 8px; border: 0; background: #fff; color: #223; box-shadow: 0 1px 3px #0003; text-decoration: none; }
   .bar button.on { background: #ff7aa8; color: #fff; }
-  #note { position: fixed; left: 8px; bottom: 8px; z-index: 5; color: #223; background: #fffd; padding: 5px 9px; border-radius: 6px; line-height: 1.5; }
+  .bar small { align-self: center; color: #234; font-weight: 700; margin-right: 2px; }
+  #note { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 5; color: #223; background: #fffd; padding: 5px 9px; border-radius: 6px; line-height: 1.5; }
 </style>
 <script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
 </head>
@@ -20,8 +21,8 @@
      동작은 손으로 짠 임시 동작이다(실제는 촬영한 동작으로 바꾼다). 경기 결과와는 상관없다.
      http://localhost:8080/tools/char3d/swing.html?glb=models/vroid_sample.vrm&cam=side|back|front|tps&ik=1&ball=auto|mid|low|high|far|near|early|late -->
 <div id="stage"></div>
-<div class="bar" id="bar1"></div><div class="bar" id="bar2"></div><div class="bar" id="bar3"></div>
-<div id="note"></div>
+<div id="ui"><div class="bar" id="bar0"><a href="../../?check">← 확인 목록</a></div><div class="bar" id="bar1"><small>공</small></div><div class="bar" id="bar2"><small>시점</small></div><div class="bar" id="bar3"></div></div>
+<div id="note">캐릭터를 불러오는 중… (약 11MB)</div>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
@@ -56,7 +57,7 @@ sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -3,
 
 // ── 캐릭터 ──
 const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
-const gltf = await loader.loadAsync(q.get('glb') || 'models/vroid_sample.vrm');
+const gltf = await loader.loadAsync(q.get('glb') || 'vroid_sample.vrm');   // VRoid로 만든 pixiv 공식 샘플(VRM 공개 라이선스 1.0, 재배포·수정·상업 이용 허용)
 const vrm = gltf.userData.vrm; VRMUtils.rotateVRM0(vrm);
 vrm.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
 scene.add(vrm.scene);
@@ -262,26 +263,30 @@ function ballAt(t, C, hit) {
 }
 
 // ── 화면 ──
+// 시점: 카메라 자리와 보는 곳. 세로 화면(휴대폰)에서는 가로로 덜 보이므로 뒤로 물러선다
 const CAMS = {
-  side: () => { cam.position.set(-3.6, 1.15, 0.6); cam.lookAt(-0.25, 0.95, 0.25); },
-  q34: () => { cam.position.set(-2.3, 1.45, -2.6); cam.lookAt(-0.25, 0.9, 0.35); },
-  back: () => { cam.position.set(0.9, 1.75, -3.4); cam.lookAt(-0.2, 0.95, 0.6); },
-  front: () => { cam.position.set(-0.9, 1.35, 3.6); cam.lookAt(-0.2, 0.95, 0); },
-  tps: () => { cam.position.set(0.45, 1.95, -2.4); cam.lookAt(-0.3, 0.9, 4.0); },
-  tv: () => { cam.position.set(1.2, 7.5, -9.5); cam.lookAt(0.3, 0.4, 6.5); },
-  top: () => { cam.position.set(-0.2, 4.2, 0.25); cam.up.set(0, 0, 1); cam.lookAt(-0.2, 0, 0.25); cam.up.set(0, 1, 0); },
+  q34: { p: [-2.3, 1.45, -2.6], t: [-0.25, 0.9, 0.35] }, side: { p: [-3.6, 1.15, 0.6], t: [-0.25, 0.95, 0.25] },
+  back: { p: [0.9, 1.75, -3.4], t: [-0.2, 0.95, 0.6] }, front: { p: [-0.9, 1.35, 3.6], t: [-0.2, 0.95, 0] },
+  tps: { p: [0.45, 1.95, -2.4], t: [-0.3, 0.9, 4.0] }, tv: { p: [1.2, 7.5, -9.5], t: [0.3, 0.4, 6.5] }, top: { p: [-0.2, 4.2, 0.25], t: [-0.2, 0, 0.25], up: [0, 0, 1] },
 };
-if (q.get('ui') === '0') for (const id of ['bar1', 'bar2', 'bar3', 'note']) document.getElementById(id).style.display = 'none';
+const CAM_NAME = { q34: '뒤 비스듬히', side: '옆', back: '뒤', front: '앞', tps: '어깨 너머', tv: '중계', top: '위' };
+function applyCam(k) {
+  const c = CAMS[k], t = V3(...c.t), p = V3(...c.p);
+  const fit = k === 'tps' || k === 'tv' ? 1 : Math.max(1, Math.pow(1.25 / cam.aspect, 0.8));
+  cam.position.copy(t).add(p.sub(t).multiplyScalar(fit));
+  cam.up.set(...(c.up || [0, 1, 0])); cam.lookAt(t); cam.up.set(0, 1, 0);
+}
+if (q.get('ui') === '0') for (const id of ['ui', 'note']) document.getElementById(id).style.display = 'none';
 window.__vrm = vrm; window.__B = B;
-let camK = q.get('cam') || 'side', ballMode = q.get('ball') || 'auto', speed = +(q.get('speed') || 1), frozen = q.get('t') != null ? +q.get('t') : null;
+let camK = q.get('cam') || 'q34', ballMode = q.get('ball') || 'auto', speed = +(q.get('speed') || 1), frozen = q.get('t') != null ? +q.get('t') : null;
 const bar1 = document.getElementById('bar1'), bar2 = document.getElementById('bar2'), bar3 = document.getElementById('bar3'), note = document.getElementById('note');
-const btn = (bar, label, fn, group, on) => { const b = document.createElement('button'); b.textContent = label; b.onclick = () => { if (group) for (const x of bar.querySelectorAll('button')) x.classList.toggle('on', x === b); fn(); }; if (on) b.classList.add('on'); bar.append(b); return b; };
-btn(bar1, '자동', () => ballMode = 'auto', 1, ballMode === 'auto');
-for (const k of ORDER) btn(bar1, BALLS[k].name, () => ballMode = k, 1, ballMode === k);
-for (const k of Object.keys(CAMS)) btn(bar2, { side: '옆', back: '뒤', front: '앞', tps: '어깨 너머', tv: '중계' }[k], () => camK = k, 1, camK === k);
+const btn = (bar, label, fn, group, on) => { const b = document.createElement('button'); b.textContent = label; b.dataset.g = group || ''; b.onclick = () => { if (group) for (const x of bar.querySelectorAll(`button[data-g="${group}"]`)) x.classList.toggle('on', x === b); fn(); }; if (on) b.classList.add('on'); bar.append(b); return b; };
+btn(bar1, '차례로', () => ballMode = 'auto', 'b', ballMode === 'auto');
+for (const k of ORDER) btn(bar1, BALLS[k].name, () => ballMode = k, 'b', ballMode === k);
+for (const k of Object.keys(CAMS)) btn(bar2, CAM_NAME[k], () => camK = k, 'c', camK === k);
 const ikBtn = btn(bar3, 'IK 켬', () => { useIK = !useIK; ikBtn.textContent = useIK ? 'IK 켬' : 'IK 끔'; ikBtn.classList.toggle('on', useIK); }, null, useIK);
 if (!useIK) ikBtn.textContent = 'IK 끔';
-for (const sp of [1, 0.5, 0.25]) btn(bar3, sp === 1 ? '보통 빠르기' : `${sp}배(살펴보기용)`, () => speed = sp, 3, speed === sp);
+for (const sp of [1, 0.5, 0.25]) btn(bar3, sp === 1 ? '보통 빠르기' : `${sp}배`, () => speed = sp, 's', speed === sp);
 
 let clock = 0, rep = 0, last = performance.now(), manual = false, seq = null;
 const trailHist = [];
@@ -311,7 +316,7 @@ function tick(dt) {
   trail.geometry.attributes.position.needsUpdate = true;
   hitMark.visible = Math.abs(t) < 0.12; hitMark.position.copy(C); hitMark.lookAt(cam.position);
   hitMark.material.color.set(hit ? 0x33dd77 : 0xff3366);
-  CAMS[camK]();
+  applyCam(camK);
   note.innerHTML = `${BALLS[key].name} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작은 손으로 짠 임시 동작(실제는 촬영 동작으로)`;
   renderer.render(scene, cam);
 }

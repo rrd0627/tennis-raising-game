@@ -65,4 +65,7 @@ export const CHECKS = [
   { group: '7. 요정과 주인공', label: '같이 기뻐하는 순간', hint: '훈련 → 아무 칸이나 고르세요. 결과 뒤에 주인공이 요정을 돌아봐요.', make: s => { ready(s); s.force = { joy: 'mile' }; } },
   { group: '7. 요정과 주인공', label: '우승하고 같이 기뻐하기', hint: '화면을 눌러 넘기세요. 축하 자리 뒤에 요정이 할 말을 골라요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'W'); return 'tourResult'; } },
   { group: '7. 요정과 주인공', label: '지고 나서 같이 아쉬워하기', hint: '화면을 눌러 넘기세요.', make: (s, G) => { ready(s); G.checkTour(s, 'local', 'G'); return 'tourResult'; } },
+
+  // 게임에 아직 없는 시험. href가 있으면 그 화면을 연다
+  { group: '8. 시험 중 (게임에는 아직 없음)', label: '3D 캐릭터: 포핸드와 IK', hint: 'VRoid 기본 샘플에 손으로 짠 포핸드를 입혔어요. 공 높이·거리 7가지에 맞춰 라켓 가운데로 맞히고, IK를 끄면 빗나가요. 시점을 바꿔 보세요. 처음에 약 11MB를 받아요.', href: 'tools/char3d/swing.html' },
 ];

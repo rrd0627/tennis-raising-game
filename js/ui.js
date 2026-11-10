@@ -878,6 +878,7 @@ function checkListHTML() {
   const rows = CHECKS.map((c, i) => {
     const head = c.group !== group ? `<h3>${esc(c.group)}</h3>` : '';
     group = c.group;
+    if (c.href) return `${head}<a class="lessonrow" href="${esc(c.href)}" style="color:inherit;text-decoration:none"><b>${esc(c.label)}</b><small>${esc(c.hint)}</small></a>`;
     return `${head}<button class="lessonrow" data-a="checkgo" data-i="${i}"><b>${esc(c.label)}</b><small>${esc(c.hint)}</small></button>`;
   }).join('');
   return `<div class="screen stats"><header class="topbar"><div class="wk">확인할 장면</div><div class="sub">플레이 순서대로</div></header>
