@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>포핸드 IK 시험</title>
+<title>스윙 IK 시험</title>
 <style>
   html, body { margin: 0; height: 100%; background: #9fd0f0; font: 600 13px sans-serif; }
   #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
@@ -17,12 +17,12 @@
 <script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
 </head>
 <body>
-<!-- 3D 캐릭터에 포핸드를 입히고 공 높이·거리에 맞춰 IK로 라켓 가운데를 공에 맞히는 시험 화면(개발용).
+<!-- 3D 캐릭터에 스윙(포핸드·백핸드·발리·서브·스매시)을 입히고 공 높이·거리에 맞춰 IK로 라켓 가운데를 공에 맞히는 시험 화면(개발용).
      동작은 손으로 짠 임시 동작이다(실제는 촬영한 동작으로 바꾼다). 경기 결과와는 상관없다.
-     http://localhost:8080/tools/char3d/swing.html?cam=q34|side|back|front|tps|tv|top|hand&ik=1&ball=auto|mid|low|high|far|near|early|late&t=0(멈춤)&speed=0.5
+     http://localhost:8080/tools/char3d/swing.html?shot=fh|bh|fv|bv|sv|sm&cam=q34|side|back|front|tps|tv|top|hand&ik=1&ball=auto|mid|low|high|far|near|early|late&t=0(멈춤)&speed=0.5
      동작을 고친 뒤에는 node tools/char3d/jointcheck.mjs로 관절 범위·튐·뚫음을 확인한다 -->
 <div id="stage"></div>
-<div id="ui"><div class="bar" id="bar0"><a href="../../?check">← 확인 목록</a></div><div class="bar" id="bar1"><small>공</small></div><div class="bar" id="bar2"><small>시점</small></div><div class="bar" id="bar3"></div></div>
+<div id="ui"><div class="bar" id="bar0"><a href="../../?check">← 확인 목록</a></div><div class="bar" id="barS"><small>샷</small></div><div class="bar" id="bar1"><small>공</small></div><div class="bar" id="bar2"><small>시점</small></div><div class="bar" id="bar3"></div></div>
 <div id="note">캐릭터를 불러오는 중… (약 11MB)</div>
 <script type="module">
 import * as THREE from 'three';
@@ -90,26 +90,29 @@ const racket = new THREE.Group();
 }
 // 손에 쥐는 법(오른손 기준, 손의 처음 방향: 손가락 -x, 손바닥 -y, 엄지 +z). 이스턴~세미웨스턴: 손잡이가 손바닥을 비스듬히(검지 뿌리 → 새끼 쪽 손바닥 아래) 지나고
 // 줄 면은 손바닥과 나란하다. 손잡이 축은 손가락 뿌리 아래 약 3cm를 지나고, 끝(버트)은 새끼손가락 바로 밖에 온다. 손가락은 손잡이를 감싸게 굽힌다(setFingers)
+// 샷마다 손잡이를 축으로 손을 돌려 쥔다(bevel, 도): 0은 이스턴 포핸드, 컨티넨탈은 한 칸(45도) 돌린 것
 const GRIP_SHAFT = V3(-0.45, 0, 0.89).normalize(), GRIP_FACE = V3(0, -1, 0);
 const GRIP_POS = V3(-0.062, -0.024, 0.002).add(GRIP_SHAFT.clone().multiplyScalar(0.04));
 const GRIP_M = new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(GRIP_SHAFT, GRIP_FACE), GRIP_SHAFT, GRIP_FACE);   // 라켓의 x,y,z → 손 기준(x = y × z)
 racket.matrixAutoUpdate = false; B('rightHand').add(racket);
-racket.matrix.copy(GRIP_M).setPosition(GRIP_POS);
-const gripQ = new THREE.Quaternion().setFromRotationMatrix(GRIP_M);
-// 왼손이 라켓 목을 잡을 때: 오른손 쥐는 법을 거울에 비춘 것. 라켓 목(손잡이 쪽에서 THROAT_Y)을 손바닥에 둔다
-const THROAT_Y = 0.17, GRIP_SHAFT_L = V3(0.45, 0, 0.89).normalize();
-const GRIP_ML = new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(GRIP_SHAFT_L, GRIP_FACE), GRIP_SHAFT_L, GRIP_FACE);
-const gripQL = new THREE.Quaternion().setFromRotationMatrix(GRIP_ML);
-const GRIP_POS_L = V3(0.062, -0.0275, 0.002).add(GRIP_SHAFT_L.clone().multiplyScalar(-0.005 - THROAT_Y));
+const gripOf = bevel => GRIP_M.clone().multiply(new THREE.Matrix4().makeRotationY(bevel * D));
+// 왼손: 오른손 쥐는 법을 거울에 비춘 것. 라켓 목을 잡을 때(throat)와 양손 백핸드에서 손잡이 위쪽을 잡을 때(grip2)
+const GRIP_SHAFT_L = V3(0.45, 0, 0.89).normalize();
+const gripQL = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(GRIP_SHAFT_L, GRIP_FACE), GRIP_SHAFT_L, GRIP_FACE));
+const HOLD = {
+  throat: { y: 0.17, depth: -0.0275, curl: 0.92, free: true },   // 라켓 목: 목 둘레 어디든 손목이 편한 쪽
+  grip2: { y: 0.09, depth: -0.024, curl: 1, free: false },       // 양손 백핸드 위쪽 손: 왼손 이스턴 포핸드로 고정
+};
+for (const h of Object.values(HOLD)) h.pos = V3(0.062, h.depth, 0.002).add(GRIP_SHAFT_L.clone().multiplyScalar(-0.005 - h.y));
 // 원하는 라켓 방향(손잡이→머리 s, 줄 면 앞 f)이 되는 손의 세계 회전
-function handQuatFor(s, f) {
+function racketQuatFor(s, f) {
   s = s.clone().normalize(); f = f.clone().sub(s.clone().multiplyScalar(f.dot(s))).normalize();
-  const x = new THREE.Vector3().crossVectors(s, f);
-  const rq = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, s, f));   // 라켓의 세계 회전
-  return rq.multiply(gripQ.clone().invert());
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(s, f), s, f));   // 라켓의 세계 회전
 }
-// 손목 자리에서 라켓 가운데(스윗 스폿)까지
-function sweetFrom(wrist, hq) { return GRIP_POS.clone().add(V3(0, SWEET, 0).applyQuaternion(gripQ)).applyQuaternion(hq).add(wrist); }
+const handQuatFor = (s, f, t = 0) => racketQuatFor(s, f).multiply(gripAt(t).clone().invert());
+// 손목 자리에서 라켓 가운데(스윗 스폿)까지(손잡이 축 둘레로 돌려 쥐어도 같다)
+const SWEET_IN_HAND = GRIP_POS.clone().add(V3(0, SWEET, 0).applyMatrix4(new THREE.Matrix4().extractRotation(GRIP_M)));
+function sweetFrom(wrist, hq) { return SWEET_IN_HAND.clone().applyQuaternion(hq).add(wrist); }
 
 // 손가락: 손잡이를 감싸는 각도(도). 손잡이 축에 마디가 고르게 닿도록 맞춘 값이다(손가락 두께 포함)
 const CURL = { Index: [30, 48, 39], Middle: [48, 58, 48], Ring: [60, 46, 42], Little: [64, 38, 30] };
@@ -135,14 +138,17 @@ trail.frustumCulled = false; scene.add(trail);
 const hitMark = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.075, 24), new THREE.MeshBasicMaterial({ color: 0xff3366, side: THREE.DoubleSide, transparent: true, depthTest: false }));
 hitMark.renderOrder = 9; scene.add(hitMark);
 
-// ── 포핸드 동작(손으로 짠 임시 동작) ──
-// 시간은 임팩트가 0. 자리는 선수 기준(발 사이 바닥이 원점, +z가 네트 쪽, +x가 선수의 왼쪽). 각도는 도. 키마다 필요한 칸만 적고, 없는 칸은 앞뒤 키에서 이어진다
+// ── 동작(샷) ──
+// 동작은 손으로 짠 임시 동작이다. 시간은 임팩트가 0. 자리는 선수 기준(발 사이 바닥이 원점, +z가 네트 쪽, +x가 선수의 왼쪽). 각도는 도. 키마다 필요한 칸만 적고, 없는 칸은 앞뒤 키에서 이어진다
 // hip: [x, 높이 변화, z, 돌기], chest: [허리 위 돌기(골반 기준), 앞으로 숙임, 오른쪽 어깨 내림]
-// rf/lf: 발 앞꿈치(엄지발가락 뿌리 밑 바닥) [x, z, 발끝 방향, 들기]. 디딘 발은 앞꿈치를 축으로 돈다. rheel: 오른발 뒤꿈치 드는 각도
-// rh: 오른손목 자리, s/f: 라켓 방향(손잡이→머리)과 줄 면 앞, rp: 팔꿈치가 향하는 쪽(임팩트 앞뒤는 손목·어깨가 편하고 팔꿈치가 몸에 닿지 않는 쪽을 찾아 정함), lh: 왼손목('throat'이면 라켓 목을 잡음), lp: 왼팔꿈치 쪽
-const READY = { hip: [0, -0.06, 0, 0], chest: [0, 9, 0], rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], rheel: [0], rh: [-0.1, 0.98, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] };
-const K = [
-  { t: -1.55, ...READY },
+// rf/lf: 발 앞꿈치(엄지발가락 뿌리 밑 바닥) [x, z, 발끝 방향, 들기]. 디딘 발은 앞꿈치를 축으로 돈다. rheel/lheel: 뒤꿈치 드는 각도
+// rh: 오른손목 자리, s/f: 라켓 방향(손잡이→머리)과 줄 면 앞, rp: 팔꿈치가 향하는 쪽('auto'면 손목·어깨가 편하고 팔꿈치가 몸에 닿지 않는 쪽을 불러올 때 찾는다)
+// lh: 왼손목 자리, 'throat'면 라켓 목, 'grip2'면 손잡이 위쪽(양손)을 잡는다. lp: 왼팔꿈치 쪽('auto' 가능). lk: 왼손가락 굽힘(0~1, 공을 쥘 때 등)
+const SHOTS = [];
+// 포핸드: 스플릿 스텝 → 오른발을 옆으로 내디디며 유닛턴 → 라켓을 위로 들었다가 떨어뜨려 → 팔꿈치를 굽힌 채 끌고 와 몸 앞에서 뻗어 맞히고 → 왼어깨 뒤로 와이퍼 피니시
+const FH_READY = { hip: [0, -0.06, 0, 0], chest: [0, 9, 0], rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], rheel: [0], rh: [-0.1, 0.98, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] };
+const FH_KEYS = [
+  { t: -1.55, ...FH_READY },
   // 스플릿 스텝: 두 발이 살짝 떴다가 넓게 내려앉는다
   { t: -1.12, hip: [0, -0.03, 0, 0], chest: [0, 8, 0], rf: [-0.21, 0.11, -6, 0.03], lf: [0.21, 0.11, 6, 0.03], rh: [-0.1, 1.0, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] },
   { t: -0.98, hip: [0, -0.12, 0, -5], chest: [-3, 10, 0], rf: [-0.255, 0.11, -10, 0], lf: [0.245, 0.13, 8, 0], rh: [-0.12, 0.93, 0.16], s: [0.2, 0.5, 1], f: [1, 0, -0.2], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] },
@@ -172,49 +178,96 @@ const K = [
   { t: 0.84, s: [0.99, 0.12, 0.11], f: [-0.16, 0.82, 0.54] },
   { t: 0.9, rf: [-0.205, 0.108, -6.5, 0.014], lf: [0.2, 0.112, 5, 0.012] },
   { t: 0.95, rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], lh: [0.06, 1.05, 0.4], lp: [0.65, -1, 0.05] },
-  { t: 1.05, ...READY },
+  { t: 1.05, ...FH_READY },
 ];
-for (const k of K) if (k.s) k.hq = handQuatFor(V3(...k.s), V3(...k.f)).toArray();
-{ let p = null; for (const k of K) if (k.hq) { if (p && p[0] * k.hq[0] + p[1] * k.hq[1] + p[2] * k.hq[2] + p[3] * k.hq[3] < 0) k.hq = k.hq.map(v => -v); p = k.hq; } }   // 같은 반구로(뒤집히지 않게)
-const T0 = K[0].t, T1 = K[K.length - 1].t, LOOP = T1 - T0 + 0.35;
-const K7 = K.find(k => k.t === 0), HQ7 = new THREE.Quaternion().fromArray(K7.hq);
-// 키 사이를 부드럽게: 키 간격이 달라도 빠르기가 키에서 끊기지 않게(시간 기준 허밋 곡선). 처음과 끝 키에서는 멈춰 있다
-const CH = {};
-const chan = key => CH[key] || (CH[key] = K.filter(k => k[key] !== undefined));
-function sample(t, key, throat) {
-  const L = chan(key), n = L.length; t = clamp(t, L[0].t, L[n - 1].t);
+SHOTS.push({
+  id: 'fh', name: '포핸드', keys: FH_KEYS, bevel: 0, ball: 'ground',
+  balls: { mid: ['보통', [0, 0, 0]], low: ['낮은 공', [0.05, -0.42, 0]], high: ['높은 공', [0.02, 0.36, -0.06]], far: ['먼 공', [-0.24, -0.06, 0.04]], near: ['붙은 공', [0.2, 0.02, -0.04]], early: ['앞에서', [0.02, 0, 0.18]], late: ['늦은 공', [0, 0, -0.16]] },
+  // 발로 공에 다가가는 무게: 발이 떠 있는 동안 옮기고, 돌아오는 걸음에서 되돌린다. [옆, 앞뒤]: 공이 비켜 온 만큼 발과 몸이 옮겨 가는 비율(나머지는 팔이 맞춘다)
+  step: { right: [-0.92, -0.58, 0.5, 0.92], left: [-0.95, -0.74, 0.72, 0.93], body: [-0.95, -0.6, 0.5, 0.95] }, STEP: { body: [0.7, 0.8], right: [0.75, 0.85], left: [0.6, 0.8] },
+  cam: [0, 0, 0],
+});
+
+// 양손 백핸드: 오른손 컨티넨탈(아래), 왼손 이스턴(위). 준비 자세에서는 포핸드처럼 쥐었다가 스플릿 스텝 때 왼손이 라켓 목을 돌려 컨티넨탈로 바꾸고, 손잡이 위쪽으로 옮겨 잡는다.
+// 돌아올 때는 라켓을 오른어깨 앞으로 세우고, 왼손이 다시 목을 잡아 돌려 포핸드 쥐는 법으로 되돌린다.
+// 몸·발은 포핸드를 거울에 비춘 것(왼발을 옆으로 내디딤), 임팩트는 왼 골반 앞, 피니시는 오른어깨 뒤. 팔꿈치 방향은 불러올 때 찾는다.
+// 라켓 방향은 두 손목·어깨가 편한 쪽을 찾아 정했다(양손으로 라켓 머리를 깊게 떨어뜨리면 손목이 범위를 넘어 뒤로 거의 수평으로 뺀다)
+const BH_KEYS = [
+  { t: -1.55, hip: [0, -0.06, 0, 0], chest: [0, 9, 0], rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], lheel: [0], rh: [-0.1, 0.98, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: 'auto', lh: 'throat', lp: 'auto', bevel: [0] },
+  { t: -1.12, hip: [0, -0.03, 0, 0], chest: [0, 8, 0], rf: [-0.21, 0.11, -6, 0.03], lf: [0.21, 0.11, 6, 0.03], rh: [-0.1, 1.0, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: 'auto', lh: 'throat', lp: 'auto', bevel: [0] },
+  { t: -0.98, hip: [0, -0.12, 0, 5], chest: [3, 10, 0], rf: [-0.245, 0.13, -8, 0], lf: [0.255, 0.11, 10, 0], rh: [-0.12, 0.93, 0.16], s: [0.2, 0.5, 1], f: [1, 0, -0.2], rp: 'auto', lh: 'throat', lp: 'auto' },
+  { t: -0.92, bevel: [-135] },
+  { t: -0.9, lf: [0.29, 0.09, 20, 0.045] },
+  { t: -0.86, rf: [-0.21, 0.155, 8, 0.035], lh: [-0.05, 1.0, 0.26], lp: 'auto' },
+  { t: -0.72, hip: [0.05, -0.1, -0.03, 42], chest: [38, 9, 0], rf: [-0.18, 0.175, 22, 0], lf: [0.47, -0.04, 56, 0.07], rh: [0.18, 1.0, -0.05], s: [0.3, 0.9, -0.1], f: [-0.1, -0.35, 1], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: -0.56, lf: [0.51, -0.062, 60, 0.025] },
+  { t: -0.4, hip: [0.09, -0.12, -0.04, 54], chest: [46, 8, -2], rf: [-0.18, 0.175, 25, 0], lf: [0.515, -0.065, 60, 0], rh: [0.2, 1.02, -0.1], s: [-0.19, 0.91, -0.38], f: [-0.49, 0.24, 0.84], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: -0.28, rp: 'auto', lp: 'auto' },
+  { t: -0.16, hip: [0.06, -0.12, -0.02, 38], chest: [38, 9, -8], lf: [0.515, -0.065, 60, 0], rh: [0.17, 0.92, 0.0], s: [0.46, 0.05, -0.88], f: [0.87, -0.25, 0.41], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: -0.05, hip: [0.01, -0.1, 0.05, 10], chest: [18, 11, -8], lf: [0.515, -0.065, 50, 0], lheel: [3], rh: [0.12, 0.92, 0.22], s: [0.85, 0.2, -0.48], f: [0.5, 0, 0.86], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: 0, hip: [-0.02, -0.09, 0.1, 4], chest: [8, 13, -6], lf: [0.515, -0.065, 38, 0], lheel: [10], rh: [0.08, 0.95, 0.42], s: [0.97, 0.15, -0.08], f: [-0.02, 0.05, 1], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: 0.08, rh: [0.0, 1.06, 0.46], s: [0.46, 0.87, -0.19], f: [-0.03, 0.23, 0.97], rp: 'auto' },
+  { t: 0.14, hip: [-0.05, -0.07, 0.11, -14], chest: [-12, 10, 0], lf: [0.515, -0.065, 26, 0], lheel: [20], rh: [-0.08, 1.18, 0.4], s: [0.54, 0.83, -0.12], f: [-0.6, 0.48, 0.64], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: 0.18, s: [0.21, 0.87, -0.45], f: [-0.9, 0.35, 0.26], rp: 'auto', lp: 'auto' },
+  { t: 0.26, s: [-0.62, -0.37, -0.69], f: [0.43, -0.9, 0.09], rp: 'auto', lp: 'auto' },
+  { t: 0.34, hip: [-0.06, -0.05, 0.09, -24], chest: [-28, 6, 4], rf: [-0.18, 0.175, 22, 0], lf: [0.515, -0.065, 15, 0], lheel: [30], rh: [-0.2, 1.32, 0.18], s: [-0.2, -0.89, -0.4], f: [-0.1, -0.39, 0.92], rp: 'auto', lh: 'grip2', lp: 'auto' },
+  { t: 0.46, lh: [-0.06, 1.2, 0.32], lp: 'auto' },
+  { t: 0.5, lf: [0.48, -0.03, 12, 0.035], lheel: [12] },
+  { t: 0.62, hip: [-0.04, -0.05, 0.05, -20], chest: [-24, 6, 3], rf: [-0.18, 0.175, 20, 0], rh: [-0.2, 1.31, 0.18], s: [-0.2, -0.89, -0.4], f: [-0.1, -0.39, 0.92], rp: 'auto', lh: [0.02, 1.12, 0.32], lp: 'auto' },
+  { t: 0.74, rh: [-0.15, 1.18, 0.22], s: [-0.45, 0.2, -0.85], f: [0.85, 0.3, -0.4], rp: 'auto' },
+  { t: 0.75, lf: [0.32, 0.06, 12, 0.06], lheel: [0] },
+  { t: 0.8, rf: [-0.19, 0.14, 5, 0.03], lh: [0.04, 1.08, 0.34], lp: 'auto' },
+  { t: 0.84, rh: [-0.12, 1.05, 0.22], s: [-0.15, 0.95, 0.25], f: [0.95, 0.1, 0.3], rp: 'auto' },
+  { t: 0.9, rf: [-0.2, 0.112, -5, 0.012], lf: [0.205, 0.108, 6.5, 0.014], lh: 'throat', lp: 'auto', bevel: [-135] },
+  { t: 0.95, rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0] },
+  { t: 1.05, hip: [0, -0.06, 0, 0], chest: [0, 9, 0], rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], lheel: [0], rh: [-0.1, 0.98, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: 'auto', lh: 'throat', lp: 'auto', bevel: [0] },
+];
+SHOTS.push({
+  id: 'bh', name: '양손 백핸드', keys: BH_KEYS, bevel: -135, ball: 'ground',   // 컨티넨탈. 백핸드는 포핸드 반대쪽 줄 면으로 치므로 손잡이 축으로 반 바퀴 더 돈 셈
+ 
+  balls: { mid: ['보통', [0, 0, 0]], low: ['낮은 공', [-0.05, -0.42, 0]], high: ['높은 공', [-0.02, 0.36, -0.06]], far: ['먼 공', [0.24, -0.06, 0.04]], near: ['붙은 공', [-0.2, 0.02, -0.04]], early: ['앞에서', [-0.02, 0, 0.18]], late: ['늦은 공', [0, 0, -0.16]] },
+  step: { left: [-0.92, -0.58, 0.5, 0.92], right: [-0.95, -0.74, 0.72, 0.93], body: [-0.95, -0.6, 0.5, 0.95] }, STEP: { body: [0.7, 0.8], left: [0.75, 0.85], right: [0.6, 0.8] },
+  cam: [0.6, 0, 0],
+});
+
+// 지금 샷: 정의에 미리 계산한 값을 더한다
+let S = null;
+const sampleKeys = (L, t, key, sub) => {
+  const n = L.length; t = clamp(t, L[0].t, L[n - 1].t);
   let i = 0; while (i < n - 2 && L[i + 1].t <= t) i++;
-  const P = j => { const x = L[j][key]; return x === 'throat' ? throat : x; };
+  const P = j => { const x = L[j][key]; return typeof x === 'string' ? sub : x; };
   const tan = j => { const b = P(j); if (j === 0 || j === n - 1) return b.map(() => 0); const a = P(j - 1), c = P(j + 1), h0 = L[j].t - L[j - 1].t, h1 = L[j + 1].t - L[j].t; return b.map((_, k) => ((b[k] - a[k]) / h0 * h1 + (c[k] - b[k]) / h1 * h0) / (h0 + h1)); };
   const h = L[i + 1].t - L[i].t, u = (t - L[i].t) / h, p1 = P(i), p2 = P(i + 1), m1 = tan(i), m2 = tan(i + 1);
   const u2 = u * u, u3 = u2 * u, a = 2 * u3 - 3 * u2 + 1, b = u3 - 2 * u2 + u, c = -2 * u3 + 3 * u2, d = u3 - u2;
   return p1.map((_, k) => a * p1[k] + b * h * m1[k] + c * p2[k] + d * h * m2[k]);
-}
-const sampleQ = (t, key = 'hq') => new THREE.Quaternion().fromArray(sample(t, key)).normalize();
-// 왼손이 라켓 목을 잡는 정도(0~1)
-function throatW(t) {
-  const L = chan('lh'); t = clamp(t, L[0].t, L[L.length - 1].t - 1e-6); let i = 0; while (L[i + 1].t <= t) i++;
-  const W = k => k.lh === 'throat' ? 1 : 0;
-  return W(L[i]) + (W(L[i + 1]) - W(L[i])) * sstep(0, 1, (t - L[i].t) / (L[i + 1].t - L[i].t));
-}
-
-// ── 공이 오는 자리(임팩트 자리)와 고치는 양 ──
-const BALLS = {
-  mid: { name: '보통', d: [0, 0, 0] }, low: { name: '낮은 공', d: [0.05, -0.42, 0] }, high: { name: '높은 공', d: [0.02, 0.36, -0.06] },
-  far: { name: '먼 공', d: [-0.24, -0.06, 0.04] }, near: { name: '붙은 공', d: [0.2, 0.02, -0.04] }, early: { name: '앞에서', d: [0.02, 0, 0.18] }, late: { name: '늦은 공', d: [0, 0, -0.16] },
 };
-const ORDER = ['mid', 'low', 'high', 'far', 'near', 'early', 'late'];
-// 보통 공의 임팩트 자리 = 보통 동작에서 임팩트 순간 라켓 가운데
-const C0 = sweetFrom(V3(...K7.rh), HQ7);
+// 키 사이를 부드럽게: 키 간격이 달라도 빠르기가 키에서 끊기지 않게(시간 기준 허밋 곡선). 처음과 끝 키에서는 멈춰 있다
+const chan = key => S.CH[key] || (S.CH[key] = S.K.filter(k => k[key] !== undefined));
+const has = key => chan(key).length > 0;
+function sample(t, key, sub) { return sampleKeys(chan(key), t, key, sub); }
+const sampleQ = (t, key = 'rq') => new THREE.Quaternion().fromArray(sample(t, key)).normalize();
+// 손잡이를 쥔 각(bevel)은 키로 바꿀 수 있다(왼손이 라켓 목을 잡고 돌려 쥐는 법을 바꾸는 것). 없으면 샷의 값
+const bevelAt = t => has('bevel') ? sample(t, 'bevel')[0] : S.bevel;
+const gripAt = t => new THREE.Quaternion().setFromRotationMatrix(gripOf(bevelAt(t)));
+// 그 순간 손의 회전(키마다 정한 라켓 방향을 그때 쥐는 법으로 바꿔 둔 것을 잇는다. 쥐는 법을 바꾸는 동안에는 손은 그대로 두고 라켓이 손 안에서 돈다)
+const handAt = t => sampleQ(t, 'hq');
+const racketAt = t => handAt(t).multiply(gripAt(t));
+// 왼손이 라켓을 잡는 정도(0~1)와 잡는 곳
+function holdAt(t) {
+  const L = chan('lh'); t = clamp(t, L[0].t, L[L.length - 1].t - 1e-6); let i = 0; while (L[i + 1].t <= t) i++;
+  const W = k => typeof k.lh === 'string' ? 1 : 0, type = typeof L[i].lh === 'string' ? L[i].lh : typeof L[i + 1].lh === 'string' ? L[i + 1].lh : 'throat';
+  return { w: W(L[i]) + (W(L[i + 1]) - W(L[i])) * sstep(0, 1, (t - L[i].t) / (L[i + 1].t - L[i].t)), type };
+}
+const ballsOf = () => Object.fromEntries(Object.entries(S.balls).map(([k, [name, d]]) => [k, { name, d }]));
 // 고치는 무게: 테이크백까지는 0, 임팩트에 1, 팔로스로에서 풀린다(스윙 모양은 그대로, 임팩트 근처만 바꾼다)
 const corrW = t => t < 0 ? sstep(-0.5, 0, t) : 1 - 0.7 * sstep(0, 0.35, t) - 0.3 * sstep(0.35, 0.9, t);
-// 발로 공에 다가가는 무게: 발이 떠 있는 동안 옮기고, 돌아오는 걸음에서 되돌린다
-const stepW = (t, who) => who === 'right' ? sstep(-0.92, -0.58, t) * (1 - sstep(0.5, 0.92, t))
-  : who === 'left' ? sstep(-0.95, -0.74, t) * (1 - sstep(0.72, 0.93, t)) : sstep(-0.95, -0.6, t) * (1 - sstep(0.5, 0.95, t));
-const STEP = { body: [0.7, 0.8], right: [0.75, 0.85], left: [0.6, 0.8] };   // [옆, 앞뒤]: 공이 비켜 온 만큼 발과 몸이 옮겨 가는 비율(나머지는 팔이 맞춘다)
-// 공 높이에 맞춰 라켓 머리를 떨어뜨리거나 세우는 축(임팩트 때 라켓이 가리키는 쪽과 위쪽에 직각, 공마다 같음)
-const TILT_AX = V3(...K7.s).normalize().cross(V3(0, 1, 0)).normalize();
+const stepW = (t, who) => { const [a, b, c, d] = S.step[who]; return sstep(a, b, t) * (1 - sstep(c, d, t)); };
+// 공 높이에 맞춰 라켓 머리를 떨어뜨리거나 세우는 양
 const tiltOf = dl => clamp(dl.y * 62, -30, 22) * D;
+// 줄 면을 처음 정한 대로 지키는 정도: 임팩트 앞뒤에서만
+const faceW = t => 1 - sstep(0.05, 0.22, Math.abs(t));
+// 왼손이 잡으러 가기 시작하면(조금이라도) 잡을 손목 모양이 편한지 따진다
+const holdWgt = tw => tw > 0 ? 0.25 + 0.75 * tw : 0;
 
 // ── IK ──
 const wp = (n, v = V3()) => B(n).getWorldPosition(v);
@@ -265,7 +318,8 @@ function wristAngles(side, qh) {
   return [psi, th * p / r, th * u / r];
 }
 const ex = (x, lo, hi) => x < lo ? lo - x : x > hi ? x - hi : 0;
-const wristCost = ([p, f, d]) => { p /= D; f /= D; d /= D; return ex(p, -75, 75) ** 2 + ex(f, -60, 65) ** 2 + 2 * ex(d, -25, 15) ** 2 + 0.0005 * (p * p + f * f + 2 * d * d); };
+// 비틀림이 150도를 넘으면(곧 반대쪽으로 뒤집히는 자리) 아주 비싸게: 기준 곡선이 그 경계를 건너지 않게
+const wristCost = ([p, f, d]) => { p /= D; f /= D; d /= D; return ex(p, -75, 75) ** 2 + ex(f, -60, 65) ** 2 + 2 * ex(d, -25, 15) ** 2 + 0.0005 * (p * p + f * f + 2 * d * d) + (Math.abs(p) > 150 ? 1e5 : 0); };
 wrist.raw = {};
 function wrist(side, want, k = 1) {
   const aH = WR[side], hand = B(side + 'Hand'), la = new THREE.Quaternion();
@@ -280,17 +334,27 @@ function wrist(side, want, k = 1) {
   hand.updateMatrixWorld(true);
   return la.multiply(hand.quaternion);
 }
+const lowerArmInv = side => { const q = new THREE.Quaternion(); B(side + 'LowerArm').getWorldQuaternion(q); return q.invert(); };
+// 위팔 돌림(해부학 중립: 팔꿈치를 굽히면 손이 몸 앞·안쪽으로 오는 쪽). 바깥돌림이 +
+function shoulderRot(side) {
+  const sx = side === 'right' ? 1 : -1, ch = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(ch);
+  const sh = wp(side + 'UpperArm'), el = wp(side + 'LowerArm'), wr = wp(side + 'Hand'), d = el.clone().sub(sh).normalize(), fa = wr.clone().sub(el), bb = fa.sub(d.clone().multiplyScalar(fa.dot(d)));
+  if (bb.length() < 1e-3) return 0; bb.normalize();
+  const F = V3(0.3 * sx, 0.3, 1).applyQuaternion(ch), fn = F.sub(d.clone().multiplyScalar(F.dot(d))).normalize();
+  return -sx * Math.atan2(fn.clone().cross(bb).dot(d), fn.dot(bb)) / D;
+}
+// 팔꿈치가 몸통에 너무 가까운 양(m)
+function elbowIn(side) { const el = wp(side + 'LowerArm'), a = wp('hips').add(V3(0, 0.05, 0)), b = wp('neck'), ab = b.clone().sub(a), u = clamp(el.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1); return Math.max(0, 0.16 - el.distanceTo(a.clone().add(ab.multiplyScalar(u)))); }
 // 라켓 방향(s)은 그대로 두고 라켓을 그 축으로 돌려(줄 면이 보는 쪽) 손목이 가장 편한 각을 고른다. lam이 크면 처음 정한 면에 가깝게(임팩트 근처)
 const ROLL_TH = []; for (let th = -180; th < 180; th += 5) ROLL_TH.push(th);
 function rollCost(side, want, s, lam) {
-  const li = new THREE.Quaternion(); B(side + 'LowerArm').getWorldQuaternion(li); li.invert();
+  const li = lowerArmInv(side);
   return th => wristCost(wristAngles(side, li.clone().multiply(new THREE.Quaternion().setFromAxisAngle(s, th * D).multiply(want)))) + lam * th * th;
 }
 // 기준 곡선: 보통 공으로 시간마다 모든 롤의 손목 부담을 재고, 이웃한 시간끼리 롤이 크게 바뀌지 않는 길을 고른다(동적 계획법)
-let ROLL = null;
 function buildRoll() {
   const ts = [], cR = [], cL = [];
-  for (let t = T0; t <= T1 + 1e-9; t += 0.02) { const c = {}; pose(t, 'mid', c); ts.push(t); cR.push(c.R); cL.push(c.L); }
+  for (let t = S.T0; t <= S.T1 + 1e-9; t += 0.02) { const c = {}; pose(t, 'mid', c); ts.push(t); cR.push(c.R); cL.push(c.L); }
   const path = cs => {
     const n = cs.length, m = ROLL_TH.length, acc = [cs[0].slice()], from = [];
     for (let i = 1; i < n; i++) {
@@ -308,20 +372,16 @@ function buildRoll() {
     for (let pass = 0; pass < 2; pass++) sm = sm.map((v, i) => i < 2 || i > n - 3 ? v : (sm[i - 2] + 4 * sm[i - 1] + 6 * v + 4 * sm[i + 1] + sm[i + 2]) / 16);
     // 끝과 처음은 같은 준비 자세라 롤도 같게(한 바퀴 돌아 이어질 때 튀지 않게): 마지막 0.35초 동안 차이를 나눠 없앤다
     const e = ((sm[n - 1] - sm[0]) % 360 + 540) % 360 - 180;
-    return sm.map((v, i) => v - e * sstep(T1 - 0.35, T1, ts[i]));
+    return sm.map((v, i) => v - e * sstep(S.T1 - 0.35, S.T1, ts[i]));
   };
-  ROLL = { ts, R: path(cR), L: path(cL) };
+  S.ROLL = { ts, R: path(cR), L: path(cL) };
 }
 // 기준 곡선 값(마디 사이는 캣멀롬이라 빠르기가 끊기지 않는다)
 const rollBase = (side, t) => {
-  if (!ROLL) return 0; const a = ROLL[side], n = a.length, i = clamp(Math.floor((t - T0) / 0.02), 0, n - 2), u = clamp((t - ROLL.ts[i]) / 0.02, 0, 1);
+  if (!S.ROLL) return 0; const a = S.ROLL[side], n = a.length, i = clamp(Math.floor((t - S.T0) / 0.02), 0, n - 2), u = clamp((t - S.ROLL.ts[i]) / 0.02, 0, 1);
   const p = j => a[clamp(j, 0, n - 1)], u2 = u * u, u3 = u2 * u;
   return 0.5 * (2 * p(i) + (-p(i - 1) + p(i + 1)) * u + (2 * p(i - 1) - 5 * p(i) + 4 * p(i + 1) - p(i + 2)) * u2 + (-p(i - 1) + 3 * p(i) - 3 * p(i + 1) + p(i + 2)) * u3);
 };
-// 줄 면을 처음 정한 대로 지키는 정도: 임팩트 앞뒤에서만
-const faceW = t => 1 - sstep(0.05, 0.22, Math.abs(t));
-// 왼손이 목을 잡으러 가기 시작하면(조금이라도) 잡을 손목 모양이 편한지 따진다
-const holdWgt = tw => tw > 0 ? 0.25 + 0.75 * tw : 0;
 const yawQ = deg => new THREE.Quaternion().setFromAxisAngle(V3(0, 1, 0), deg * D);
 const eul = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x * D, y * D, z * D, 'YXZ'));
 const TOE = B('rightToes') ? wp('rightToes').sub(wp('rightFoot')) : V3(0, -0.063, 0.11);   // 발목 → 앞꿈치(아직 처음 자세일 때 잰다)
@@ -329,14 +389,20 @@ const ALLB = [...new Set([...BONES, ...FINGER_BONES, 'rightToes', 'leftToes'])].
 
 // ── 한 순간의 자세 ──
 let useIK = q.get('ik') !== '0';
-function pose(t, ballKey, collect) {
-  const dl = V3(...BALLS[ballKey].d), w = useIK ? corrW(t) : 0, sw = who => useIK ? V3(STEP[who][0] * dl.x, 0, STEP[who][1] * dl.z).multiplyScalar(stepW(t, who)) : V3();
+// 왼손이 라켓을 잡을 때 손의 회전과 손목 자리
+function holdOf(type, rqW, rOrg, th = 0) {
+  const sA = V3(0, 1, 0).applyQuaternion(rqW), h = HOLD[type];
+  const hl = new THREE.Quaternion().setFromAxisAngle(sA, th * D).multiply(rqW).multiply(gripQL.clone().invert());
+  return { q: hl, p: rOrg.clone().sub(h.pos.clone().applyQuaternion(hl)), sA };
+}
+function pose(t, ballKey, collect, over) {
+  const BALLS = ballsOf(), dl = V3(...BALLS[ballKey].d), w = useIK ? corrW(t) : 0, sw = who => useIK ? V3(S.STEP[who][0] * dl.x, 0, S.STEP[who][1] * dl.z).multiplyScalar(stepW(t, who)) : V3();
   for (const n of ALLB) B(n).quaternion.identity();
-  // 몸: 발로 공 쪽에 다가가고(S), 낮은 공이면 무릎을 더 굽히고 숙인다
+  // 몸: 발로 공 쪽에 다가가고(Sb), 낮은 공이면 무릎을 더 굽히고 숙인다
   const hip = sample(t, 'hip'), ch = sample(t, 'chest');
-  const S = sw('body'), S0 = useIK ? V3(STEP.body[0] * dl.x, 0, STEP.body[1] * dl.z) : V3();
+  const Sb = sw('body'), S0 = useIK ? V3(S.STEP.body[0] * dl.x, 0, S.STEP.body[1] * dl.z) : V3();
   const crouch = w * clamp(dl.y * 0.3, -0.11, 0), lean = w * clamp(-dl.y * 30, -6, 15);
-  B('hips').position.set(HIPS0.x + hip[0] + S.x + w * dl.x * 0.12, HIPS0.y + hip[1] + crouch, HIPS0.z + hip[2] + S.z + w * dl.z * 0.12);
+  B('hips').position.set(HIPS0.x + hip[0] + Sb.x + w * dl.x * 0.12, HIPS0.y + hip[1] + crouch, HIPS0.z + hip[2] + Sb.z + w * dl.z * 0.12);
   B('hips').quaternion.copy(yawQ(hip[3]));
   const cy = ch[0], cp = ch[1] + lean, cr_ = ch[2] + w * clamp(-dl.y * 14, -8, 8);
   B('spine').quaternion.copy(eul(cp * 0.4, cy * 0.3, cr_ * 0.3));
@@ -351,9 +417,10 @@ function pose(t, ballKey, collect) {
     const pivot = V3(bx + k.x, 0, bz + k.z), rel = TOE.clone().applyQuaternion(yq).negate().setY(ANKLE);
     const ankleAt = ph => pivot.clone().add(rel.clone().applyAxisAngle(ax, ph * D)).add(V3(0, Math.max(0, lift), 0));
     const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
-    let heel = side === 'right' ? Math.max(0, sample(t, 'rheel')[0]) : 0;
-    const over = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
-    if (over > 0) heel = Math.min(38, heel + 700 * over * over / (over + 0.01));
+    const hk = side[0] + 'heel';
+    let heel = has(hk) ? Math.max(0, sample(t, hk)[0]) : 0;
+    const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
+    if (overL > 0) heel = Math.min(38, heel + 700 * overL * overL / (overL + 0.01));
     legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));
     // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
     const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
@@ -363,49 +430,120 @@ function pose(t, ballKey, collect) {
   }
   // 오른팔: 라켓 방향을 정하고, 공에 맞게 손목 자리를 옮긴다
   const wt = useIK ? (t < 0 ? corrW(t) : 1 - sstep(0, 0.18, t)) : 0;
-  const hq = new THREE.Quaternion().setFromAxisAngle(TILT_AX, wt * tiltOf(dl)).multiply(sampleQ(t));   // 낮은 공은 라켓 머리를 떨어뜨려서, 높은 공은 세워서
-  const rh = V3(...sample(t, 'rh')).add(S);
+  const gq = gripAt(t); racket.matrix.copy(gripOf(bevelAt(t))).setPosition(GRIP_POS);
+  const hq = new THREE.Quaternion().setFromAxisAngle(S.TILT_AX, wt * tiltOf(dl)).multiply(handAt(t));   // 낮은 공은 라켓 머리를 떨어뜨려서, 높은 공은 세워서
+  const rh = V3(...sample(t, 'rh')).add(Sb);
   if (w > 0) {
     // 임팩트 순간의 라켓 가운데가 공에 오도록: 임팩트 때 손목이 있어야 할 자리 - 원래 자리
-    const hq0 = new THREE.Quaternion().setFromAxisAngle(TILT_AX, tiltOf(dl)).multiply(HQ7);
-    const want0 = C0.clone().add(dl).sub(sweetFrom(V3(), hq0));
-    rh.add(want0.sub(V3(...K7.rh)).sub(S0).multiplyScalar(w));
+    const hq0 = new THREE.Quaternion().setFromAxisAngle(S.TILT_AX, tiltOf(dl)).multiply(S.HQ7);
+    const want0 = S.C0.clone().add(dl).sub(sweetFrom(V3(), hq0));
+    rh.add(want0.sub(V3(...S.K7.rh)).sub(S0).multiplyScalar(w));
   }
-  const rp = V3(...sample(t, 'rp')), sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gripQ)), lam = 0.0005 + 0.02 * faceW(t);
+  const rp = over?.rp || V3(...sample(t, 'rp')), sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gq)), lam = 0.0005 + 0.02 * faceW(t);
+  const hold = holdAt(t), tw = hold.w, two = hold.type === 'grip2' && tw > 0;
   // 라켓을 축으로 돌린 양(롤)은 미리 구한 기준 곡선에서. 임팩트 앞뒤에는 실제(손목 범위에 묶인) 라켓의 가운데가 원래 자리(공)에 오도록 손목 자리를 다시 잡는다
-  const roll = new THREE.Quaternion().setFromAxisAngle(sDir, (collect ? 0 : rollBase('R', t)) * D).multiply(hq);
+  const rollTh = over?.roll ?? (collect ? 0 : rollBase('R', t));
+  const roll = new THREE.Quaternion().setFromAxisAngle(sDir, rollTh * D).multiply(hq);
   const wantSweet = sweetFrom(rh, hq), wf = w * (1 - sstep(0.02, 0.16, t));
   let miss = 0, hqA = hq, tgt = rh;
   for (let it = 0; it < 6; it++) {
     miss = ik(LIMB.rightArm, tgt, rp);
-    if (collect && it === 0) { const c = rollCost('right', hq, sDir, lam); collect.R = ROLL_TH.map(c); }
+    if (collect && it === 0) {
+      const cR = rollCost('right', hq, sDir, lam);
+      if (two) {   // 양손이면 롤마다 왼팔을 실제로 맞춰 왼손목·왼어깨 부담도 함께 잰다
+        const lpv = V3(...sample(t, 'lp'));
+        collect.R = ROLL_TH.map(th => {
+          const r = wrist('right', new THREE.Quaternion().setFromAxisAngle(sDir, th * D).multiply(hq)), rq = r.clone().multiply(gq), o = GRIP_POS.clone().applyQuaternion(r).add(wp('rightHand'));
+          const h = holdOf('grip2', rq, o); ik(LIMB.leftArm, V3(...sample(t, 'lh', h.p.toArray())).lerp(h.p, tw), lpv); const rot = shoulderRot('left');
+          return cR(th) + holdWgt(tw) * (wristCost(wristAngles('left', lowerArmInv('left').multiply(h.q))) + ex(rot, -70, 80) ** 2 + 4e5 * elbowIn('left') ** 2);
+        });
+      } else collect.R = ROLL_TH.map(cR);
+    }
     hqA = wrist('right', roll);
     if (wf <= 0) break;
     const need = wantSweet.clone().sub(sweetFrom(V3(), hqA));
     tgt = tgt.clone().lerp(rh.clone().add(need.sub(rh).clampLength(0, 0.2).multiplyScalar(wf)), 0.5);   // 반씩 옮겨 두 자세 사이를 오가지 않게
   }
   setFingers('right', 1);
-  // 왼팔: 라켓 목을 잡거나(오른손을 거울에 비춘 쥐는 법, 목 둘레 어디든 손목이 편한 쪽) 공 쪽으로 뻗는다
-  const tw = throatW(t), rqW = hqA.clone().multiply(gripQ), rOrg = GRIP_POS.clone().applyQuaternion(hqA).add(wp('rightHand'));
-  const sA = V3(0, 1, 0).applyQuaternion(rqW), gqi = gripQL.clone().invert();
-  const holdQ = th => new THREE.Quaternion().setFromAxisAngle(sA, th * D).multiply(rqW).multiply(gqi);
-  const holdP = hl => rOrg.clone().sub(GRIP_POS_L.clone().applyQuaternion(hl));
-  const lp = () => V3(...sample(t, 'lp'));
-  let hqL = holdQ(0);
-  const lhAt = hl => { const h = holdP(hl); return V3(...sample(t, 'lh', h.toArray())).add(S.clone().setY(crouch).multiplyScalar(1 - tw)).lerp(h, tw); };
-  ik(LIMB.leftArm, lhAt(hqL), lp());
-  if (collect) { const c = rollCost('left', hqL, sA, 0.0005); collect.L = ROLL_TH.map(th => holdWgt(tw) * c(th)); }
-  else if (tw > 0) { hqL = holdQ(rollBase('L', t)); ik(LIMB.leftArm, lhAt(hqL), lp()); }
-  wrist('left', hqL, tw);
-  setFingers('left', 0.2 + 0.72 * tw);
+  // 왼팔: 라켓을 잡거나(오른손을 거울에 비춘 쥐는 법) 정한 자리로 뻗는다
+  const rqW = hqA.clone().multiply(gq), rOrg = GRIP_POS.clone().applyQuaternion(hqA).add(wp('rightHand'));
+  const lp = () => over?.lp || V3(...sample(t, 'lp'));
+  let hd = holdOf(hold.type, rqW, rOrg);
+  const lhAt = h => V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)).lerp(h.p, tw);
+  ik(LIMB.leftArm, lhAt(hd), lp());
+  if (collect) { const c = rollCost('left', hd.q, hd.sA, 0.0005); collect.L = ROLL_TH.map(th => HOLD[hold.type].free ? holdWgt(tw) * c(th) : 0); }
+  else if (tw > 0 && HOLD[hold.type].free) { hd = holdOf(hold.type, rqW, rOrg, rollBase('L', t)); ik(LIMB.leftArm, lhAt(hd), lp()); }
+  wrist('left', hd.q, tw);
+  setFingers('left', tw > 0 ? (1 - tw) * (has('lk') ? sample(t, 'lk')[0] : 0.2) + tw * HOLD[hold.type].curl : has('lk') ? sample(t, 'lk')[0] : 0.2);
   return { miss, hq: hqA, legMiss };
 }
-buildRoll();
+// 팔꿈치 방향 찾기: 'auto'인 키마다 어깨-손목 축 둘레 24쪽을 보고, 손목(롤까지 고른 뒤)·어깨 돌림·팔꿈치와 몸통·앞 키와의 차이를 따져 고른다
+function autoPoles() {
+  const autos = S.K.filter(k => k.rp === 'auto' || k.lp === 'auto');
+  if (!autos.length) return;
+  for (const k of S.K) { if (k.rp === 'auto') { k.rpAuto = true; k.rp = [0, -1, -0.3]; } if (k.lp === 'auto') { k.lpAuto = true; k.lp = [0.6, -1, 0]; } }
+  S.CH = {};
+  for (const side of ['right', 'left']) {
+    const key = side === 'right' ? 'rp' : 'lp', flag = side === 'right' ? 'rpAuto' : 'lpAuto';
+    let prev = null;
+    for (const k of S.K.filter(k => k[key] !== undefined)) {
+      if (!k[flag]) { prev = V3(...k[key]).normalize(); continue; }
+      const t = k.t; pose(t, 'mid');
+      const L = LIMB[side + 'Arm'], target = wp(side + 'Hand'), sh = wp(L.up), ax = target.clone().sub(sh).normalize();
+      const ref = (prev || V3(0, -1, -0.3)).clone(), e1 = ref.sub(ax.clone().multiplyScalar(ref.dot(ax))).normalize(), e2 = ax.clone().cross(e1);
+      const hold = holdAt(t), lam = 0.0005 + 0.02 * faceW(t);
+      let best = null;
+      for (let a = -180; a < 180; a += 15) {
+        const p = e1.clone().multiplyScalar(Math.cos(a * D)).add(e2.clone().multiplyScalar(Math.sin(a * D)));
+        ik(L, target, p);
+        let c = 0;
+        if (side === 'right') {
+          const hq = handAt(t), s = V3(0, 1, 0).applyQuaternion(racketAt(t)), cr = rollCost('right', hq, s, lam);
+          c += Math.min(...ROLL_TH.map(cr));
+        } else if (hold.w > 0.5) {
+          const hqR = new THREE.Quaternion(); B('rightHand').getWorldQuaternion(hqR);
+          const rq = hqR.clone().multiply(gripAt(t)), hd = holdOf(hold.type, rq, V3()), li = lowerArmInv('left');
+          c += HOLD[hold.type].free ? Math.min(...ROLL_TH.map(th => wristCost(wristAngles('left', li.clone().multiply(holdOf(hold.type, rq, V3(), th).q))))) : wristCost(wristAngles('left', li.clone().multiply(hd.q)));
+        }
+        const rot = shoulderRot(side);
+        // 위팔이 몸통 뒤로 많이 넘어가거나 팔꿈치가 머리에 닿는 것도 피한다
+        const chq = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(chq); const ua = wp(L.mid).sub(wp(L.up)).normalize().applyQuaternion(chq.invert());
+        const nearHead = Math.max(0, 0.17 - wp(L.mid).distanceTo(wp('head').add(V3(0, 0.08, 0))));
+        c += 2 * ex(rot, -70, 80) ** 2 + 0.0005 * rot * rot + 4e5 * elbowIn(side) ** 2 + 3000 * Math.max(0, -ua.z - 0.5) ** 2 + 4e5 * nearHead ** 2 + (prev ? 0.004 * (Math.acos(clamp(p.dot(prev), -1, 1)) / D) ** 2 : 0);
+        if (!best || c < best.c) best = { c, p };
+      }
+      k[key] = best.p.toArray().map(v => +v.toFixed(3)); prev = best.p; S.CH = {};
+    }
+  }
+  const a = S.K[0], z = S.K[S.K.length - 1];   // 한 바퀴 돌아 이어지게
+  if (z.rpAuto && a.rp) z.rp = a.rp.slice(); if (z.lpAuto && a.lp) z.lp = a.lp.slice(); S.CH = {};
+}
+// 샷을 고른다: 쥐는 법, 키에 라켓 회전을 붙이고, 임팩트 자리·팔꿈치 방향·롤 기준 곡선을 미리 구한다
+function setShot(id) {
+  const d = SHOTS.find(s => s.id === id) || SHOTS[0];
+  const gm = gripOf(d.bevel);
+  S = { ...d, K: d.keys.map(k => ({ ...k })), CH: {}, gripQ: new THREE.Quaternion().setFromRotationMatrix(gm), ROLL: null };
+  racket.matrix.copy(gm).setPosition(GRIP_POS);
+  for (const k of S.K) if (k.s) k.hq = racketQuatFor(V3(...k.s), V3(...k.f)).multiply(gripAt(k.t).invert()).toArray();
+  { let p = null; for (const k of S.K) if (k.hq) { if (p && p[0] * k.hq[0] + p[1] * k.hq[1] + p[2] * k.hq[2] + p[3] * k.hq[3] < 0) k.hq = k.hq.map(v => -v); p = k.hq; } }   // 같은 반구로(뒤집히지 않게)
+  S.T0 = S.K[0].t; S.T1 = S.K[S.K.length - 1].t; S.LOOP = S.T1 - S.T0 + 0.35;
+  S.K7 = S.K.find(k => k.t === 0); S.HQ7 = handAt(0);
+  S.C0 = sweetFrom(V3(...sample(0, 'rh')), S.HQ7);   // 보통 공의 임팩트 자리 = 보통 동작에서 임팩트 순간 라켓 가운데
+  if (!S.K7.rh) S.K7 = { ...S.K7, rh: sample(0, 'rh') };
+  S.TILT_AX = V3(0, 1, 0).applyQuaternion(racketAt(0)).cross(V3(0, 1, 0)).normalize();   // 임팩트 때 라켓이 가리키는 쪽과 위쪽에 직각
+  if (S.TILT_AX.lengthSq() < 1e-6) S.TILT_AX.set(1, 0, 0);
+  S.order = Object.keys(S.balls);
+  autoPoles();
+  buildRoll();
+  S.FAR = V3(S.C0.x + 1.4, 1.0, 22.5);
+  if (S.ball === 'toss') { pose(S.toss, 'mid'); S.tossAt = handBall(); }
+}
+// 왼손 손바닥 가운데(공을 쥐는 곳)
+const handBall = () => V3(0.06, -0.045, 0.012).applyMatrix4(B('leftHand').matrixWorld);
 // 고개: 공을 보다가 임팩트 직전부터 맞는 자리에 고개를 두고, 맞힌 뒤 잠깐 그대로 있다가 공을 따라가고, 다음 공이 올 쪽으로 돌아간다
-const FAR = V3(C0.x + 1.4, 1.0, 22.5);
 function lookTarget(t, C, bp, hit) {
   if (t < 0) return bp.clone().lerp(C, sstep(-0.3, -0.04, t));
-  return C.clone().lerp(bp, hit ? sstep(0.2, 0.45, t) : 0).lerp(FAR, sstep(0.5, 1.0, t));
+  return C.clone().lerp(bp, hit ? sstep(0.2, 0.45, t) : 0).lerp(S.FAR, sstep(0.5, 1.0, t));
 }
 function lookAt(target) {
   const neck = B('neck'), head = B('head'); if (!neck || !head) return;
@@ -418,18 +556,22 @@ function lookAt(target) {
   vrm.scene.updateMatrixWorld(true);
 }
 
-// ── 공의 길: 상대 쪽에서 떠서 한 번 튀고 임팩트 자리로, 맞으면 돌아간다 ──
+// ── 공의 길 ──
 const G = 9.8;
-function ballAt(t, C, hit) {
-  const P0 = V3(C.x + 1.4, 1.0, 22.5), Bp = V3(C.x + 0.35, 0, C.z + 5.2), tb = -0.52, t0 = -1.5;
-  if (t < tb) { const T = tb - t0, u = t - t0; const v = Bp.clone().sub(P0).divideScalar(T); const vy = (Bp.y - P0.y + 0.5 * G * T * T) / T; return V3(P0.x + v.x * u, P0.y + vy * u - 0.5 * G * u * u, P0.z + v.z * u); }
-  if (t < 0 || !hit) { const T = -tb, u = t - tb; const v = C.clone().sub(Bp).divideScalar(T); const vy = (C.y + 0.5 * G * T * T) / T; const p = V3(Bp.x + v.x * u, vy * u - 0.5 * G * u * u, Bp.z + v.z * u); if (p.y < 0) p.y = -p.y * 0.6; return p; }
-  const E = V3(C.x + 2.5, 0, C.z + 14), T = 0.95, u = t; const v = E.clone().sub(C).divideScalar(T); const vy = (E.y - C.y + 0.5 * G * T * T) / T;
-  return V3(C.x + v.x * u, C.y + vy * u - 0.5 * G * u * u, C.z + v.z * u);
-}
+// P에서 t0에 떠나 Q에 t1에 닿는 포물선의 t 때 자리
+const arc = (P, t0, Q, t1, t) => { const T = t1 - t0, u = t - t0, v = Q.clone().sub(P).divideScalar(T), vy = (Q.y - P.y + 0.5 * G * T * T) / T; return V3(P.x + v.x * u, P.y + vy * u - 0.5 * G * u * u, P.z + v.z * u); };
+const BALL_PATH = {
+  // 땅볼: 상대 쪽에서 떠서 한 번 튀고 임팩트 자리로, 맞으면 돌아간다
+  ground(t, C, hit) {
+    const P0 = V3(C.x + 1.4, 1.0, 22.5), Bp = V3(C.x + 0.35, 0, C.z + 5.2), tb = -0.52, t0 = -1.5;
+    if (t < tb) return arc(P0, t0, Bp, tb, t);
+    if (t < 0 || !hit) { const p = arc(Bp, tb, C, 0, t); if (p.y < 0) p.y = -p.y * 0.6; return p; }
+    return arc(C, 0, V3(C.x + 2.5, 0, C.z + 14), 0.95, t);
+  },
+};
 
 // ── 화면 ──
-// 시점: 카메라 자리와 보는 곳. 세로 화면(휴대폰)에서는 가로로 덜 보이므로 뒤로 물러선다
+// 시점: 카메라 자리와 보는 곳. 세로 화면(휴대폰)에서는 가로로 덜 보이므로 뒤로 물러선다. 샷마다 보는 곳을 조금 옮긴다(cam)
 const CAMS = {
   q34: { p: [-2.3, 1.45, -2.6], t: [-0.25, 0.9, 0.35] }, side: { p: [-3.6, 1.15, 0.6], t: [-0.25, 0.95, 0.25] },
   back: { p: [0.9, 1.75, -3.4], t: [-0.2, 0.95, 0.6] }, front: { p: [-0.9, 1.35, 3.6], t: [-0.2, 0.95, 0] },
@@ -441,7 +583,7 @@ const camFollow = V3();
 function applyCam(k) {
   const c = CAMS[k];
   if (c.follow) { camFollow.lerp(wp(c.follow).add(V3(0.04, 0, 0)), 0.25); cam.position.copy(camFollow).add(V3(...c.p)); cam.up.set(0, 1, 0); cam.lookAt(camFollow); return; }
-  const t = V3(...c.t), p = V3(...c.p);
+  const sh = k === 'tv' ? V3() : V3(...S.cam), t = V3(...c.t).add(sh), p = V3(...c.p).add(sh);
   const fit = k === 'tps' || k === 'tv' ? 1 : Math.max(1, Math.pow(1.25 / cam.aspect, 0.8));
   cam.position.copy(t).add(p.sub(t).multiplyScalar(fit));
   cam.up.set(...(c.up || [0, 1, 0])); cam.lookAt(t); cam.up.set(0, 1, 0);
@@ -449,17 +591,25 @@ function applyCam(k) {
 if (q.get('ui') === '0') for (const id of ['ui', 'note']) document.getElementById(id).style.display = 'none';
 window.__vrm = vrm; window.__B = B;
 let camK = q.get('cam') || 'q34', ballMode = q.get('ball') || 'auto', speed = +(q.get('speed') || 1), frozen = q.get('t') != null ? +q.get('t') : null;
-const bar1 = document.getElementById('bar1'), bar2 = document.getElementById('bar2'), bar3 = document.getElementById('bar3'), note = document.getElementById('note');
+const barS = document.getElementById('barS'), bar1 = document.getElementById('bar1'), bar2 = document.getElementById('bar2'), bar3 = document.getElementById('bar3'), note = document.getElementById('note');
 const btn = (bar, label, fn, group, on) => { const b = document.createElement('button'); b.textContent = label; b.dataset.g = group || ''; b.onclick = () => { if (group) for (const x of bar.querySelectorAll(`button[data-g="${group}"]`)) x.classList.toggle('on', x === b); fn(); }; if (on) b.classList.add('on'); bar.append(b); return b; };
-btn(bar1, '차례로', () => ballMode = 'auto', 'b', ballMode === 'auto');
-for (const k of ORDER) btn(bar1, BALLS[k].name, () => ballMode = k, 'b', ballMode === k);
+let clock = 0, rep = 0, last = performance.now(), manual = false, seq = null;
+const trailHist = [];
+function ballButtons() {
+  bar1.innerHTML = '<small>공</small>';
+  if (ballMode !== 'auto' && !S.balls[ballMode]) ballMode = 'auto';
+  btn(bar1, '차례로', () => ballMode = 'auto', 'b', ballMode === 'auto');
+  for (const k of S.order) btn(bar1, S.balls[k][0], () => ballMode = k, 'b', ballMode === k);
+}
+function chooseShot(id) { setShot(id); ballButtons(); clock = 0; rep = 0; trailHist.length = 0; }
+setShot(q.get('shot') || 'fh');
+for (const s of SHOTS) btn(barS, s.name, () => chooseShot(s.id), 'sh', s.id === S.id);
+ballButtons();
 for (const k of Object.keys(CAMS)) btn(bar2, CAM_NAME[k], () => camK = k, 'c', camK === k);
 const ikBtn = btn(bar3, 'IK 켬', () => { useIK = !useIK; ikBtn.textContent = useIK ? 'IK 켬' : 'IK 끔'; ikBtn.classList.toggle('on', useIK); }, null, useIK);
 if (!useIK) ikBtn.textContent = 'IK 끔';
 for (const sp of [1, 0.5, 0.25]) btn(bar3, sp === 1 ? '보통 빠르기' : `${sp}배`, () => speed = sp, 's', speed === sp);
 
-let clock = 0, rep = 0, last = performance.now(), manual = false, seq = null;
-const trailHist = [];
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (!manual) tick(dt);
@@ -467,17 +617,14 @@ function frame(now) {
 }
 function tick(dt) {
   let t;
-  if (frozen != null) t = frozen; else { clock += dt * speed; if (clock > LOOP) { clock -= LOOP; rep++; trailHist.length = 0; } t = T0 + clock; }
-  const key = ballMode === 'auto' ? (seq || ORDER)[rep % (seq || ORDER).length] : ballMode;
-  const C = C0.clone().add(V3(...BALLS[key].d));
-  const r = pose(t, key);
+  if (frozen != null) t = frozen; else { clock += dt * speed; if (clock > S.LOOP) { clock -= S.LOOP; rep++; trailHist.length = 0; } t = S.T0 + clock; }
+  const order = (seq || S.order).filter(k => S.balls[k]), key = ballMode === 'auto' ? order[rep % order.length] : ballMode;
+  const C = S.C0.clone().add(V3(...S.balls[key][1]));
   // 임팩트 순간 라켓 가운데와 공의 거리(맞았는지)
-  const tc = 0; let err;
-  { const save = BONES.map(n => B(n).quaternion.clone()), hp = B('hips').position.clone();
-    const r0 = pose(tc, key); err = sweetFrom(wp('rightHand'), r0.hq).distanceTo(C);
-    BONES.forEach((n, i) => B(n).quaternion.copy(save[i])); B('hips').position.copy(hp); pose(t, key); }
+  const r0 = pose(0, key), err = sweetFrom(wp('rightHand'), r0.hq).distanceTo(C);
+  pose(t, key);
   const hit = err < 0.09;
-  const bp = ballAt(Math.min(t, 1.2), C, hit);
+  const bp = S.ball === 'toss' && t < S.toss ? handBall() : BALL_PATH[S.ball](Math.min(t, 1.2), C, hit);
   lookAt(lookTarget(t, C, bp, hit));
   vrm.update(dt);
   ball.position.copy(bp); ballShadow.position.set(bp.x, 0.012, bp.z);
@@ -487,16 +634,22 @@ function tick(dt) {
   hitMark.visible = Math.abs(t) < 0.12; hitMark.position.copy(C); hitMark.lookAt(cam.position);
   hitMark.material.color.set(hit ? 0x33dd77 : 0xff3366);
   applyCam(camK);
-  note.innerHTML = `${BALLS[key].name} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작은 손으로 짠 임시 동작(실제는 촬영 동작으로)`;
+  note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작은 손으로 짠 임시 동작(실제는 촬영 동작으로)`;
   renderer.render(scene, cam);
 }
 requestAnimationFrame(frame);
 // 영상으로 찍을 때: 시간을 정해진 만큼씩 흘린다
 window.__rec = { start: (order) => { manual = true; frozen = null; clock = 0; rep = 0; seq = order || null; trailHist.length = 0; ballMode = 'auto'; }, step: dt => tick(dt), get rep() { return rep; } };
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
-window.__swing = { set: o => { if (o.t !== undefined) frozen = o.t; if (o.ball) ballMode = o.ball; if (o.cam) camK = o.cam; if (o.ik != null) useIK = o.ik; if (o.speed) speed = o.speed; } };
-// 관절 검사(개발용): 자세를 시간마다 만들어 관절 각도와 튀는 곳을 잰다
-window.__dbg = { wrist, LIMB, ik, sample, sampleQ, K, handQuatFor, gripQ, gripQL, GRIP_POS, GRIP_POS_L, THREE, pose, lookAt, lookTarget, ballAt, sweetFrom, B, BONES, ALLB, T0, T1, LOOP, ORDER, BALLS, C0, racket, vrm, SWEET, ANKLE, setIK: v => { useIK = v; } };
+window.__swing = { set: o => { if (o.shot && o.shot !== S.id) chooseShot(o.shot); if (o.t !== undefined) frozen = o.t; if (o.ball) ballMode = o.ball; if (o.cam) camK = o.cam; if (o.ik != null) useIK = o.ik; if (o.speed) speed = o.speed; } };
+// 관절 검사(개발용): 자세를 시간마다 만들어 관절 각도와 튀는 곳을 잰다. 샷마다 값이 바뀌므로 읽을 때마다 지금 샷 것을 준다
+window.__dbg = {
+  wrist, LIMB, ik, sample, sampleQ, handQuatFor, gripQL, GRIP_POS, HOLD, THREE, pose, lookAt, lookTarget, sweetFrom, B, BONES, ALLB, racket, vrm, SWEET, ANKLE, SHOTS, shoulderRot, elbowIn, handBall,
+  setIK: v => { useIK = v; }, setShot: id => chooseShot(id),
+  get S() { return S; }, get K() { return S.K; }, get T0() { return S.T0; }, get T1() { return S.T1; }, get LOOP() { return S.LOOP; }, get C0() { return S.C0; },
+  get ORDER() { return S.order; }, get BALLS() { return ballsOf(); }, get gripQ() { return gripAt(0); }, gripAt, handAt, racketAt, bevelAt,
+  ballAt: (t, C, hit) => S.ball === 'toss' && t < S.toss ? handBall() : BALL_PATH[S.ball](t, C, hit),
+};
 window.__ready = true;
 </script>
 </body>
