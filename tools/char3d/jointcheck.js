@@ -46,7 +46,7 @@
     rElbowFlex: [-3, 150], lElbowFlex: [-3, 150], rElbowOff: [-8, 8], lElbowOff: [-8, 8], rForearmTw: [-95, 95], lForearmTw: [-95, 95],
     rKneeFlex: [-3, 140], lKneeFlex: [-3, 140], rKneeOff: [-6, 6], lKneeOff: [-6, 6], rShinTw: [-30, 30], lShinTw: [-30, 30],
     rWristFlex: [-75, 75], lWristFlex: [-75, 75], rWristDev: [-35, 25], lWristDev: [-35, 25], rWristTw: [-95, 95], lWristTw: [-95, 95],
-    rShTw: [-95, 95], lShTw: [-95, 95], rShHoriz: [-45, 150], lShHoriz: [-45, 150], rShElev: [-90, 85], lShElev: [-90, 85],
+    rShHoriz: [-45, 150], lShHoriz: [-45, 150], rShElev: [-90, 85], lShElev: [-90, 85],
     rHipFlex: [-25, 110], lHipFlex: [-25, 110], rHipAbd: [-25, 50], lHipAbd: [-25, 50], rHipTw: [-45, 45], lHipTw: [-45, 45],
     rAnkDorsi: [-50, 35], lAnkDorsi: [-50, 35], rAnkTw: [-25, 25], lAnkTw: [-25, 25], rAnkRoll: [-25, 25], lAnkRoll: [-25, 25],
     rShRot: [-80, 70], lShRot: [-80, 70], headYaw: [-80, 80], headPitch: [-50, 60], torsoTw: [-60, 60],
