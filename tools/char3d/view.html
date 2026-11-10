@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 캐릭터 시험</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #e9edf3; font: 600 13px sans-serif; }
+  #stage { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  #bar { position: fixed; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100vw - 16px); }
+  #bar button { font: inherit; padding: 6px 10px; border-radius: 8px; border: 0; background: #fff; box-shadow: 0 1px 3px #0003; }
+  #bar button.on { background: #ff7aa8; color: #fff; }
+  #src { position: fixed; right: 8px; bottom: 8px; z-index: 5; max-height: 38vh; max-width: 30vw; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px #0004; }
+  #note { position: fixed; left: 8px; bottom: 8px; z-index: 5; color: #333; background: #fffc; padding: 4px 8px; border-radius: 6px; }
+</style>
+<script type="importmap">{ "imports": { "three": "../../vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<!-- 3D 캐릭터(AI가 만든 glb, VRoid의 vrm)를 보고 경기장에도 세워 보는 개발용 화면.
+     npm run serve 뒤 http://localhost:8080/tools/char3d/view.html?glb=models/파일.glb|.vrm&img=입력그림.png&mode=studio|stadium -->
+<div id="stage"></div>
+<div id="bar"></div>
+<div id="note"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+
+const q = new URLSearchParams(location.search);
+const GLB = q.get('glb') || 'models/test_cesiumman.glb';
+const IS_VRM = /\.vrm$/i.test(GLB);
+const MODE = q.get('mode') || 'studio';
+const HEIGHT = +(q.get('h') || 1.6);
+const stage = document.getElementById('stage'), bar = document.getElementById('bar'), note = document.getElementById('note');
+if (q.get('img')) { const im = new Image(); im.id = 'src'; im.src = q.get('img'); document.body.append(im); }
+const VRMLIB = IS_VRM ? await import('https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js') : null;
+
+// 툰: 빛을 두 단계로만 받는다(애니 캐릭터처럼 밝은 면과 그늘). 그늘은 너무 어둡지 않게
+function ramp(steps) {
+  const t = new THREE.DataTexture(new Uint8Array(steps.map(v => Math.round(v * 255))), steps.length, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t;
+}
+const RAMP = ramp([0.66, 1.0]);
+// 외곽선: 같은 모양을 법선 쪽으로 조금 부풀려 뒷면만 진하게 그린다(뒤집은 껍질)
+function outlineMat(width) {
+  const m = new THREE.MeshBasicMaterial({ color: 0x3b2a26, side: THREE.BackSide });
+  m.onBeforeCompile = s => { s.vertexShader = s.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n transformed += normalize(objectNormal) * ${width.toFixed(5)};`); };
+  return m;
+}
+
+// 모델 하나를 불러와 키를 맞추고 발을 바닥에 둔다. VRM이면 팔을 내린 자세로
+async function loadModel() {
+  const loader = new GLTFLoader();
+  if (VRMLIB) loader.register(p => new VRMLIB.VRMLoaderPlugin(p));
+  const gltf = await loader.loadAsync(GLB);
+  const vrm = gltf.userData.vrm || null;
+  const root = vrm ? vrm.scene : gltf.scene;
+  if (vrm) {
+    VRMLIB.VRMUtils.rotateVRM0(vrm);
+    root.traverse(o => { o.frustumCulled = false; });
+    const b = n => vrm.humanoid.getNormalizedBoneNode(n);
+    b('leftUpperArm').rotation.z = -1.2; b('rightUpperArm').rotation.z = 1.2;
+    b('leftLowerArm').rotation.z = -0.15; b('rightLowerArm').rotation.z = 0.15;
+    vrm.update(0);
+  }
+  root.updateMatrixWorld(true);
+  let box = new THREE.Box3().setFromObject(root), size = box.getSize(new THREE.Vector3());
+  if (!vrm && size.z > size.y && size.z >= size.x) { root.rotation.x = -Math.PI / 2; root.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(root); size = box.getSize(new THREE.Vector3()); }
+  const s = vrm ? 1 : HEIGHT / size.y;   // VRM은 제 키(미터)를 그대로 쓴다(흔들리는 머리카락이 크기에 묶여 있다)
+  root.scale.multiplyScalar(s); root.updateMatrixWorld(true);
+  box = new THREE.Box3().setFromObject(root);
+  const c = box.getCenter(new THREE.Vector3());
+  root.position.x -= c.x; root.position.z -= c.z; root.position.y -= box.min.y;
+  const model = new THREE.Group(); model.add(root);
+  let tris = 0; const texs = new Set(), parts = [], meshes = [];
+  root.traverse(o => { if (o.isMesh) meshes.push(o); });   // 외곽선을 자식으로 붙이므로 먼저 모은다
+  for (const o of meshes) {
+    tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    const orig = o.material;
+    for (const m of [orig].flat()) for (const k of ['map', 'normalMap', 'roughnessMap', 'shadeMultiplyTexture', 'matcapTexture', 'emissiveMap']) if (m[k]?.image) texs.add(m[k].image.width + 'x' + m[k].image.height);
+    o.castShadow = true;
+    if (vrm) continue;   // VRM은 제 툰 재질(MToon)과 외곽선을 쓴다
+    const toon = new THREE.MeshToonMaterial({ color: orig.color?.clone() || new THREE.Color(1, 1, 1), map: orig.map || null, gradientMap: RAMP, transparent: orig.transparent, alphaTest: orig.alphaTest });
+    if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const wide = 0.0045 / o.matrixWorld.getMaxScaleOnAxis();   // 실제 크기로 4.5mm
+    const line = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, outlineMat(wide)) : new THREE.Mesh(o.geometry, outlineMat(wide));
+    if (o.isSkinnedMesh) line.bind(o.skeleton, o.bindMatrix);
+    line.visible = false; o.add(line);
+    parts.push({ o, orig, toon, line });
+  }
+  const mixer = !vrm && gltf.animations.length ? new THREE.AnimationMixer(root) : null;
+  if (mixer) mixer.clipAction(gltf.animations[0]).play();
+  const shade = k => { for (const p of parts) { p.o.material = k === 'pbr' ? p.orig : p.toon; p.line.visible = k === 'line'; } };
+  const info = `${GLB.split('/').pop()} · 키 ${size.y.toFixed(2)}m · 삼각형 ${Math.round(tris).toLocaleString()} · 텍스처 ${texs.size}장(${[...texs].slice(0, 4).join(', ')})`;
+  return { model, vrm, mixer, shade, info };
+}
+const EXPR = { '보통': null, '웃음': 'happy', '화남': 'angry', '슬픔': 'sad', '놀람': 'surprised', '편안': 'relaxed' };
+function setExpr(vrm, k) {
+  if (!vrm?.expressionManager) return;
+  for (const n of Object.values(EXPR)) if (n) vrm.expressionManager.setValue(n, 0);
+  if (EXPR[k]) vrm.expressionManager.setValue(EXPR[k], 1);
+}
+// 눈 깜빡임
+function blinkOf(t) { const p = t % 3.6; return p < 0.12 ? Math.sin(p / 0.12 * Math.PI) : 0; }
+
+const btn = (label, fn, group) => { const b = document.createElement('button'); b.textContent = label; b.dataset.g = group || ''; b.onclick = () => { if (group) for (const x of bar.querySelectorAll(`[data-g="${group}"]`)) x.classList.toggle('on', x === b); fn(); }; bar.append(b); return b; };
+const pick = (group, label) => { for (const b of bar.querySelectorAll(`[data-g="${group}"]`)) if (b.textContent === label) b.click(); };
+
+if (MODE === 'studio') {
+  const M = await loadModel();
+  note.textContent = M.info;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.shadowMap.enabled = true;
+  stage.append(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xe9edf3);
+  const cam = new THREE.PerspectiveCamera(28, innerWidth / innerHeight, 0.05, 50);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xb8a89a, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-1.5, 3, 2.5); sun.castShadow = true; scene.add(sun);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(1.2, 48), new THREE.ShadowMaterial({ opacity: 0.18 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  scene.add(M.model);
+  const H = new THREE.Box3().setFromObject(M.model).getSize(new THREE.Vector3()).y;
+  let yaw = +(q.get('yaw') || 0), spin = q.get('spin') === '1', framing = q.get('cam') || 'full';
+  const FR = { full: { y: H * 0.52, d: H * 2.55 }, face: { y: H * 0.9, d: H * 0.55 }, upper: { y: H * 0.74, d: H * 1.2 } };
+  let drag = null;
+  renderer.domElement.addEventListener('pointerdown', e => { drag = e.clientX; spin = false; });
+  addEventListener('pointerup', () => drag = null);
+  addEventListener('pointermove', e => { if (drag != null) { yaw -= (e.clientX - drag) * 0.01; drag = e.clientX; } });
+  if (!M.vrm) { btn('원본', () => M.shade('pbr'), 's'); btn('툰', () => M.shade('toon'), 's'); btn('툰+외곽선', () => M.shade('line'), 's'); }
+  btn('전신', () => framing = 'full', 'f'); btn('상반신', () => framing = 'upper', 'f'); btn('얼굴', () => framing = 'face', 'f');
+  btn('돌리기', () => spin = !spin);
+  if (M.vrm) for (const k of Object.keys(EXPR)) btn(k, () => setExpr(M.vrm, k), 'e');
+  if (!M.vrm) pick('s', { pbr: '원본', toon: '툰', line: '툰+외곽선' }[q.get('shade') || 'line']);
+  pick('f', { full: '전신', upper: '상반신', face: '얼굴' }[framing]);
+  const clock = new THREE.Clock();
+  renderer.setAnimationLoop(() => {
+    const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime; if (spin) yaw += dt * 0.6; M.mixer?.update(dt);
+    if (M.vrm) { M.vrm.expressionManager?.setValue('blink', blinkOf(t)); M.vrm.update(dt); }
+    const f = FR[framing];
+    cam.position.set(Math.sin(yaw) * f.d, f.y, Math.cos(yaw) * f.d); cam.lookAt(0, f.y, 0);
+    renderer.render(scene, cam);
+  });
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+  window.__api = { set: o => { if (o.yaw != null) yaw = o.yaw; if (o.cam) framing = o.cam; if (o.shade) M.shade(o.shade); if (o.expr) setExpr(M.vrm, o.expr); spin = !!o.spin; } };
+} else {
+  // 경기장: 주인공 자리(뒷모습)와 상대 자리(앞모습)의 그림을 이 모델로 바꾼다
+  const { MatchView } = await import('../../js/match3d.js');
+  const { loadStadium } = await import('../../js/stadium.js');
+  const { PLAYER_LOOK } = await import('../../js/art.js');
+  await loadStadium();
+  const v = new MatchView(stage, { surface: q.get('surface') || 'hard', banner: '전국 한빛배 국화부', crowd: 0.8 });
+  const look = (o) => ({ hair: '#3a2a22', outfit: o, skin: '#ffe0cc', band: '#ffffff' });
+  await v.setPlayers([{ charId: 'player', look: PLAYER_LOOK }, { charId: 'p2', look: look('#5cbcff') }, { charId: 'oppa', look: look('#3f6fd8') }, { charId: 'oppb', look: look('#ffd24f') }]);
+  const SLOTS = (q.get('slots') || '0,2').split(',').map(Number);
+  const copies = [];
+  for (const i of SLOTS) { const M = await loadModel(); M.shade(q.get('shade') || 'line'); M.model.rotation.y = i < 2 ? Math.PI : 0; v.scene.add(M.model); copies.push([i, M]); note.textContent = M.info; }
+  const place = v.placeAll.bind(v);
+  v.placeAll = () => { place(); for (const [i, M] of copies) { const p = v.players[i]; M.model.position.set(p.x, 0, p.z); p.sp.visible = false; } };
+  v.placeAll();
+  const clock = new THREE.Clock();
+  (function loop() { requestAnimationFrame(loop); const dt = Math.min(clock.getDelta(), 0.05); for (const [, M] of copies) { M.mixer?.update(dt); if (M.vrm) { M.vrm.expressionManager?.setValue('blink', blinkOf(clock.elapsedTime)); M.vrm.update(dt); } } })();
+  const CAMS = { tv: () => { v.setView('tv'); v.setCamera('main', true); }, serveUs: () => { v.setView('tv'); v.setCamera('serveUs', true); }, serveThem: () => { v.setView('tv'); v.setCamera('serveThem', true); }, tps: () => v.setView('tps'), fpv: () => v.setView('fpv') };
+  for (const k of Object.keys(CAMS)) btn(k, CAMS[k], 'c');
+  if (!IS_VRM) { btn('원본', () => copies.forEach(([, M]) => M.shade('pbr')), 's'); btn('툰+외곽선', () => copies.forEach(([, M]) => M.shade('line')), 's'); }
+  pick('c', q.get('cam') || 'tv');
+  window.__view = v;
+}
+window.__ready = true;
+</script>
+</body>
+</html>
