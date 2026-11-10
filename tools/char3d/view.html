@@ -140,6 +140,7 @@ if (MODE === 'studio') {
     renderer.render(scene, cam);
   });
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+  window.__M = M;
   window.__api = { set: o => { if (o.yaw != null) yaw = o.yaw; if (o.cam) framing = o.cam; if (o.shade) M.shade(o.shade); if (o.expr) setExpr(M.vrm, o.expr); spin = !!o.spin; } };
 } else {
   // 경기장: 주인공 자리(뒷모습)와 상대 자리(앞모습)의 그림을 이 모델로 바꾼다
