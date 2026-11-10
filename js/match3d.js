@@ -5,6 +5,8 @@ import { sdFrames, sdMotionFrames, emoteCanvas } from './art.js';
 import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 import { loadStadium, stadiumData, buildStadium, toonMaterial } from './stadium.js';
+import { Players3D, p3dPref } from './players3d.js';
+export { p3dPref, setP3dPref } from './players3d.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 // 코트 색은 빛을 받지 않고 그대로 보인다(툰풍으로 밝게, 2026-11-09). wear: 많이 밟는 자리 색, stripe: 잔디 깎은 줄
@@ -403,10 +405,25 @@ export class MatchView {
     this.myRing.rotation.x = -Math.PI / 2;
     this.scene.add(this.myRing);
     this.placeAll();
+    // 3D 선수(시험): 뒤에서 불러와 준비되면 그림 선수 대신 보인다. 못 불러오면 그림 선수 그대로
+    if (p3dPref()) this.enable3D(true);
   }
+  // 3D 선수 켜고 끄기. 켜면 처음 한 번 모델을 불러온다(그동안은 그림 선수)
+  enable3D(on) {
+    this.p3dOn = !!on;
+    if (on && !this.p3d) {
+      const P = this.p3d = new Players3D(this);
+      this.p3dLoad = P.load().then(ok => { if (!ok && this.p3d === P) { this.p3d = null; this.p3dOn = false; } if (this.alive) this.placeAll(); return ok; });
+    }
+    this.p3d?.setVisible?.(this.p3dOn);
+    this.placeAll();
+  }
+  get show3d() { return !!(this.p3dOn && this.p3d?.ready); }
 
   placeAll() {
+    const s3 = this.show3d;
     for (const p of this.players) {
+      p.sp.visible = !s3;
       // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
       const y = Math.abs(Math.sin(p.stride)) * 0.14 + p.hop;
       p.sp.position.set(p.x, y, p.z);
@@ -420,7 +437,7 @@ export class MatchView {
     for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) a.position.set(this.players[i].x, 0.016, this.players[i].z); }
     // 1인칭에서는 주인공이 카메라 자리에 있으므로 그림과 발밑 표시를 숨긴다
     const me = this.players[0], hide = !!this.fpv;
-    me.sp.visible = !hide; me.shadow.visible = !hide; this.myRing.visible = !hide;
+    me.sp.visible = !hide && !s3; me.shadow.visible = !hide; this.myRing.visible = !hide;
     if (hide) me.emote.visible = false;
     // 어깨 너머 시점에서는 주인공 머리 위 표시가 카메라 바로 앞이라 너무 크다. 작게, 머리 옆으로
     const near = this.view3 === 'tps';
@@ -516,6 +533,7 @@ export class MatchView {
   // 닿지 못한 공에 몸을 던진다
   lunge(i, toward) {
     const p = this.players[i], right = (i < 2 ? 1 : -1) * (toward[0] - p.x) >= 0;
+    if (this.show3d) this.p3d.schedule(i, right ? 'fh_drive' : 'bh_drive', right ? 'fh' : 'bh', 0.14, new THREE.Vector3(toward[0], 0.6, toward[1]), null, { dive: true });
     this.setPose(i, right ? 'hitfh' : 'hitbh', 700);
     p.kick = (i < 2 ? 1 : -1) * (right ? 0.5 : -0.5) * (p.motion ? 0.6 : 1);
     p.tx = p.x + Math.sign(toward[0] - p.x) * 0.35; p.tz = p.z; p.speed = 3;
@@ -681,6 +699,10 @@ export class MatchView {
       p.x = p.tx = x; p.z = p.tz = z;
     }
     this.placeAll();
+    if (this.show3d) {
+      for (const c of this.p3d.list) { c.sw = null; c.serve = null; }
+      if (/^serve/.test(s0.type)) this.p3d.prepServe(s0.h, new THREE.Vector3(s0.from[0], flyOf(s0)?.h0 ?? 2.55, s0.from[1]), [s0.to[0] - s0.from[0], s0.to[1] - s0.from[1]]);
+    }
     this.rollId = (this.rollId || 0) + 1;
     this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
     // 서버를 당겨 찍으며 시작한다(중계처럼 끊어서). 치는 순간 중계 자리로 빠진다
@@ -710,6 +732,15 @@ export class MatchView {
     this.ball.visible = true; this.ballShadow.visible = true;
     this.rollId = (this.rollId || 0) + 1;
     this.trailPts = []; this.trail.geometry.setFromPoints([]);
+    if (this.show3d) {
+      const P = this.p3d, contact = new THREE.Vector3(x, flyOf(s)?.h0 ?? 2.55, z), aim = [s.to[0] - x, s.to[1] - z], T = 1.25;
+      P.prepServe(s.h, contact, aim);
+      P.schedule(s.h, s.type, 'over', T, contact, aim, { from: -T });
+      await new Promise(res => this.tweens.push({
+        t: 0, dur: T, step: () => { const b = P.tossBall(s.h); if (b) { this.ball.position.copy(b); this.ballShadow.position.set(b.x, 0.013, b.z); } }, done: res,
+      }));
+      return;
+    }
     await new Promise(res => this.tweens.push({
       t: 0, dur: 0.42, step: k => {
         const y = 1.1 + 1.5 * k + 3.6 * k * (1 - k), ox = 0.15 * (1 - k);
@@ -944,6 +975,14 @@ export class MatchView {
       const lead = Math.max(0, dur - 0.24);
       this.tweens.push({ t: 0, dur: lead || 0.01, step: () => { }, done: () => { if (pv.crouch) return; const sw = pv.swing?.type === next.type ? pv.swing : null; this.setPose(next.h, sw ? sw.power : prepFor(next.type), 0); pv.kick = (next.h < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.12 : -0.12) * (pv.motion ? 0.35 : 1); } });
     }
+    if (this.show3d) {
+      const P = this.p3d, c = P.list[s.h];
+      if (!isServe && (!c.sw || Math.abs(c.sw.tImpact - P.bt) > 0.2)) P.schedule(s.h, s.type, wingOf(s.type, s.h < 2 ? 0 : 1, s.from, [hitter.x, hitter.z]), 0, new THREE.Vector3(s.from[0], fl.h0, s.from[1]), [s.to[0] - s.from[0], s.to[1] - s.from[1]], { from: -0.3 });
+      if (next && next.h !== undefined && next.h !== s.h && s.res === 'in') {
+        const e = fl.at(dur), pv = this.players[next.h];
+        P.schedule(next.h, next.type, wingOf(next.type, next.h < 2 ? 0 : 1, next.from, [pv.x, pv.z]), dur, new THREE.Vector3(e[0], e[2], e[1]), [next.to[0] - next.from[0], next.to[1] - next.from[1]]);
+      }
+    }
     if (s.res === 'net') {
       // 네트에 걸린 공은 앞으로 가던 힘을 잃고 떨어져 튄다
       const f = await this.flyArc(fl);
@@ -1095,6 +1134,7 @@ export class MatchView {
         if (p.emoteUntil && now > p.emoteUntil) { p.emoteUntil = 0; p.emote.visible = false; }
       }
       this.placeAll();
+      if (this.show3d) { this.p3d.update(dt); this.p3d.list[0].vrm.scene.visible = !this.fpv; }
     }
     for (const q of [...this.pops]) {
       q.t += dt;
@@ -1181,6 +1221,7 @@ export class MatchView {
       const d = Math.hypot(q.x - this.camera.position.x, q.z - this.camera.position.z);
       const op = tv ? 1 : clamp((d - 1.0) / 1.6, 0.18, 1);
       if (Math.abs(m.opacity - op) > 0.01) { m.transparent = true; m.opacity = op; }
+      if (this.show3d) this.p3d.list[i].vrm.scene.visible = op > 0.45;
     }
     this.sky.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
@@ -1189,6 +1230,7 @@ export class MatchView {
 
   dispose() {
     this.alive = false;
+    this.p3d?.dispose?.();
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
     for (const tw of this.tweens) tw.done && tw.done();

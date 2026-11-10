@@ -5,7 +5,7 @@ import {
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, PLAN_OPTS, PLAN_SET, SHOT_NAME } from './sim.js';
-import { MatchView, webglOK } from './match3d.js';
+import { MatchView, webglOK, p3dPref, setP3dPref } from './match3d.js';
 import { launchKmh, spinRpm } from './ball.js';
 import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
@@ -67,6 +67,14 @@ function toggleCam() {
   M.view.setView(mode);
   try { localStorage.setItem(CAM_KEY, mode); } catch { }
   camShow(mode);
+}
+
+// 3D 선수(시험) 켜고 끄기. 이 기기에 기억한다. 버튼에는 누르면 바뀔 쪽이 쓰여 있다
+function p3dShow() { const b = document.getElementById('p3dtoggle'); if (b && location.protocol !== 'file:') { const on = !!M?.view?.p3dOn; b.hidden = false; b.textContent = on ? '🖼️ 그림 선수로' : '🧍 3D 선수로'; b.classList.toggle('on', on); } }
+function toggleP3d() {
+  if (!M?.view) return;
+  const on = !M.view.p3dOn;
+  setP3dPref(on); M.view.enable3D(on); p3dShow();
 }
 
 function render() {
@@ -366,6 +374,7 @@ const SCREENS = {
         <div class="rally" id="rally"></div>
         <div class="pointtext" id="pointtext"></div>
         <button class="camtoggle" id="camtoggle" data-a="camview" hidden></button>
+        <button class="camtoggle p3dtoggle" id="p3dtoggle" data-a="p3dview" hidden></button>
       </div>
       <div class="hud">
         <div class="mentals" id="mentals"></div>
@@ -1056,6 +1065,7 @@ async function onClick(e) {
     case 'skipgame': if (M) { M.skipGame = true; M.view && (M.view.speed = 20); } return;
     case 'skipmatch': if (M) { M.skipMatch = true; M.skipGame = true; M.view && (M.view.speed = 20); } return;
     case 'camview': toggleCam(); return;
+    case 'p3dview': toggleP3d(); return;
     default: return;
   }
   render();
@@ -1082,6 +1092,7 @@ async function runMatch() {
       const cam = camPref();
       M.view.setView(cam);
       camShow(cam);
+      p3dShow();
     } catch (err) { console.warn(err); M.view = null; }
   }
   if (!M.view) stage.classList.add('textmode');
