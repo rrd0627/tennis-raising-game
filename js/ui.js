@@ -5,7 +5,7 @@ import {
   grade, weekInfo, STAGE_NAME,
 } from './data.js';
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, PLAN_OPTS, PLAN_SET, SHOT_NAME } from './sim.js';
-import { MatchView, webglOK, p3dPref, setP3dPref } from './match3d.js';
+import { MatchView, webglOK, p3dPref, setP3dPref, prefetchP3d } from './match3d.js';
 import { launchKmh, spinRpm } from './ball.js';
 import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
@@ -70,7 +70,14 @@ function toggleCam() {
 }
 
 // 3D 선수(시험) 켜고 끄기. 이 기기에 기억한다. 버튼에는 누르면 바뀔 쪽이 쓰여 있다
-function p3dShow() { const b = document.getElementById('p3dtoggle'); if (b && location.protocol !== 'file:') { const on = !!M?.view?.p3dOn; b.hidden = false; b.textContent = on ? '🖼️ 그림 선수로' : '🧍 3D 선수로'; b.classList.toggle('on', on); } }
+// 버튼에는 지금 상태를 보여 준다: 불러오는 중, 못 불러옴(누르면 다시), 켜짐(누르면 그림 선수로), 꺼짐(누르면 3D로)
+function p3dShow() {
+  const b = document.getElementById('p3dtoggle'); if (!b || location.protocol === 'file:') return;
+  const st = M?.view?.p3dState || (M?.view?.p3dOn ? 'ready' : 'off');
+  b.hidden = false;
+  b.textContent = st === 'loading' ? '⏳ 3D 선수 준비 중' : st === 'fail' ? '⚠️ 3D 선수 못 불러옴 · 다시' : st === 'ready' ? '🖼️ 그림 선수로' : '🧍 3D 선수로';
+  b.classList.toggle('on', st === 'ready' || st === 'loading');
+}
 function toggleP3d() {
   if (!M?.view) return;
   const on = !M.view.p3dOn;
@@ -338,6 +345,7 @@ const SCREENS = {
   },
 
   tourIntro: () => {
+    if (p3dPref() || V.check) prefetchP3d();   // 3D 선수 모델을 미리 받아 둔다
     const tr = S.tournament;
     const opps = tr.stage === 'group' ? tr.group.opps : [];
     return `<div class="screen tour">
@@ -1086,7 +1094,9 @@ async function runMatch() {
   ];
   if (webglOK()) {
     try {
-      M.view = new MatchView(stage, { surface: tr.surface || 'hard', banner: `${tr.name} ${tr.div}부`, crowd: crowdOf(tr) });
+      // 확인 링크에서는 늘 3D 선수로 시작한다(확인하려고). 버튼으로 바꿀 수 있다
+      M.view = new MatchView(stage, { surface: tr.surface || 'hard', banner: `${tr.name} ${tr.div}부`, crowd: crowdOf(tr), p3d: V.check ? true : undefined });
+      M.view.onP3d = p3dShow;
       await M.view.setPlayers(players);
       // 시점 바꾸기 버튼(V 키도 됨). 지난번에 고른 시점으로 시작한다
       const cam = camPref();

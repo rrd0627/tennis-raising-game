@@ -16,13 +16,15 @@ const K = 1.12;   // 키(그림 선수가 실제보다 크게 보여서 맞춘�
 const FADE = 0.16;   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
 
 // 켜고 끄기(이 기기에 기억). 처음에는 켠다
-const PREF = 'tennis.p3d';
+const PREF = 'tennis.p3d2';   // 2026-11-11: 예전에 꺼 둔 값('tennis.p3d')은 읽지 않는다(모션캡처로 바뀐 3D 선수를 다시 보게)
 export function p3dPref() { try { return localStorage.getItem(PREF) !== '0'; } catch { return true; } }
 export function setP3dPref(on) { try { localStorage.setItem(PREF, on ? '1' : '0'); } catch { } }
 
 // 모델 주소는 이 모듈 기준(index.html이 붙인 빌드 번호를 같이 붙인다). play.html(한 파일)에서는 못 불러오고 그림 선수를 쓴다
 const SRC = (() => { try { const u = new URL('../art/char3d/vroid_sample.vrm', import.meta.url); u.search = new URL(import.meta.url).search; return u.href; } catch { return 'art/char3d/vroid_sample.vrm'; } })();
 let pending = null;
+// 모델 파일을 미리 받아 둔다(대회 첫 화면에서). 경기 화면에 들어오면 곧 3D 선수가 보이게
+export function prefetchP3d() { loadBuf(); }
 function loadBuf() {
   if (!pending) pending = (async () => {
     if (typeof location !== 'undefined' && location.protocol === 'file:') return null;

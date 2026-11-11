@@ -6,7 +6,7 @@ import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js'
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 import { loadStadium, stadiumData, buildStadium, toonMaterial } from './stadium.js';
 import { Players3D, p3dPref } from './players3d.js';
-export { p3dPref, setP3dPref } from './players3d.js';
+export { p3dPref, setP3dPref, prefetchP3d } from './players3d.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
 // 코트 색은 빛을 받지 않고 그대로 보인다(툰풍으로 밝게, 2026-11-09). wear: 많이 밟는 자리 색, stripe: 잔디 깎은 줄
@@ -100,6 +100,7 @@ export class MatchView {
     this.surface = opts.surface || 'turf';
     this.banner = opts.banner || '';
     this.crowdFill = opts.crowd;
+    this.p3dWant = opts.p3d;   // 3D 선수로 시작할지(없으면 이 기기에 기억한 값)
     this.tweens = [];
     this.fx = [];
     this.pops = [];   // 능력치 글자와 타구 번쩍임
@@ -406,17 +407,24 @@ export class MatchView {
     this.scene.add(this.myRing);
     this.placeAll();
     // 3D 선수(시험): 뒤에서 불러와 준비되면 그림 선수 대신 보인다. 못 불러오면 그림 선수 그대로
-    if (p3dPref()) this.enable3D(true);
+    if (this.p3dWant ?? p3dPref()) this.enable3D(true);
   }
   // 3D 선수 켜고 끄기. 켜면 처음 한 번 모델을 불러온다(그동안은 그림 선수)
+  // 상태(p3dState): loading 불러오는 중, ready 보임, fail 못 불러옴, off 끔. 바뀌면 onP3d()로 알린다(버튼 글자)
   enable3D(on) {
     this.p3dOn = !!on;
     if (on && !this.p3d) {
       const P = this.p3d = new Players3D(this);
-      this.p3dLoad = P.load().then(ok => { if (!ok && this.p3d === P) { this.p3d = null; this.p3dOn = false; } if (this.alive) this.placeAll(); return ok; });
-    }
+      this.p3dState = 'loading';
+      this.p3dLoad = P.load().catch(e => { console.warn('3D 선수', e); return false; }).then(ok => {
+        if (this.p3d === P) { if (!ok) { this.p3d = null; this.p3dOn = false; this.p3dState = 'fail'; } else this.p3dState = this.p3dOn ? 'ready' : 'off'; }
+        if (this.alive) { this.placeAll(); this.onP3d?.(); }
+        return ok;
+      });
+    } else this.p3dState = !on ? 'off' : this.p3d?.ready ? 'ready' : 'loading';
     this.p3d?.setVisible?.(this.p3dOn);
     this.placeAll();
+    this.onP3d?.();
   }
   get show3d() { return !!(this.p3dOn && this.p3d?.ready); }
 
