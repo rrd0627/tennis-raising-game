@@ -5,7 +5,7 @@ import { sdFrames, sdMotionFrames, emoteCanvas } from './art.js';
 import { BALL_V, flightTime, standOf, closeCall, h01, wingOf } from './rally.js';
 import { planPoint, flyOf, solveShot, dropArc, stepFree } from './ball.js';
 import { loadStadium, stadiumData, buildStadium, toonMaterial } from './stadium.js';
-import { Players3D, p3dPref } from './players3d.js';
+import { Players3D, p3dPref, SV_TOSS } from './players3d.js';
 export { p3dPref, setP3dPref, prefetchP3d } from './players3d.js';
 
 const COURT_W = 10.97, COURT_L = 23.77, SINGLES_W = 8.23, SERVICE = 6.40;
@@ -741,7 +741,7 @@ export class MatchView {
     this.rollId = (this.rollId || 0) + 1;
     this.trailPts = []; this.trail.geometry.setFromPoints([]);
     if (this.show3d) {
-      const P = this.p3d, contact = new THREE.Vector3(x, flyOf(s)?.h0 ?? 2.55, z), aim = [s.to[0] - x, s.to[1] - z], T = 1.25;
+      const P = this.p3d, contact = new THREE.Vector3(x, flyOf(s)?.h0 ?? 2.55, z), aim = [s.to[0] - x, s.to[1] - z], T = SV_TOSS;
       P.prepServe(s.h, contact, aim);
       P.schedule(s.h, s.type, 'over', T, contact, aim, { from: -T });
       await new Promise(res => this.tweens.push({
@@ -830,6 +830,8 @@ export class MatchView {
     const side = (s.h < 2 ? 1 : -1) * (s.to[0] - s.from[0]);
     if (isServe) {
       await this.tossBall(s);
+      // 폴트면 3D 서버는 곧바로 세컨 서브 자리로 돌아가 선다(준비 없이 토스하면 앞서 디딘 발이 라인 안에 남는다)
+      if (s.res === 'fault' && next && /^serve/.test(next.type) && this.show3d) this.p3d.prepServe(next.h, new THREE.Vector3(next.from[0], flyOf(next)?.h0 ?? 2.55, next.from[1]), [next.to[0] - next.from[0], next.to[1] - next.from[1]]);
       // 치는 순간 당겨 찍던 화면이 중계 자리로 빠진다(에이스면 공 쪽으로)
       this.setCamera(!next && s.res === 'ace' ? 'push' : 'main');
     }

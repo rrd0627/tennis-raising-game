@@ -15,6 +15,8 @@ const D = Math.PI / 180;
 const wrapD = a => ((a % 360) + 540) % 360 - 180;   // 각(도)을 -180~180으로
 const K = 1.12;   // 키(그림 선수가 실제보다 크게 보여서 맞춘다)
 const FADE = 0.16;   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
+export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
+const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
 // 뛰기 하나: pre 동안 dip만큼 굽혔다가 H만큼 떠서(중력대로, 뜬 시간 air) 내려앉으며 flex만큼 굽히고 hold 동안 편다. wide = 발을 벌리는 양(m)
 function jumpOf(split, hop) {
@@ -93,6 +95,10 @@ export class Players3D {
     const rigs = vrms.map(v => createRig(v));
     // 스윙 준비(몸 크기에만 달려 있으니 한 번 해서 넷이 같이 쓴다). 한 샷씩 쉬어 가며(화면이 멈추지 않게)
     for (const d of SHOTS) { rigs[0].setShot(d); this.shots[d.id] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false; }
+    // 서브 토스: 공은 왼손이 가장 빨리 올라가는 때 손을 떠난다(손이 멈춘 때 놓으면 공이 갑자기 튀어 나간다, 사용자 2026-11-11: 토스가 흔들린다)
+    { const Sv = this.shots.sv, R = rigs[0]; R.useShot(Sv); let best = Sv.toss, bv = -1;
+      for (let t = -SV_TOSS + 0.05; t <= Sv.toss; t += 0.01) { const a = R.sample(t, 'lh'), b = R.sample(t + 0.01, 'lh'); if (Array.isArray(a) && Array.isArray(b) && (b[1] - a[1]) > bv) { bv = b[1] - a[1]; best = t; } }
+      Sv.tossR = best; }
     // 기다리는 자세는 손으로 짠 준비 자세(모션캡처 스윙의 첫 자세는 이미 준비 동작 중이라): 뒤에서는 포핸드, 네트 앞에서는 발리 준비
     for (const [rid, sid] of [['readyB', 'fh'], ['readyN', 'fv']]) {
       const d = SHOTS.find(x => x.id === sid);
@@ -102,7 +108,7 @@ export class Players3D {
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
-      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null });
+      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0] });
     }
     this.bones = rigs[0].ALLB;
     this.ready = true;
@@ -120,18 +126,23 @@ export class Players3D {
   // 서브: 포인트를 시작할 때부터 서브 준비 자세로 공이 맞을 자리에 맞춰 선다
   prepServe(i, contact, aim) {
     const c = this.list[i]; if (!c) return;
-    c.serve = { contact: contact.clone(), aim };
+    c.serve = { contact: contact.clone(), aim, at: this.bt };
   }
   // 서브 토스 동안 공 자리(왼손에 있다가 놓으면 맞을 자리로 올라갔다 떨어진다). 없으면 null
   tossBall(i) {
     const c = this.list[i]; if (!c?.sw || c.sw.id !== 'sv' || !c.handW) return null;
     const S = this.shots.sv, tc = this.bt - c.sw.tImpact;
-    if (tc < S.toss) return c.handW.clone();
-    if (!c.release) c.release = c.handW.clone();
-    const P = c.release, Q = c.sw.contact, T = -S.toss, u = tc - S.toss, G = 9.8;
-    if (!Q) return P.clone();
-    const vy = (Q.y - P.y + 0.5 * G * T * T) / T;
-    return V3(P.x + (Q.x - P.x) * u / T, P.y + vy * u - 0.5 * G * u * u, P.z + (Q.z - P.z) * u / T);
+    const TR = S.tossR ?? S.toss;
+    if (tc < TR || !c.handV) return c.handW.clone();
+    // 손을 떠날 때는 손 빠르기 그대로, 0.16초에 걸쳐 맞을 자리로 가는 포물선으로 넘어간다(꺾이지 않게)
+    if (!c.release) c.release = { p: c.handW.clone(), v: c.handV.clone(), t: tc };
+    const R0 = c.release, Q = c.sw.contact, u = tc - R0.t;
+    const hand = R0.p.clone().addScaledVector(R0.v, u); hand.y -= 0.5 * G * u * u;
+    if (!Q) return hand;
+    // 빠르기를 손 빠르기에서 한쪽으로만 부드럽게(Tb초) 바꿔, T초 뒤 맞을 자리 Q에 닿게 한다: 위치 = P + v0·u + dv·K(u) - g·u²/2
+    const T = Math.max(0.3, -R0.t), Tb = 0.16, dv = Q.clone().sub(R0.p).addScaledVector(R0.v, -T); dv.y += 0.5 * G * T * T; dv.multiplyScalar(1 / (T - Tb / 2));
+    const s = Math.min(1, u / Tb), Ku = u < Tb ? Tb * (s ** 3 - s ** 4 / 2) : u - Tb / 2;
+    return hand.addScaledVector(dv, Ku);
   }
   setVisible(on) { for (const c of this.list) c.vrm.scene.visible = on; }
 
@@ -147,10 +158,10 @@ export class Players3D {
     const base = team === 0 ? Math.PI : 0;
     // 지금 할 동작: 스윙 창 안이면 그 스윙, 아니면 준비 자세(네트 앞이면 발리 준비, 서브할 사람은 서브 준비)
     let sw = c.sw;
-    if (sw && this.bt > sw.tImpact + sw.tail) { if (sw.id === 'sv') c.serve = null; c.sw = sw = null; c.release = null; }
+    if (sw && this.bt > sw.tImpact + sw.tail) { if (sw.id === 'sv' && !(c.serve && c.serve.at > sw.tStart)) c.serve = null;   /* 폴트 뒤 세컨 서브를 미리 준비했으면 그대로 */ c.sw = sw = null; c.release = null; }
     const inSw = sw && this.bt >= sw.tStart;
     const id = inSw ? sw.id : c.serve ? 'sv' : Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB', S = this.shots[id];
-    const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : S.T0;
+    const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
     if (md > 1e-4) c.dir = [mdx / md, mdz / md];
@@ -159,17 +170,20 @@ export class Players3D {
     if (pdt > 0 && c.rp) { const k = Math.min(1, pdt * 12); c.v[0] += ((rx0 - c.rp[0]) / pdt - c.v[0]) * k; c.v[1] += ((rz0 - c.rp[1]) / pdt - c.v[1]) * k; }
     c.rp = [rx0, rz0];
     const spd = Math.hypot(c.v[0], c.v[1]), mv = sstep(0.4, 2.5, spd);
+    // 선수가 실제로 달리는 빠르기(그림 선수 자리만. 공에 맞추려고 옮긴 양은 빼야 몸 돌리기와 서로 물고 돌지 않는다)
+    if (pdt > 0) { const k = Math.min(1, pdt * 10); c.pv[0] += (mdx / pdt - c.pv[0]) * k; c.pv[1] += (mdz / pdt - c.pv[1]) * k; }
+    const rspd = Math.hypot(c.pv[0], c.pv[1]);
     // 바라보는 쪽: 네트 쪽. 스윙할 때는 보내는 쪽으로 조금(반쯤, 25도까지)
     let yawT = base;
     const aim = inSw ? sw.aim : c.serve?.aim;
     if (aim && Math.hypot(aim[0], aim[1]) > 0.1) { let a = Math.atan2(aim[0], aim[1]) - base; a = Math.atan2(Math.sin(a), Math.cos(a)); yawT = base + clamp(a * 0.5, -25 * D, 25 * D); }
     // 빨리 옆이나 뒤로 멀리 갈 때는 몸을 가는 쪽으로 돌려 달린다(크로스오버). 뒤로 갈 때(로브)는 오른쪽으로 돌아 옆으로 물러난다. 칠 때가 다가오면 다시 선다
-    if (spd > 2) {
-      let rel = Math.atan2(c.v[0], c.v[1]) - base; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    if (rspd > 2 && id !== 'sv') {
+      let rel = Math.atan2(c.pv[0], c.pv[1]) - base; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
       const off = Math.abs(rel) > 150 * D ? -80 * D : clamp(rel, -80 * D, 80 * D) * sstep(35 * D, 60 * D, Math.abs(rel));
-      yawT += off * sstep(2.2, 3.4, spd) * (inSw ? 1 - sstep(-0.7, -0.35, tc) : 1);
+      yawT += off * sstep(2.2, 3.4, rspd) * (inSw ? 1 - sstep(-0.7, -0.35, tc) : 1);
     }
-    let dy = yawT - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); c.yaw += dy * Math.min(1, pdt * 8);
+    let dy = yawT - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); c.yaw += dy * (id === 'sv' && inSw ? 1 : Math.min(1, pdt * 8));   // 서브: 바로 그 방향으로(돌면서 공에 맞추려고 몸이 미끄러지지 않게)
     const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw);
     // 뛰기: 그림 선수의 hop은 순간 올라갔다가 곧게 내려오는 값이라(그림에는 괜찮다) 3D에서는 중력대로 다시 그린다(사용자 2026-11-11: 스플릿이 이상하다).
     // 스플릿 스텝은 살짝 굽혔다가 몇 cm 떠서 발을 벌리며 내려앉고 무릎을 굽힌다. 기뻐서 뛰는 것은 줄여서 뛴다
@@ -190,13 +204,20 @@ export class Players3D {
     // 발놀림(사용자 2026-11-11: 걷는 느낌보다 스텝을 쓰는 느낌): 디딘 발은 코트에 붙어 있고, 몸이 움직여 발이 제자리(자세가 원하는 발 자리)에서
     // 멀어지면 한 발씩 재빨리 딛는다. 옆으로 갈 때는 가는 쪽 발이 먼저 나가고 다른 발이 따라붙는다(사이드 스텝, 발이 엇갈리지 않는다).
     // 칠 공을 기다리는 동안(임팩트 0.25~0.9초 전)에는 제자리에서 잔발을 친다. 임팩트 둘레와 서브는 동작(모션캡처)의 발을 쓴다
-    const pw = c.serve && !inSw ? 0 : inSw ? (sw.id === 'sv' ? sstep(0.4, 0.8, tc) : 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(0.35, 0.7, tc))) : 1;
+    const pw = inSw ? (sw.id === 'sv' ? 1 - sstep(-SV_TOSS, -SV_TOSS + 0.15, tc) * (1 - sstep(0.4, 0.8, tc)) : 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(0.35, 0.7, tc))) : 1;
+    // 서브: 임팩트까지 앞꿈치는 베이스라인 뒤에(사용자 2026-11-11: 서브할 때 라인 밟지 않게)
+    const svSide = id === 'sv' && (c.serve || sw)?.contact ? Math.sign((c.serve || sw).contact.z) : 0, toeK = svSide ? 1 - sstep(0, 0.1, tc) : 0;
     const toIn = sw ? sw.tImpact - this.bt : 9, adj = !!sw && sw.id !== 'sv' && toIn > 0.25 && toIn < 0.9 && spd < 0.6;
     const ctx = { rx: rx0, rz: rz0, cy, sy, yawD: c.yaw / D, pw, adj, air: !!(c.jmp && c.jmp.t < c.jmp.pre + c.jmp.air), spd, thr: adj ? 0.02 : spd < 0.25 ? 0.07 : clamp(0.1 + 0.035 * spd, 0.1, 0.24), bob: 0 };
     const over = {
       foot: (side, f) => {
         if (jw) { const sd = side === 'right' ? -1 : 1; f = [f[0] + sd * jw, f[1], f[2] + sd * jw * 120, f[3]]; }   // 스플릿 착지: 발을 벌리고 발끝을 조금 밖으로
-        return this.stepFoot(c, side, f, ctx, pdt);
+        const o = this.stepFoot(c, side, f, ctx, pdt);
+        if (toeK > 0) {
+          const wz = rz0 + K * (-o[0] * sy + o[1] * cy), over_ = BASELINE + TOE_GAP - wz * svSide;
+          if (over_ > 0) { const dz = over_ * toeK * svSide, dx = 0; o[0] += (dx * cy - dz * sy) / K; o[1] += (dx * sy + dz * cy) / K; }
+        }
+        return o;
       },
       hip: h => [h[0], h[1] - 0.035 * mv + ctx.bob - c.sq * 0.6 + jhip * jk, h[2], h[3]],
       chest: ch => [ch[0], ch[1] + 8 * mv * Math.min(1, spd / 5), ch[2]],
@@ -214,11 +235,11 @@ export class Players3D {
       const lc = S.C0.clone().add(dl).multiplyScalar(K), wx = lc.x * Math.cos(c.yaw) + lc.z * Math.sin(c.yaw), wz = -lc.x * Math.sin(c.yaw) + lc.z * Math.cos(c.yaw);
       const need = V3(contact.x - wx - p.x, 0, contact.z - wz - p.z);
       if (sw?.dive) need.clampLength(0, 0.9); else need.clampLength(0, 1.6);
-      c.off.lerp(need.multiplyScalar(w), Math.min(1, pdt * 30));
+      c.off.lerp(need.multiplyScalar(w), id === 'sv' && inSw ? 1 : Math.min(1, pdt * (id === 'sv' ? 5 : 30)));   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
     } else c.off.multiplyScalar(Math.max(0, 1 - pdt * 6));
     // 자세는 리그 기준(제자리, 돌리지 않음)으로 만들고 나서 코트 위로 옮긴다
     const key = id + (inSw ? ':' + sw.tImpact.toFixed(3) : ':idle');
-    if (key !== c.key) { if (c.last) { c.snap = c.last; c.fade = FADE; } c.key = key; if (!inSw) c.release = null; }
+    if (key !== c.key) { if (c.last && !(c.key === 'sv:idle' && id === 'sv')) { c.snap = c.last; c.fade = FADE; } c.key = key; if (!inSw) c.release = null; }   // 서브 준비 → 토스는 같은 자세라 섞지 않는다(섞으면 발이 밀린다)
     vrm.scene.position.set(0, 0, 0); vrm.scene.rotation.set(0, 0, 0); vrm.scene.scale.setScalar(1); vrm.scene.updateMatrixWorld(true);
     R.useShot(S);
     R.pose(tc, dl, null, over);
@@ -243,7 +264,11 @@ export class Players3D {
     vrm.scene.updateMatrixWorld(true);
     vrm.update(dt);
     // 서브 토스용: 왼손(공을 쥔 곳)의 세계 자리
-    if (id === 'sv') c.handW = R.handBall();
+    if (id === 'sv') {
+      const hw = R.handBall();
+      if (c.handW && c.handT != null && this.bt - c.handT > 1e-4) { const vi = hw.clone().sub(c.handW).multiplyScalar(1 / (this.bt - c.handT)); c.handV = c.handV ? c.handV.lerp(vi, 0.6) : vi; }
+      c.handW = hw; c.handT = this.bt;
+    } else { c.handV = null; c.handT = null; }
   }
 
   // 발 하나(리그 기준 [x, z, 발끝 각(도), 들림])를 정한다. f = 자세가 원하는 자리. 디딘 발은 세계 자리에 붙어 있다

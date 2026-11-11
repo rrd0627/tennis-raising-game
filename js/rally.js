@@ -11,8 +11,10 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
 // 샷 종류별 기본 공 빠르기(바운드까지 평균, m/s). 샷 품질과 파워로 조금 달라진다.
 // 여자 동호인 공은 느리다(사용자 경험, 2026-11-08): 강하게 치는 공은 예전의 0.75배쯤, 발리·슬라이스는 0.85배쯤. 로브와 드롭은 그대로.
+// 그런데 공에 실제 물리를 넣고 보니 그 빠르기로는 공이 네트 위 2.7m로 높이 떠서 넘어가 붕붕 떠다녀 보였다(사용자 2026-11-11: 중력을 덜 받는 느낌).
+// 그래서 다시 올렸다: 드라이브·슬라이스 1.35배, 발리 1.2배, 스매시 1.25배. 드라이브는 라켓을 떠날 때 약 84km/h, 네트 위 0.8m쯤으로 넘어가 0.9초쯤에 바운드한다. 로브와 드롭은 그대로
 // 서브는 sim.js의 serveV가 정한다(여기 serve, serve2는 값이 없을 때만 쓴다)
-export const BALL_V = { serve: 15, serve2: 12.5, smash: 17.5, fh_drive: 13.5, bh_drive: 12.8, passing: 14, return: 12.8, swing_volley: 15, fh_volley: 12.8, bh_volley: 12, low_volley: 10.5, half_volley: 10.5, fh_slice: 11, bh_slice: 11, chip_return: 10.5, topspin_lob: 11, def_lob: 9, moon_volley: 9, dropshot: 9, drop_volley: 8 };
+export const BALL_V = { serve: 15, serve2: 12.5, smash: 21.9, fh_drive: 18.2, bh_drive: 17.3, passing: 18.9, return: 17.3, swing_volley: 18, fh_volley: 15.4, bh_volley: 14.4, low_volley: 12.6, half_volley: 12.6, fh_slice: 14.9, bh_slice: 14.9, chip_return: 14.2, topspin_lob: 11, def_lob: 9, moon_volley: 9, dropshot: 9, drop_volley: 8 };
 export const AFTER_BOUNCE = 0.62;   // 바운드 뒤에는 공이 느려진다
 export const START = 0.18;          // 멈춘 몸이 속도를 내기까지 잃는 시간
 
