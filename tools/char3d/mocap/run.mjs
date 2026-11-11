@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 const HERE = import.meta.dirname, ROOT = join(HERE, '..', '..', '..');
-const URL_ = process.argv[2] || 'http://localhost:8080/tools/char3d/swing.html?ball=mid&t=0';
+const BAKE_ONLY = process.argv.includes('--bake');   // 키는 그대로 두고 고침만 다시 굽는다
+const URL_ = process.argv.slice(2).find(a => !a.startsWith('--')) || 'http://localhost:8080/tools/char3d/swing.html?ball=mid&t=0';
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const port = 9300 + Math.floor(Math.random() * 500), prof = mkdtempSync(join(tmpdir(), 'mocap-'));
 const ch = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${prof}`, '--no-first-run', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank'], { stdio: 'ignore' });
@@ -22,22 +23,25 @@ try {
   ws.addEventListener('message', m => { const d = JSON.parse(m.data); if (d.id && wait.has(d.id)) { wait.get(d.id)(d); wait.delete(d.id); } });
   await send('Runtime.enable'); await send('Page.navigate', { url: URL_ });
   for (let i = 0; i < 150 && !(await ev('!!window.__ready')); i++) await sleep(200);
-  const body = readFileSync(join(HERE, 'build_keys.js'), 'utf8').split('\n').filter(l => !l.startsWith('//')).join('\n').trim().replace(/\)\(\)$/, ')();');
+  if (!BAKE_ONLY) {
+  const body =readFileSync(join(HERE, 'build_keys.js'), 'utf8').split('\n').filter(l => !l.startsWith('//')).join('\n').trim().replace(/\)\(\)$/, ')();');
   const res = await ev(`window.__CLIPS = ${readFileSync(join(HERE, 'clips.json'), 'utf8')};\n(async () => { try { return await ${body} } catch (e) { return 'ERR ' + e.stack; } })()`);
   if (typeof res !== 'string' || res.startsWith('ERR')) throw new Error(String(res));
   const { log, out } = JSON.parse(res); console.log(log);
   const lines = [readFileSync(join(HERE, 'header.txt'), 'utf8').trimEnd(), 'export const MOCAP = {'];
   for (const sid of ['fh', 'bh', 'fv', 'bv', 'sv', 'sm']) {
     const x = out[sid];
-    lines.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${sid === 'sv' || sid === 'sm' ? ', corMove: true' : ''}${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}, keys: [`);
+    lines.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${sid === 'sv' || sid === 'sm' ? ', corMove: true' : ''}${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}${x.tk ? ', tk: [' + x.tk + ']' : ''}, keys: [`);
     for (const k of x.keys) lines.push('    { ' + [...ORDER.filter(n => n in k), ...Object.keys(k).filter(n => !ORDER.includes(n))].map(n => `${n}: ${val(k[n])}`).join(', ') + ' },');
     lines.push('  ] },');
   }
   lines.push('};', '');
   writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), lines.join('\n'));
-  // 라켓이 몸을 뚫지 않게 하는 고침을 구해 같이 굽는다(게임에서 다시 구하지 않게)
-  await send('Page.navigate', { url: URL_ + '&cb=' + Date.now() }); await sleep(500);
-  for (let i = 0; i < 150 && !(await ev('!!window.__ready')); i++) await sleep(200);
+  }
+  // 라켓이 몸을 뚫지 않게 하는 고침을 구해 같이 굽는다(게임에서 다시 구하지 않게).
+  // 고침을 굽지 않은 키는 페이지가 처음 열릴 때 고침을 구하느라 오래 걸린다(몇 분까지 기다린다)
+  await send('Page.navigate', { url: URL_ + '&cb=' + Date.now() }); await sleep(1500);
+  for (let i = 0; i < 1500 && !(await ev('!!(window.__ready && window.__dbg)')); i++) await sleep(200);
   const cor = JSON.parse(await ev(`JSON.stringify(Object.fromEntries(['fh', 'bh', 'fv', 'bv', 'sv', 'sm'].map(id => { __dbg.setShot(id); const C = __dbg.R.S.COR; return [id, C ? { dt: 0.01, w: C.W.flatMap(v => v.toArray().map(x => +x.toFixed(4))), d: C.D.flatMap(v => v.toArray().map(x => +x.toFixed(4))) } : null]; })))`));
   let txt = readFileSync(join(ROOT, 'js', 'swings_mocap.js'), 'utf8');
   for (const [id, c] of Object.entries(cor)) if (c) txt = txt.replace(new RegExp(`^  ${id}: \\{ (.*?), keys: \\[`, 'm'), (m, a) => `  ${id}: { ${a}, cor: ${JSON.stringify(c)}, keys: [`);

@@ -22,10 +22,10 @@ export const TUNE = {
   // 강타는 초반에 밀어붙이지만 오래가면 실수가 늘고, 끈질기게 버티는 쪽은 후반에 힘이 난다.
   planGames: 8,
   plan: {
-    power: { early: { q: 8, err: 0.92 }, late: { q: 2, err: 1.08 }, tire: 1.15 },
+    power: { early: { q: 5, err: 0.92 }, late: { q: 1, err: 1.08 }, tire: 1.15 },
     twoup: { early: { q: 3, err: 1 }, late: { q: 2, err: 1.02 }, tire: 1.05 },
     twoback: { early: { q: -2, err: 0.98 }, late: { q: 2, err: 0.95 }, tire: 0.95 },
-    lob: { early: { q: -4, err: 1 }, late: { q: 3, err: 0.93 }, tire: 0.9 },
+    lob: { early: { q: 0, err: 1 }, late: { q: 7, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림
   },
   rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
   // 기술. 배운 사람만 쓴다. 안 배우면 기존과 같아서 승률 표는 기술 없는 기준이다. 배열은 수준 0, 1, 2.
@@ -133,6 +133,8 @@ const segDist = (q, a, b) => {
 const unit = (a, b) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / d, (b[1] - a[1]) / d]; };
 // 부담 D(0~95) → 닿을 수 있는 거리 중 얼마나 멀리 오는가
 const strain = D => clamp(0.15 + D * 0.0136, 0.15, 0.97);   // D 중간값 약 29 → 0.54, 상위 25%(42) → 0.72(쭉 뻗어 받음)
+// 로브를 떨어지기 전에 스매시할 수 있는 부담의 끝. 스매시 능력치와 기술만큼 더 깊은 로브도 닿는다
+const smashReach = p => 26 + (p.stats.smash - 40) * 0.35 + (p.skills?.smash || 0) * 6;
 // 바운드 지점: 받는 곳보다 공 길이 쪽으로 조금 앞. 코트 안에 들어오게 받는 곳까지 같이 당긴다.
 // from에서 C로 가는 직선 위, 깊이(z)가 z인 곳
 function onLineAtZ(from, C, z) { const u = Math.abs(C[1] - from[1]) > 0.01 ? (z - from[1]) / (C[1] - from[1]) : 1; return [from[0] + (C[0] - from[0]) * u, z]; }
@@ -237,9 +239,15 @@ export class MatchSim {
   }
   // 공이 갈 곳. 받는 사람이 지금 선 곳(P)에서 코스 쪽으로, 공이 오는 동안 닿을 수 있는 거리의 f배.
   // f가 1보다 크면 닿지 못한다(위너). 돌려주는 C는 받는 곳(위너면 공이 지나가는 곳), B는 바운드
-  spot(R, st, dir, f, v, from, P, body, late, n1, u2) {
+  spot(R, st, dir, f, v, from, P, body, late, n1, u2, air = false) {
     const rz = this.zSign(R.team), side = this.xSign(R);
     const lob = LOBS.has(st), short = st === 'dropshot' || st === 'drop_volley';
+    if (lob && air) {
+      // 닿는 로브: 받는 사람이 뒤로 물러나며(전위는 1~5m) 떨어지기 전에 머리 위에서 친다(스매시)
+      const back = R.pos === 'net' ? 1.2 + f * 4.2 : -2.6 + f * 3;
+      const C = [clamp(P[0] + n1 * 0.9, -4.8, 4.8), rz * clamp(P[1] * rz + back, 3.2, 12.4)];
+      return { C, B: null, T: flightTime(from, C, null, v, st) };
+    }
     if (lob) {
       // 로브는 높이 튀어 오른다. 꼭대기를 지나 떨어질 때 치려고 바운드 뒤 4.4m쯤 물러나서 받는다
       const C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (11.4 + Math.min(f, 1.3) * 2.6)];
@@ -777,8 +785,11 @@ export class MatchSim {
       // 공은 받는 사람의 부담만큼 멀리 간다. 그 공의 대처가 낮으면 출발이 늦고, 예측 수비가 있으면 빠르다
       const v = this.ballV(H, st, Q), f = strain(nextD);
       const late = clamp((55 - (counter ? R.stats[counter] : 55)) * 0.0015, -0.03, 0.08) - readLv * 0.05;
-      const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2), v, st);
-      if (lob && R.pos === 'net') R.pos = 'base';
+      // 뒤로 오는 로브는 닿기만 하면 스매시로(사용자 2026-11-11). 덜 좋은 로브(부담이 작은 공)일수록, 스매시를 잘할수록 닿는다.
+      // 뒤에 선 사람은 짧은 로브만. 닿지 않으면 예전처럼 뒤로 뛰어가 바운드된 공을 친다
+      const air = lob && nextD <= smashReach(R) - (R.pos === 'net' ? 0 : 14);
+      const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2, air), v, st);
+      if (lob && R.pos === 'net' && !air) R.pos = 'base';
       const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v) };
       shots.push(shot);
       // 이동
@@ -795,7 +806,7 @@ export class MatchSim {
       }
       lastByTeam[H.team] = H; lastShooter = H;
       inc = {
-        D: nextD, height: HEIGHT[st] || 'mid', type: st, from: H, counter,
+        D: nextD, height: HEIGHT[st] || 'mid', type: st, from: H, counter, smashable: air,
         forceBh: T.choices.attack === 'back' && rng() < 0.6,
       };
       H = R;
@@ -878,7 +889,8 @@ export class MatchSim {
     const add = (k, v) => { if (v > 0) w[k] = (w[k] || 0) + v; };
     const fh = rng() < (inc.forceBh ? 0.25 : 0.58);
     const isReturn = inc.type === 'serve' || inc.type === 'serve2';
-    if (isReturn) {
+    if (inc.smashable) { add('smash', 0.85); add('moon_volley', 0.08); }   // 닿는 로브는 거의 스매시
+    else if (isReturn) {
       add('return', 0.62); add('chip_return', 0.18); if (oppNet) add('topspin_lob', 0.08); add('def_lob', inc.D > 60 ? 0.12 : 0.02);
     } else if (H.pos === 'net') {
       if (inc.height === 'high') { add('smash', 0.75); add('moon_volley', 0.1); add('drop_volley', 0.08); }

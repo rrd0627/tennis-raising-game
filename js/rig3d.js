@@ -555,7 +555,7 @@ export function createRig(vrm) {
     for (const k of S.K) if (k.s) k.hq = racketQuatFor(V3(...k.s), V3(...k.f)).multiply(gripAt(k.t).invert()).toArray();
     { let p = null; for (const k of S.K) if (k.hq) { if (p && p[0] * k.hq[0] + p[1] * k.hq[1] + p[2] * k.hq[2] + p[3] * k.hq[3] < 0) k.hq = k.hq.map(v => -v); p = k.hq; } }   // 같은 반구로(뒤집히지 않게)
     S.T0 = S.K[0].t; S.T1 = S.K[S.K.length - 1].t; S.LOOP = S.T1 - S.T0 + 0.35;
-    S.K7 = S.K.find(k => k.t === 0); S.HQ7 = handAt(0);
+    S.K7 = S.K.find(k => k.t === 0) || { t: 0 }; S.HQ7 = handAt(0);   // 0초 키가 없으면(임팩트를 옮긴 키) 사이 값으로
     S.C0 = sweetFrom(V3(...sample(0, 'rh')), S.HQ7);   // 보통 공의 임팩트 자리 = 보통 동작에서 임팩트 순간 라켓 가운데
     if (!S.K7.rh) S.K7 = { ...S.K7, rh: sample(0, 'rh') };
     S.TILT_AX = V3(0, 1, 0).applyQuaternion(racketAt(0)).cross(V3(0, 1, 0)).normalize();   // 임팩트 때 라켓이 가리키는 쪽과 위쪽에 직각
