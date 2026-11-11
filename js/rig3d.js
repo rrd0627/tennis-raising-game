@@ -371,7 +371,9 @@ export function createRig(vrm) {
     // 몸: 발로 공 쪽에 다가가고(Sb), 낮은 공이면 무릎을 더 굽히고 숙인다
     const hip = over?.hip ? over.hip(sample(t, 'hip')) : sample(t, 'hip'), ch = over?.chest ? over.chest(sample(t, 'chest')) : sample(t, 'chest');
     const Sb = sw('body'), S0 = useIK ? V3(S.STEP.body[0] * dl.x, 0, S.STEP.body[1] * dl.z) : V3();
-    const crouch = w * clamp(dl.y * 0.3, -0.11, 0), lean = w * clamp(-dl.y * 30, -6, 15);
+    // 낮은 공이면 무릎을 굽히고 조금 숙인다. 공을 기다리며 미리(임팩트 0.8~0.25초 전) 낮추고, 숙이는 각은 작게(사용자 2026-11-11: 포핸드가 급작스럽게 숙여진다)
+    const cw = useIK ? (t < 0 ? sstep(Math.max(-0.8, S.T0), -0.25, t) : 1 - sstep(0.15, 0.6, t)) : 0;   // 동작 처음(T0)에는 0(되풀이할 때 이음새가 튀지 않게)
+    const crouch = cw * clamp(dl.y * 0.35, -0.2, 0), lean = cw * clamp(-dl.y * 16, -5, 10);
     B('hips').position.set(HIPS0.x + hip[0] + Sb.x + w * dl.x * 0.12, HIPS0.y + hip[1] + crouch, HIPS0.z + hip[2] + Sb.z + w * dl.z * 0.12);
     B('hips').quaternion.copy(yawQ(hip[3]));
     const cy = ch[0], cp = ch[1] + lean, cr_ = ch[2] + w * clamp(-dl.y * 14, -8, 8);

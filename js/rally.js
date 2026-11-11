@@ -84,6 +84,7 @@ export function standOf(contact, type, team, before, far = 0) {
   const wing = wingOf(type, team, contact, before);
   const zs = team === 0 ? 1 : -1;
   if (wing === 'over') return [contact[0] - 0.15 * RIGHT(team), contact[1] + zs * 0.25];
-  const off = far || (/volley/.test(type) ? 0.55 : 0.75);
-  return [contact[0] - off * RIGHT(team) * (wing === 'fh' ? 1 : -1), contact[1]];
+  // 공은 몸 옆, 조금 앞에서 맞는다(3D 선수의 임팩트 자리: 포핸드는 옆 0.7m·앞 1.07m, 양손 백핸드는 앞 0.5m. 사용자 2026-11-11: 포핸드 때 몸이 뒤로 가는 느낌)
+  const vol = /volley/.test(type), off = far || (vol ? 0.55 : wing === 'fh' ? 0.75 : 0.55), back = far ? 0 : vol ? 0.35 : 0.5;
+  return [contact[0] - off * RIGHT(team) * (wing === 'fh' ? 1 : -1), contact[1] + zs * back];
 }

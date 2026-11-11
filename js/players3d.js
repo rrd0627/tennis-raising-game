@@ -121,7 +121,7 @@ export class Players3D {
     const id = clipOf(type, wing), S = this.shots[id];
     const lead = opt.from != null ? -opt.from : Math.min(Math.max(dt, 0.25), id === 'sv' ? 1.3 : 0.95);
     if (id !== 'sv') c.serve = null;
-    c.sw = { id, tImpact: this.bt + dt, tStart: this.bt + dt - lead, contact: contact ? contact.clone() : null, aim, full: !!opt.full, tail: Math.min(S.T1, 1.0), dive: !!opt.dive };
+    c.sw = { id, t0: this.bt, tImpact: this.bt + dt, tStart: this.bt + dt - lead, contact: contact ? contact.clone() : null, aim, full: !!opt.full, tail: Math.min(S.T1, 1.0), dive: !!opt.dive };
   }
   // 서브: 포인트를 시작할 때부터 서브 준비 자세로 공이 맞을 자리에 맞춰 선다
   prepServe(i, contact, aim) {
@@ -167,16 +167,20 @@ export class Players3D {
     if (md > 1e-4) c.dir = [mdx / md, mdz / md];
     // 몸(뿌리)이 움직이는 빠르기: 그림 선수 자리 + 공에 맞추려고 옮긴 만큼(c.off). 발놀림과 몸 돌리기에 쓴다
     const rx0 = p.x + c.off.x, rz0 = p.z + c.off.z;
+    // 포인트 사이에 자리를 한 번에 옮긴 것(순간이동)은 달린 것이 아니다: 발을 새 자리에 바로 놓는다(빠르기를 초속 24m로 읽어 발이 몇 m 밖으로 날아갔다)
+    const tele = md > Math.max(0.35, pdt * 12);
+    if (tele) { c.v = [0, 0]; c.pv = [0, 0]; c.rp = null; c.ft.left.init = c.ft.right.init = false; }
     if (pdt > 0 && c.rp) { const k = Math.min(1, pdt * 12); c.v[0] += ((rx0 - c.rp[0]) / pdt - c.v[0]) * k; c.v[1] += ((rz0 - c.rp[1]) / pdt - c.v[1]) * k; }
+    { const vv = Math.hypot(c.v[0], c.v[1]); if (vv > 7) { c.v[0] *= 7 / vv; c.v[1] *= 7 / vv; } }
     c.rp = [rx0, rz0];
     const spd = Math.hypot(c.v[0], c.v[1]), mv = sstep(0.4, 2.5, spd);
     // 선수가 실제로 달리는 빠르기(그림 선수 자리만. 공에 맞추려고 옮긴 양은 빼야 몸 돌리기와 서로 물고 돌지 않는다)
-    if (pdt > 0) { const k = Math.min(1, pdt * 10); c.pv[0] += (mdx / pdt - c.pv[0]) * k; c.pv[1] += (mdz / pdt - c.pv[1]) * k; }
+    if (pdt > 0 && !tele) { const k = Math.min(1, pdt * 10); c.pv[0] += (mdx / pdt - c.pv[0]) * k; c.pv[1] += (mdz / pdt - c.pv[1]) * k; }
     const rspd = Math.hypot(c.pv[0], c.pv[1]);
     // 바라보는 쪽: 네트 쪽. 스윙할 때는 보내는 쪽으로 조금(반쯤, 25도까지)
     let yawT = base;
     const aim = inSw ? sw.aim : c.serve?.aim;
-    if (aim && Math.hypot(aim[0], aim[1]) > 0.1) { let a = Math.atan2(aim[0], aim[1]) - base; a = Math.atan2(Math.sin(a), Math.cos(a)); yawT = base + clamp(a * 0.5, -25 * D, 25 * D); }
+    if (aim && Math.hypot(aim[0], aim[1]) > 0.1) { let a = Math.atan2(aim[0], aim[1]) - base; a = Math.atan2(Math.sin(a), Math.cos(a)); yawT = base + clamp(a * 0.4, -15 * D, 15 * D); }   // 보내는 쪽으로 조금만(많이 돌면 공에 맞추려고 몸을 크게 옮긴다)
     // 빨리 옆이나 뒤로 멀리 갈 때는 몸을 가는 쪽으로 돌려 달린다(크로스오버). 뒤로 갈 때(로브)는 오른쪽으로 돌아 옆으로 물러난다. 칠 때가 다가오면 다시 선다
     if (rspd > 2 && id !== 'sv') {
       let rel = Math.atan2(c.pv[0], c.pv[1]) - base; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
@@ -223,26 +227,35 @@ export class Players3D {
       chest: ch => [ch[0], ch[1] + 8 * mv * Math.min(1, spd / 5), ch[2]],
     };
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
-    const contact = inSw ? sw.contact : c.serve?.contact;
+    const contact = sw && (inSw || sw.id !== 'sv') ? sw.contact : c.serve?.contact, Sc = sw ? this.shots[sw.id] : S;
     let dl = V3();
-    if (contact) dl.y = clamp(contact.y / K - S.C0.y, -0.45, 0.38);
+    if (contact) dl.y = clamp(contact.y / K - Sc.C0.y, -0.62, 0.38);
     // 뿌리 맞추기: 임팩트 때 라켓 가운데(C0 + dl)가 공에 오는 자리 - 지금 자리. 임팩트 앞뒤로만(서브는 처음부터 끝까지)
     let w = 0;
     if (contact) {
       if (inSw && sw.id === 'sv') w = 1 - sstep(0.3, 0.9, tc);   // 서브: 처음부터 맞춰 서 있다가 착지 뒤 풀린다
-      else if (inSw) w = sw.full ? 1 : sstep(-0.5, -0.08, tc) * (1 - sstep(0.12, 0.55, tc));
-      else w = 1;   // 서브 준비
-      const lc = S.C0.clone().add(dl).multiplyScalar(K), wx = lc.x * Math.cos(c.yaw) + lc.z * Math.sin(c.yaw), wz = -lc.x * Math.sin(c.yaw) + lc.z * Math.cos(c.yaw);
+      else if (sw && sw.id !== 'sv') {
+        // 임팩트 0.75~0.15초 전에 걸쳐 고르게(마지막 0.4초에 몰아서 하면 몸이 뒤로 미끄러진다), 친 뒤에는 풀린다
+        const tr = this.bt - sw.tImpact;
+        w = sw.full ? 1 : sstep(-0.75, -0.15, tr) * (1 - sstep(0.12, 0.55, tr));
+      } else w = 1;   // 서브 준비
+      const lc = Sc.C0.clone().add(dl).multiplyScalar(K), wx = lc.x * Math.cos(c.yaw) + lc.z * Math.sin(c.yaw), wz = -lc.x * Math.sin(c.yaw) + lc.z * Math.cos(c.yaw);
       const need = V3(contact.x - wx - p.x, 0, contact.z - wz - p.z);
       if (sw?.dive) need.clampLength(0, 0.9); else need.clampLength(0, 1.6);
-      c.off.lerp(need.multiplyScalar(w), id === 'sv' && inSw ? 1 : Math.min(1, pdt * (id === 'sv' ? 5 : 30)));   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
-    } else c.off.multiplyScalar(Math.max(0, 1 - pdt * 6));
+      if (id === 'sv') c.off.lerp(need.multiplyScalar(w), inSw ? 1 : Math.min(1, pdt * 5));
+      else {
+        // 몸 옮기는 빠르기는 초속 3m까지(튀지 않게). 공이 곧 오는데(발리) 못 닿을 만큼 남았으면 임팩트 0.05초 전까지 닿게 그만큼만 빠르게
+        const tgt = need.multiplyScalar(w), d = tgt.sub(c.off), left = sw ? sw.tImpact - 0.05 - this.bt : 1;
+        const mx = clamp(left > 0.08 && w > 0.5 ? d.length() / left : 0, 3, 6) * pdt;
+        if (d.length() > mx) d.setLength(mx); c.off.add(d);
+      }   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
+    } else { const L = c.off.length(), mx = 2.2 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때도 초속 2.2m까지
     // 자세는 리그 기준(제자리, 돌리지 않음)으로 만들고 나서 코트 위로 옮긴다
     const key = id + (inSw ? ':' + sw.tImpact.toFixed(3) : ':idle');
     if (key !== c.key) { if (c.last && !(c.key === 'sv:idle' && id === 'sv')) { c.snap = c.last; c.fade = FADE; } c.key = key; if (!inSw) c.release = null; }   // 서브 준비 → 토스는 같은 자세라 섞지 않는다(섞으면 발이 밀린다)
     vrm.scene.position.set(0, 0, 0); vrm.scene.rotation.set(0, 0, 0); vrm.scene.scale.setScalar(1); vrm.scene.updateMatrixWorld(true);
     R.useShot(S);
-    R.pose(tc, dl, null, over);
+    R.pose(tc, inSw ? dl : V3(), null, over);
     // 고개: 공(보이면) 쪽, 아니면 네트 너머
     const bp = v.ball?.visible ? v.ball.position : V3(0, 1.2, team === 0 ? -8 : 8);
     const rx = rx0, rz = rz0, tx = (bp.x - rx) / K, tz = (bp.z - rz) / K;
@@ -290,11 +303,14 @@ export class Players3D {
       // 가는 쪽 발이 먼저(사이드 스텝), 아니면 번갈아
       const lat = (c.v[0] * x.cy - c.v[1] * x.sy) * (side === 'right' ? -1 : 1);
       F.err = err + yerr / 150 + (lat > 0.3 ? 0.04 : 0) + (c.lastSide === side ? 0 : 0.03);
-      const want = x.pw > 0.5 && (err > x.thr || yerr > 28 || (x.adj && bt - c.lastStep > 0.11));
-      if (want && !O.sw && bt - c.lastStep > 0.02 && F.err >= (O.err || 0) - 0.02) {
-        const T = x.adj ? 0.12 : clamp(0.24 - 0.022 * x.spd, 0.12, 0.24);
-        let tx = ix + c.v[0] * T * 1.5, tz = iz + c.v[1] * T * 1.5;
-        const L = Math.hypot(tx - F.x, tz - F.z); if (L > 0.9) { tx = F.x + (tx - F.x) * 0.9 / L; tz = F.z + (tz - F.z) * 0.9 / L; }
+      // 발이 몸에서 너무 멀면(골반 아래에서 75cm 넘게) 다른 발이 떠 있어도 바로 딛는다(발만 멀리 두고 몸이 가 버리지 않게, 사용자 2026-11-11)
+      const far = Math.hypot(F.x - x.rx, F.z - x.rz) > 0.75, run = x.spd > 3.2;
+      const want = x.pw > 0.15 && (far || err > x.thr || yerr > 28 || (x.adj && bt - c.lastStep > 0.22));
+      if (want && (!O.sw || far || run) && bt - c.lastStep > 0.02 && (far || F.err >= (O.err || 0) - 0.02)) {
+        // 빠를수록 짧게 떠서 멀리 딛는다(달리면 한 걸음 1.6m까지). 천천히 움직일 때는 짧은 걸음(참고 값)
+        const T = x.adj ? 0.12 : clamp(0.26 - 0.03 * x.spd, 0.11, 0.26), lead = x.spd < 1.5 ? 1.0 : 1.5, maxL = clamp(0.45 + 0.28 * x.spd, 0.6, 1.7);
+        let tx = ix + c.v[0] * T * lead, tz = iz + c.v[1] * T * lead;
+        const L = Math.hypot(tx - F.x, tz - F.z); if (L > maxL) { tx = F.x + (tx - F.x) * maxL / L; tz = F.z + (tz - F.z) * maxL / L; }
         // 발이 엇갈리지 않게(왼발은 오른발보다 늘 왼쪽에)
         const rt = toR(tx, tz), ro = toR(O.x, O.z);
         if (side === 'left' && rt[0] < ro[0] + 0.14) rt[0] = ro[0] + 0.14;

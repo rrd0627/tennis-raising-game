@@ -56,7 +56,7 @@
     R.setShot(def);
     // 임팩트를 몸 앞으로(사용자 2026-11-11: 공이 임팩트 지점을 지나쳤다가 돌아가는 느낌). 손목이 가장 빠른 때나 라켓이 네트와 나란한 때는
     // 라켓 가운데가 아직 몸 옆(포핸드 발리는 골반보다 뒤)에 있다. 라켓 가운데가 골반 앞 AHEAD m에 처음 오는 때를 0초로 옮긴다
-    const AHEAD = { fh: 0.42, bh: 0.45, fv: 0.45, bv: 0.45 };
+    const AHEAD = { fh: 0.38, bh: 0.45, fv: 0.45, bv: 0.45 };
     let tk = null;
     if (AHEAD[id] != null) {
       const ah = t => { R.pose(t, 'mid'); const hp = R.B('hips').getWorldPosition(V()); return R.racket.localToWorld(V(0, 0.45, 0)).z - hp.z; };
@@ -87,6 +87,33 @@
         kk.t = +(kk.t < 0 ? kk.t / K1 : kk.t / K2).toFixed(3);
       }
       def.keys = keys; R.setShot(def);
+    }
+    // 임팩트 높이를 게임 공 높이에 맞춘다(사용자 2026-11-11: 포핸드가 급작스럽게 숙여진다). 모션캡처 임팩트는 어깨 높이라(포핸드 1.7m)
+    // 허리 높이(1.1m) 공을 칠 때마다 리그가 크게 숙였다. 임팩트 둘레(±W초)의 손 자리를 내리고 그만큼 무릎을 조금 굽힌다
+    const HGT = { fh: 1.3, bh: 1.15, fv: 1.2, bv: 1.05 };   // m(경기 세계, 3D 선수 키 배율 1.12)
+    if (HGT[id]) {
+      R.setShot(def); const c0 = R.S.C0.y, d = HGT[id] / 1.12 - c0, W = /v$/.test(id) ? 0.35 : 0.5;
+      for (const kk of keys) {
+        const b = Math.abs(kk.t) < W ? 0.5 * (1 + Math.cos(Math.PI * kk.t / W)) : 0;
+        if (!b) continue;
+        kk.rh = r3([kk.rh[0], kk.rh[1] + d * b, kk.rh[2]]);
+        kk.hip = r3([kk.hip[0], kk.hip[1] + 0.2 * d * b, kk.hip[2], kk.hip[3]]);
+        if (Array.isArray(kk.lh)) kk.lh = r3([kk.lh[0], kk.lh[1] + 0.5 * d * b, kk.lh[2]]);
+      }
+      def.keys = keys; R.setShot(def);
+      log.push(`${id} contact height ${(c0 * 1.12).toFixed(2)} -> ${(R.S.C0.y * 1.12).toFixed(2)} m`);
+      // 기준점(뿌리)을 임팩트 때 골반 자리로 옮긴다(동작은 그대로). 모션캡처는 출발 자리 기준이라 공이 1m 앞에 있어
+      // 게임이 3D 몸을 그림 선수 자리에서 크게 옮겨야 했다(사용자 2026-11-11: 포핸드 때 몸이 뒤로 가는 느낌)
+      const j = keys.findIndex(k => k.t > 0), a = keys[j - 1], b = keys[j], u = (0 - a.t) / (b.t - a.t);
+      const hx = a.hip[0] + (b.hip[0] - a.hip[0]) * u, hz = a.hip[2] + (b.hip[2] - a.hip[2]) * u;
+      for (const kk of keys) {
+        kk.hip = r3([kk.hip[0] - hx, kk.hip[1], kk.hip[2] - hz, kk.hip[3]]);
+        kk.rf = r3([kk.rf[0] - hx, kk.rf[1] - hz, kk.rf[2], kk.rf[3]]); kk.lf = r3([kk.lf[0] - hx, kk.lf[1] - hz, kk.lf[2], kk.lf[3]]);
+        kk.rh = r3([kk.rh[0] - hx, kk.rh[1], kk.rh[2] - hz]);
+        if (Array.isArray(kk.lh)) kk.lh = r3([kk.lh[0] - hx, kk.lh[1], kk.lh[2] - hz]);
+      }
+      def.keys = keys; R.setShot(def);
+      log.push(`${id} root moved by ${hx.toFixed(2)}, ${hz.toFixed(2)}: contact from root x ${R.S.C0.x.toFixed(2)} z ${R.S.C0.z.toFixed(2)}`);
     }
     out[id] = { toss: def.toss, bevel: c.bevel, lroll: def.lroll, keys, tk };
   }
