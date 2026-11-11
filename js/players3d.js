@@ -14,6 +14,15 @@ const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t 
 const D = Math.PI / 180;
 const K = 1.12;   // 키(그림 선수가 실제보다 크게 보여서 맞춘다)
 const FADE = 0.16;   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
+const G = 9.81;
+// 뛰기 하나: pre 동안 dip만큼 굽혔다가 H만큼 떠서(중력대로, 뜬 시간 air) 내려앉으며 flex만큼 굽히고 hold 동안 편다. wide = 발을 벌리는 양(m)
+function jumpOf(split, hop) {
+  const J = split ? { split, pre: 0.04, dip: 0.02, H: 0.035, flex: 0.085, hold: 0.42, wide: 0.06 }
+    : { split, pre: 0.08, dip: 0.05, H: clamp(hop * 0.4, 0.04, 0.22), flex: 0, hold: 0.3, wide: 0 };
+  if (!split) J.flex = 0.03 + J.H * 0.3;
+  J.air = 2 * Math.sqrt(2 * J.H / G); J.end = J.pre + J.air + 0.06 + J.hold; J.t = 0;
+  return J;
+}
 
 // 켜고 끄기(이 기기에 기억). 처음에는 켠다
 const PREF = 'tennis.p3d2';   // 2026-11-11: 예전에 꺼 둔 값('tennis.p3d')은 읽지 않는다(모션캡처로 바뀐 3D 선수를 다시 보게)
@@ -92,7 +101,7 @@ export class Players3D {
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
-      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1] });
+      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0 });
     }
     this.bones = rigs[0].ALLB;
     this.ready = true;
@@ -156,13 +165,30 @@ export class Players3D {
     const stride = clamp(0.9 + 0.22 * spd, 1.0, 2.6);
     c.ph += spd * pdt / stride * Math.PI * 2;
     const wg = c.wg * (inSw ? 1 - 0.7 * sstep(-0.3, -0.05, tc) * (1 - sstep(0.25, 0.6, tc)) : 1), A = stride * 0.24, hgt = 0.05 + 0.025 * Math.min(spd, 6);
-    const over = wg > 0.01 || p.sq > 0.01 ? {
+    // 뛰기: 그림 선수의 hop은 순간 올라갔다가 곧게 내려오는 값이라(그림에는 괜찮다) 3D에서는 중력대로 다시 그린다(사용자 2026-11-11: 스플릿이 이상하다).
+    // 스플릿 스텝은 살짝 굽혔다가 몇 cm 떠서 발을 벌리며 내려앉고 무릎을 굽힌다. 기뻐서 뛰는 것은 줄여서 뛴다
+    if (p.hop > c.hop0 + 0.02 && (p.splitting || p.hop >= 0.12)) c.jmp = jumpOf(!!p.splitting, p.hop);
+    c.hop0 = p.hop;
+    let jy = 0, jhip = 0, jw = 0;
+    if (c.jmp) {
+      const J = c.jmp, t = J.t, tl = t - J.pre - J.air;
+      if (t < J.pre) jhip = -J.dip * Math.sin(Math.PI * t / J.pre);
+      else if (tl < 0) { const u = t - J.pre; jy = 0.5 * G * u * (J.air - u); }
+      else jhip = -J.flex * (tl < 0.06 ? sstep(0, 0.06, tl) : 1 - sstep(0.06, 0.06 + J.hold, tl));
+      jw = J.wide * sstep(J.pre, J.pre + J.air, t) * (1 - sstep(J.end - 0.3, J.end, t));
+      J.t += pdt; if (J.t > J.end) c.jmp = null;
+    }
+    // 몸이 눌리는 것(멈춰 설 때, 높은 공을 피할 때)도 한 프레임에 꺼지지 않게. 스플릿 착지는 위에서 그린다
+    c.sq += ((c.jmp?.split ? 0 : p.sq) - c.sq) * Math.min(1, pdt * 20);
+    const jk = 1 - 0.6 * wg;
+    const over = wg > 0.01 || c.sq > 0.005 || jhip || jw ? {
       foot: (side, f) => {
-        const ph = c.ph + (side === 'right' ? 0 : Math.PI), s = Math.sin(ph), bx = side === 'right' ? -0.13 : 0.13;
-        const g = [bx + lx * A * s, 0.04 + lz * A * s, (side === 'right' ? -1 : 1) * 6, Math.max(0, Math.cos(ph)) * hgt];
+        const ph = c.ph + (side === 'right' ? 0 : Math.PI), s = Math.sin(ph), bx = side === 'right' ? -0.13 : 0.13, sd = side === 'right' ? -1 : 1;
+        if (jw) f = [f[0] + sd * jw, f[1], f[2] + sd * jw * 120, f[3]];   // 발을 벌리고 발끝을 조금 밖으로
+        const g = [bx + lx * A * s, 0.04 + lz * A * s, sd * 6, Math.max(0, Math.cos(ph)) * hgt];
         return f.map((x, k) => x + (g[k] - x) * wg);
       },
-      hip: h => [h[0], h[1] + wg * (0.025 * Math.cos(2 * c.ph) - 0.03) - p.sq * 0.6, h[2], h[3]],
+      hip: h => [h[0], h[1] + wg * (0.025 * Math.cos(2 * c.ph) - 0.03) - c.sq * 0.6 + jhip * jk, h[2], h[3]],
       chest: ch => [ch[0], ch[1] + wg * 8 * Math.min(1, spd / 5), ch[2]],
     } : null;
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
@@ -203,7 +229,7 @@ export class Players3D {
     if (c.fade > 0 && c.snap?.rq) { rq.slerpQuaternions(c.snap.rq, rq.clone(), sstep(0, 1, 1 - c.fade / FADE)); rk.matrix.compose(R.GRIP_POS, rq, V3(1, 1, 1)); }
     c.last = { q: bones.map(b => b.quaternion.clone()), hips: R.B('hips').position.clone(), rq };
     // 코트 위로
-    vrm.scene.position.set(rx, p.hop, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
+    vrm.scene.position.set(rx, jy, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
     vrm.scene.updateMatrixWorld(true);
     vrm.update(dt);
     // 서브 토스용: 왼손(공을 쥔 곳)의 세계 자리
