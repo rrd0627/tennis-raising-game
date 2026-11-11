@@ -252,5 +252,5 @@ for (const s of SHOTS) {
     // 공 쪽으로 옮겨 디디는 때(step)가 모션캡처 동작보다 먼저 시작하지 않게(한 바퀴 이음새에서 발이 튀지 않게)
     const T0 = m.keys[0].t; s.handStep = s.step;
     s.step = Object.fromEntries(Object.entries(s.step).map(([w, [a, b, c, d]]) => { const a2 = Math.max(a, T0 + 0.05), b2 = Math.max(b, a2 + 0.12); return [w, [a2, b2, Math.max(c, b2 + 0.05), Math.max(d, b2 + 0.2)]]; }));
-    s.keys = m.keys; s.src = m.src; if (m.bevel != null) s.bevel = m.bevel; s.rollK = m.rollK || 0; s.chestPoles = !!m.chestPoles; s.handLroll = s.lroll; if (m.lroll != null) s.lroll = m.lroll; if (m.toss != null) s.toss = m.toss; }
+    s.keys = m.keys; s.src = m.src; if (m.bevel != null) s.bevel = m.bevel; s.rollK = m.rollK || 0; s.chestPoles = !!m.chestPoles; s.grip2Free = !!m.grip2Free; s.cor = m.cor || null; s.noCor = !!m.noCor; s.corMove = !!m.corMove; s.handLroll = s.lroll; if (m.lroll != null) s.lroll = m.lroll; if (m.toss != null) s.toss = m.toss; }
 }

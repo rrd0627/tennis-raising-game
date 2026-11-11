@@ -35,7 +35,7 @@
     // 위팔 돌림(해부학 중립: 팔꿈치를 굽히면 손이 몸 앞·안쪽으로). 양쪽 다 바깥돌림이 +
     for (const [k, up, mid, end, sx] of [['r', 'rightUpperArm', 'rightLowerArm', 'rightHand', 1], ['l', 'leftUpperArm', 'leftLowerArm', 'leftHand', -1]]) {
       const ch = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(ch); const sh = wpos(up), el = wpos(mid), wr = wpos(end), d = el.clone().sub(sh).normalize(), fa = wr.clone().sub(el), bb = fa.sub(d.clone().multiplyScalar(fa.dot(d)));
-      if (bb.length() > 1e-3) { bb.normalize(); const F = V(0.3 * sx, 0.3, 1).applyQuaternion(ch), fn = F.sub(d.clone().multiplyScalar(F.dot(d))).normalize(); o[k + 'ShRot'] = -sx * Math.atan2(fn.clone().cross(bb).dot(d), fn.dot(bb)) * R; } }
+      if (bb.length() > 1e-3) { bb.normalize(); const F = V(0.3 * sx, 0.3, 1).applyQuaternion(ch), fn = F.sub(d.clone().multiplyScalar(F.dot(d))).normalize(); let r = -sx * Math.atan2(fn.clone().cross(bb).dot(d), fn.dot(bb)) * R; if (r < -120) r += 360; o[k + 'ShRot'] = r; } }   // 서브 레이백(바깥으로 180도 가까이)이 이어지게
     const nh = L('neck').clone().multiply(L('head')); const hf = Z.clone().applyQuaternion(nh);
     o.headYaw = Math.atan2(hf.x, hf.z) * R; o.headPitch = -Math.asin(hf.y) * R;
     const ch = L('spine').clone().multiply(L('chest')); if (B('upperChest')) ch.multiply(L('upperChest')); o.torsoTw = twist(ch, Y);
@@ -49,7 +49,7 @@
     rShHoriz: [-45, 150], lShHoriz: [-45, 150], rShElev: [-90, 85], lShElev: [-90, 85],
     rHipFlex: [-25, 110], lHipFlex: [-25, 110], rHipAbd: [-25, 50], lHipAbd: [-25, 50], rHipTw: [-45, 45], lHipTw: [-45, 45],
     rAnkDorsi: [-50, 35], lAnkDorsi: [-50, 35], rAnkTw: [-25, 25], lAnkTw: [-25, 25], rAnkRoll: [-25, 25], lAnkRoll: [-25, 25],
-    rShRot: [-80, 70], lShRot: [-80, 70], headYaw: [-80, 80], headPitch: [-50, 60], torsoTw: [-60, 60],
+    rShRot: [-95, 245], lShRot: [-95, 245], headYaw: [-80, 80], headPitch: [-50, 60], torsoTw: [-60, 60],
   };
   // 몸 캡슐(라켓·팔이 몸을 뚫는지)
   function capsules() {

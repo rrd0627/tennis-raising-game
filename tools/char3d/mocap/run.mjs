@@ -29,12 +29,19 @@ try {
   const lines = [readFileSync(join(HERE, 'header.txt'), 'utf8').trimEnd(), 'export const MOCAP = {'];
   for (const sid of ['fh', 'bh', 'fv', 'bv', 'sv', 'sm']) {
     const x = out[sid];
-    lines.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}, keys: [`);
+    lines.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${sid === 'sv' || sid === 'sm' ? ', corMove: true' : ''}${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}, keys: [`);
     for (const k of x.keys) lines.push('    { ' + [...ORDER.filter(n => n in k), ...Object.keys(k).filter(n => !ORDER.includes(n))].map(n => `${n}: ${val(k[n])}`).join(', ') + ' },');
     lines.push('  ] },');
   }
   lines.push('};', '');
   writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), lines.join('\n'));
-  console.log('wrote js/swings_mocap.js');
+  // 라켓이 몸을 뚫지 않게 하는 고침을 구해 같이 굽는다(게임에서 다시 구하지 않게)
+  await send('Page.navigate', { url: URL_ + '&cb=' + Date.now() }); await sleep(500);
+  for (let i = 0; i < 150 && !(await ev('!!window.__ready')); i++) await sleep(200);
+  const cor = JSON.parse(await ev(`JSON.stringify(Object.fromEntries(['fh', 'bh', 'fv', 'bv', 'sv', 'sm'].map(id => { __dbg.setShot(id); const C = __dbg.R.S.COR; return [id, C ? { dt: 0.01, w: C.W.flatMap(v => v.toArray().map(x => +x.toFixed(4))), d: C.D.flatMap(v => v.toArray().map(x => +x.toFixed(4))) } : null]; })))`));
+  let txt = readFileSync(join(ROOT, 'js', 'swings_mocap.js'), 'utf8');
+  for (const [id, c] of Object.entries(cor)) if (c) txt = txt.replace(new RegExp(`^  ${id}: \\{ (.*?), keys: \\[`, 'm'), (m, a) => `  ${id}: { ${a}, cor: ${JSON.stringify(c)}, keys: [`);
+  writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), txt);
+  console.log('wrote js/swings_mocap.js', Object.entries(cor).map(([k, v]) => k + (v ? ':cor' : '')).join(' '));
 } finally { try { ws?.close(); } catch { } ch.kill(); setTimeout(() => { try { rmSync(prof, { recursive: true, force: true }); } catch { } }, 500); }
 process.exit(0);

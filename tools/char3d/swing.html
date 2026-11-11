@@ -77,6 +77,8 @@ const { B, BONES, ALLB, LIMB, racket, SWEET, ANKLE, GRIP_POS, HOLD, gripQL, wp, 
   BALL_PATH, shoulderRot, elbowIn, gripAt, handAt, racketAt, bevelAt, racketQuatFor, swOf, wrapD, ballsOf } = R;
 const pose = (t, ballKey, collect, over) => R.pose(t, ballKey, collect, over);
 let useIK = q.get('ik') !== '0'; R.setIK(useIK);
+// 사람 범위 지키기·라켓 비키기(?guard=none|pole|racket 으로 하나만 켜서 견줘 본다)
+if (q.get('guard')) { const g = q.get('guard'); R.GUARD.pole = g === 'pole' || g === 'all'; R.GUARD.racket = g === 'racket' || g === 'all'; }
 
 // ── 공 ──
 const ball = new THREE.Mesh(new THREE.SphereGeometry(0.034, 16, 12), new THREE.MeshToonMaterial({ color: 0xe8f040 })); ball.castShadow = true; scene.add(ball);
@@ -93,6 +95,7 @@ let S = null;
 const EDIT_STORE = 'swing.edits.v1';
 let EDITS = {}; try { EDITS = JSON.parse(localStorage.getItem(EDIT_STORE) || '{}') || {}; } catch { EDITS = {}; }
 function withEdits(keys, id) {
+  if (!Object.keys(EDITS[id] || {}).length) return keys;   // 고친 것이 없으면 정의 그대로(미리 구워 둔 라켓 비키기를 쓴다)
   const K = keys.map(k => ({ ...k }));
   for (const [ts, f] of Object.entries(EDITS[id] || {})) {
     const t = +ts; let k = K.find(k => Math.abs(k.t - t) < 1e-6);
@@ -107,7 +110,7 @@ function withEdits(keys, id) {
 let useHand = q.get('src') === 'hand';
 function setShot(id) {
   const base = String(id).replace(/:hand$/, ''), d = SHOTS.find(s => s.id === base) || SHOTS[0];
-  const def = useHand ? { ...d, id: d.id + ':hand', toss: d.handToss ?? d.toss, bevel: d.handBevel ?? d.bevel, rollK: 0, lroll: d.handLroll, chestPoles: false, step: d.handStep ?? d.step } : d;
+  const def = useHand ? { ...d, id: d.id + ':hand', toss: d.handToss ?? d.toss, bevel: d.handBevel ?? d.bevel, rollK: 0, lroll: d.handLroll, chestPoles: false, grip2Free: false, cor: null, noCor: false, corMove: false, step: d.handStep ?? d.step } : d;
   R.setShot(def, withEdits(useHand ? d.handKeys : d.keys, def.id)); S = R.S;
 }
 

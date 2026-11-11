@@ -78,6 +78,7 @@ export function createRig(vrm) {
   }
 
 
+  const GUARD = { pole: true, racket: true };   // 사람 범위 지키기·라켓 비키기(시험할 때 끌 수 있다)
   // 지금 샷. rollK: 라켓을 축으로 돌리는 것을 얼마나 아낄지(모션캡처 샷은 손목 회전이 실제라 크게)
   let S = null;
   const sampleKeys = (L, t, key, sub) => {
@@ -133,13 +134,14 @@ export function createRig(vrm) {
   limb('leftArm', 'leftUpperArm', 'leftLowerArm', 'leftHand', V3(0, -1, 0), V3(1, -0.2, -0.3));
   limb('rightLeg', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot', V3(1, 0, 0), V3(0, 0, 1));
   limb('leftLeg', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', V3(1, 0, 0), V3(0, 0, 1));
+  for (const n of ['rightArm', 'leftArm']) { const L = LIMB[n]; L.dMin = Math.sqrt(L.l1 * L.l1 + L.l2 * L.l2 - 2 * L.l1 * L.l2 * Math.cos(Math.PI - 150 * D)); }   // 팔꿈치는 150도까지만 접힌다
   // 두 마디 IK. 팔꿈치·무릎은 경첩이라 옆으로 꺾이지 않고 거꾸로 펴지지 않는다(위 마디가 굽는 면에 맞춰 돈다).
   // 거의 다 펴질 때는 부드럽게 늦춰서 툭 펴지지 않게 한다. 돌려주는 값은 닿지 못한 길이
   function ik(L, target, pole) {
     const pa = wp(L.up), want = target.clone().sub(pa), dist = Math.max(1e-6, want.length()), dir = want.divideScalar(dist);
     const Lm = L.l1 + L.l2, ds = Lm * 0.96;
     let d = dist > ds ? ds + (Lm - ds) * (1 - Math.exp(-(dist - ds) / (Lm - ds))) : dist;
-    d = Math.max(d, Math.abs(L.l1 - L.l2) + 0.03);
+    d = Math.max(d, L.dMin ?? Math.abs(L.l1 - L.l2) + 0.03);
     const x = (L.l1 * L.l1 - L.l2 * L.l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L.l1 * L.l1 - x * x));
     const perp = v => { const n = v.clone().normalize(); return n.sub(dir.clone().multiplyScalar(n.dot(dir))); };
     const pd = perp(pole), len = pd.length();
@@ -207,6 +209,51 @@ export function createRig(vrm) {
   function swOf(side, ax, p) { const ref = swRef(side, ax), v = p.clone().sub(ax.clone().multiplyScalar(p.dot(ax))); return Math.atan2(ref.clone().cross(v).dot(ax), ref.dot(v)) / D; }
   const wrapD = a => ((a % 360) + 540) % 360 - 180;
   // 팔꿈치가 몸통에 너무 가까운 양(m)
+  // 어깨가 사람 범위를 넘는 정도(도). 위팔이 몸 뒤로 45도보다, 몸 앞 너머로 150도보다 가는 것(팔이 옆으로 누웠을 때만),
+  // 팔꿈치가 몸통 안으로 들어가는 것. 위팔 돌림은 팔이 위로 갈 때 재는 기준이 ±180도에서 끊겨(서브 레이백) 넣지 않는다
+  function armViol(side) {
+    const cq = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(cq);
+    const L = LIMB[side + 'Arm'], u = wp(L.mid).sub(wp(L.up)).normalize().applyQuaternion(cq.invert());
+    const lat = side === 'right' ? -1 : 1, hz = Math.hypot(u.x, u.z);
+    let v = 0;
+    if (hz > 0.3) v += ex(Math.atan2(u.z, lat * u.x) / D, -45, 150) * Math.min(1, (hz - 0.3) / 0.3);
+    return v + 400 * elbowIn(side);
+  }
+  // 범위를 넘으면 팔꿈치를 어깨-손목 축 둘레로 돌려(손목 자리는 그대로) 사람 자세로. 돌리는 각(도).
+  // 0도에서 시작해 가까운 쪽으로 조금씩 찾아가서(넘친 정도² × 4 + 돌린 각²가 작아지는 쪽) 시간에 따라 매끄럽게 바뀐다
+  function limitDelta(side, tg, pole) {
+    const L = LIMB[side + 'Arm'], ax = tg.clone().sub(wp(L.up)).normalize();
+    const f = dd => { ik(L, tg, pole.clone().applyAxisAngle(ax, dd * D)); const v = armViol(side); return 4 * v * v + dd * dd; };
+    let x = 0, fx = f(0), step = 8;
+    if (fx < 0.01) return 0;
+    for (let it = 0; it < 14 && step > 0.4; it++) {
+      const fp = f(x + step), fm = f(x - step);
+      if (fp < fx && fp <= fm) { x += step; fx = fp; } else if (fm < fx) { x -= step; fx = fm; } else step /= 2;
+    }
+    return x;
+  }
+  // 라켓(줄 테·목·손잡이, 손잡이를 쥔 두 손 자리 포함)이 몸(몸통·머리·허벅지·정강이)에 1.2cm보다 가까이 들어간 가장 깊은 곳
+  const RK_PTS = []; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; RK_PTS.push(V3(Math.cos(a) * 0.13, SWEET + 0.02 + Math.sin(a) * 0.17, 0)); }
+  for (const y of [-0.06, 0.04, 0.12, 0.2, 0.3]) RK_PTS.push(V3(0, y, 0));
+  function racketPen(margin = 0.012, all = null) {
+    racket.updateMatrixWorld(true);
+    const hd = wp('head'), caps = [[wp('hips').add(V3(0, 0.05, 0)), wp('neck'), 0.115], [hd.clone().add(V3(0, 0.09, 0.01)), hd.clone().add(V3(0, 0.1, 0.01)), 0.105],
+      [wp('rightUpperLeg'), wp('rightLowerLeg'), 0.07], [wp('leftUpperLeg'), wp('leftLowerLeg'), 0.07], [wp('rightLowerLeg'), wp('rightFoot'), 0.05], [wp('leftLowerLeg'), wp('leftFoot'), 0.05]];
+    let best = null;
+    for (const lp of RK_PTS) {
+      const p = lp.clone().applyMatrix4(racket.matrixWorld);
+      for (const [a, b, r] of caps) {
+        const ab = b.clone().sub(a), u = clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1), dv = p.clone().sub(a.clone().add(ab.multiplyScalar(u))), dist = dv.length(), d = r + margin - dist;
+        if (d > 0) { const hit = { d, p, n: dist > 1e-6 ? dv.divideScalar(dist) : V3(0, 0, 1) }; all?.push(hit); if (!best || d > best.d) best = hit; }
+      }
+    }
+    return best;
+  }
+  // 몸통 캡슐 안에 들어간 손 자리를 밖으로(손 두께 4cm)
+  function outOfTorso(p, r = 0.155) {
+    const a = wp('hips').add(V3(0, 0.05, 0)), ab = wp('neck').sub(a), u = clamp(p.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1), c = a.clone().add(ab.multiplyScalar(u)), dv = p.clone().sub(c), d = dv.length();
+    return d >= r || d < 1e-6 ? p : c.add(dv.multiplyScalar(r / d));
+  }
   function elbowIn(side) { const el = wp(side + 'LowerArm'), a = wp('hips').add(V3(0, 0.05, 0)), b = wp('neck'), ab = b.clone().sub(a), u = clamp(el.clone().sub(a).dot(ab) / ab.lengthSq(), 0, 1); return Math.max(0, 0.16 - el.distanceTo(a.clone().add(ab.multiplyScalar(u)))); }
   // 라켓 방향(s)은 그대로 두고 라켓을 그 축으로 돌려(줄 면이 보는 쪽) 손목이 가장 편한 각을 고른다. lam이 크면 처음 정한 면에 가깝게(임팩트 근처)
   const ROLL_TH = []; for (let th = -180; th < 180; th += 5) ROLL_TH.push(th);
@@ -239,6 +286,64 @@ export function createRig(vrm) {
     };
     S.ROLL = { ts, R: path(cR), L: path(cL) };
   }
+  // 라켓·손이 몸을 뚫지 않게 하는 고침(샷을 고를 때 한 번): 0.01초마다 보통 공으로 자세를 만들어, 뚫은 깊이²이 가장 작아지는
+  // 라켓 꺾기(손목에서, 아래팔 축으로 비틀지 않음, 회전 벡터 w)와 손 옮기기(d)를 좌표마다 조금씩 찾아 간다. 앞 칸의 답에서 시작해 이어지고,
+  // 고칠 필요가 없으면 0으로 돌아간다. 다 구한 뒤 앞뒤 한 칸으로 넓히고 두 번 고르게 편다
+  const CORDT = 0.01;
+  function penCost(t, w, d, pw, pd) {
+    let c = 0;
+    for (const tt of [t, t + CORDT / 2]) {   // 빠르게 휘두를 때 칸 사이에서 스치는 것도 보게 반 칸 뒤도 잰다
+      pose(tt, 'mid', null, { cor: { w, d } });
+      const hits = []; racketPen(0.015, hits);
+      for (const h of hits) c += h.d * h.d;
+    }
+    // 뚫은 깊이² + 고침 크기 + 이웃 칸 고침과의 차이(갑자기 생기거나 풀리지 않게)
+    return 2000 * c + 0.3 * w.lengthSq() + 12 * d.lengthSq() + (pw ? 3 * w.distanceToSquared(pw) + 300 * d.distanceToSquared(pd) : 0);
+  }
+  // 한 칸 풀기: 이웃 칸(pw, pd)의 답에서 시작해 좌표마다 조금씩
+  function solveCor(t, pw, pd, w0, d0) {
+    let w = w0.clone(), d = d0.clone(), f = penCost(t, w, d, pw, pd);
+    if (pw) { const f1 = penCost(t, pw, pd, pw, pd); if (f1 < f) { w = pw.clone(); d = pd.clone(); f = f1; } }
+    const z = penCost(t, V3(), V3(), pw, pd); if (z <= f) { w = V3(); d = V3(); f = z; }
+    pose(t, 'mid'); const fa = wp('rightHand').sub(wp('rightLowerArm')).normalize(), AX = [V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1)];
+    // 두 손으로 쥐고 있으면 라켓을 꺾지 않고 손만 옮긴다(오른손목에서 꺾으면 왼손이 손잡이에서 비틀린다)
+    const two = S.corMove || (holdAt(t).type === 'grip2' && holdAt(t).w > 0.3); if (two) w.set(0, 0, 0);   // corMove: 이 샷은 손만 옮겨 비킨다
+    const noTwist = v => two ? v.set(0, 0, 0) : v.sub(fa.clone().multiplyScalar(v.dot(fa)));
+    for (let st = 0, sw = 0.24, sd = 0.06; st < 5; st++, sw /= 2, sd /= 2) {
+      let moved = true;
+      for (let it = 0; it < 3 && moved; it++) {
+        moved = false;
+        for (const ax of AX) for (const sg of [1, -1]) {
+          const w2 = noTwist(w.clone().add(ax.clone().multiplyScalar(sg * sw))), f2 = penCost(t, w2, d, pw, pd);
+          if (f2 < f - 1e-7) { w = w2; f = f2; moved = true; }
+          const d2 = d.clone().add(ax.clone().multiplyScalar(sg * sd)), f3 = penCost(t, w, d2, pw, pd);
+          if (f3 < f - 1e-7) { d = d2; f = f3; moved = true; }
+        }
+      }
+    }
+    return [w, d];
+  }
+  function buildCor() {
+    S.COR = null; if (!GUARD.racket) return;
+    const ts = []; for (let t = S.T0; t <= S.T1 + 1e-9; t += CORDT) ts.push(t);
+    // 뚫는 칸이 있는지 먼저(없으면 고침 없음)
+    const pen0 = ts.map(t => { pose(t, 'mid', null, { cor: { w: V3(), d: V3() } }); return !!racketPen(0.015) || (pose(t + CORDT / 2, 'mid', null, { cor: { w: V3(), d: V3() } }), !!racketPen(0.015)); });
+    if (!pen0.some(Boolean)) return;
+    // 앞으로 한 번(이웃 = 앞 칸), 뒤로 한 번(이웃 = 뒤 칸, 앞으로 구한 답에서 시작). 뚫지 않는 칸 근처는 건너뛴다(고침 0)
+    const near = i => pen0.slice(Math.max(0, i - 6), i + 7).some(Boolean);
+    let Wv = ts.map(() => V3()), Dv = ts.map(() => V3());
+    for (let i = 0; i < ts.length; i++) if (near(i)) [Wv[i], Dv[i]] = solveCor(ts[i], i ? Wv[i - 1] : null, i ? Dv[i - 1] : null, i ? Wv[i - 1] : V3(), i ? Dv[i - 1] : V3());
+    for (let i = ts.length - 2; i >= 0; i--) if (near(i)) [Wv[i], Dv[i]] = solveCor(ts[i], Wv[i + 1], Dv[i + 1], Wv[i], Dv[i]);
+    // 고르게(움직임이 튀지 않게): 앞뒤 두 칸으로 넓힌 뒤 [1,4,6,4,1]로 세 번 거른다(약 ±0.04초)
+    const dil = a => a.map((v, i) => a.slice(Math.max(0, i - 2), i + 3).reduce((m, x) => x.length() > m.length() ? x : m, v).clone());
+    const sm = a => { let r = a; for (let pass = 0; pass < 3; pass++) r = r.map((v, i) => { const g = j => r[clamp(j, 0, r.length - 1)]; return g(i - 2).clone().add(g(i - 1).clone().multiplyScalar(4)).add(v.clone().multiplyScalar(6)).add(g(i + 1).clone().multiplyScalar(4)).add(g(i + 2)).multiplyScalar(1 / 16); }); return r; };
+    const W2 = sm(dil(Wv)), D2 = sm(dil(Dv));
+    S.COR = W2.some(v => v.lengthSq() > 1e-8) || D2.some(v => v.lengthSq() > 1e-8) ? { ts, W: W2, D: D2 } : null;
+  }
+  const corAt = t => {
+    if (!S.COR) return null; const { ts, W, D: Dd } = S.COR, n = ts.length, i = clamp(Math.floor((t - S.T0) / CORDT), 0, n - 2), u = clamp((t - ts[i]) / CORDT, 0, 1), k = sstep(0, 1, u);
+    return { w: W[i].clone().lerp(W[i + 1], k), d: Dd[i].clone().lerp(Dd[i + 1], k) };
+  };
   // 기준 곡선 값(마디 사이는 캣멀롬이라 빠르기가 끊기지 않는다)
   const rollBase = (side, t) => {
     if (!S.ROLL) return 0; const a = S.ROLL[side], n = a.length, i = clamp(Math.floor((t - S.T0) / 0.02), 0, n - 2), u = clamp((t - S.ROLL.ts[i]) / 0.02, 0, 1);
@@ -253,6 +358,8 @@ export function createRig(vrm) {
   // ── 한 순간의 자세 ──
   let useIK = true;
   // 왼손이 라켓을 잡을 때 손의 회전과 손목 자리
+  // 왼손이 손잡이 둘레로 편한 쪽을 골라 쥐는지: 라켓 목은 늘, 양손 백핸드 위쪽 손은 샷이 grip2Free일 때(모션캡처: 실제 왼팔 방향에 맞춰)
+  const holdFree = type => HOLD[type].free || (type === 'grip2' && !!S.grip2Free);
   function holdOf(type, rqW, rOrg, th = 0) {
     const sA = V3(0, 1, 0).applyQuaternion(rqW), h = HOLD[type];
     const hl = new THREE.Quaternion().setFromAxisAngle(sA, (th + (type === 'grip2' ? S.lroll || 0 : 0)) * D).multiply(rqW).multiply(gripQL.clone().invert());   // lroll: 양손 위쪽 손을 손잡이 축으로 돌려 쥔 각
@@ -312,9 +419,14 @@ export function createRig(vrm) {
     const rollTh = over?.roll ?? (collect ? 0 : rollBase('R', t));
     const roll = new THREE.Quaternion().setFromAxisAngle(sDir, rollTh * D).multiply(hq);
     const wantSweet = sweetFrom(rh, hq), wf = w * (1 - sstep(0.02, 0.16, t));
-    let miss = 0, hqA = hq, tgt = rh;
+    // 라켓이 몸을 뚫지 않게 미리 구해 둔 고침(손목에서 라켓을 꺾는 회전 w, 손을 옮기는 d. buildCor). 시간에 따라 매끄럽게 이어진다
+    const cor = collect || !GUARD.racket ? null : over?.cor || corAt(t);
+    let want = roll, rh2 = rh;
+    if (cor) { if (cor.w.lengthSq() > 1e-10) want = new THREE.Quaternion().setFromAxisAngle(cor.w.clone().normalize(), cor.w.length()).multiply(roll); rh2 = rh.clone().add(cor.d); }
+    let miss = 0, hqA = hq, tgt = rh2, rDel = null;
+    const rPole = tg => { const p = rpAt(tg); if (collect || over?.rp || !GUARD.pole) return p; if (rDel === null) rDel = limitDelta('right', tg, p); return rDel ? p.applyAxisAngle(tg.clone().sub(wp('rightUpperArm')).normalize(), rDel * D) : p; };
     for (let it = 0; it < 6; it++) {
-      miss = ik(LIMB.rightArm, tgt, rpAt(tgt));
+      miss = ik(LIMB.rightArm, tgt, rPole(tgt));
       if (collect && it === 0) {
         const cR = rollCost('right', hq, sDir, lam);
         if (two) {   // 양손이면 롤마다 왼팔을 실제로 맞춰 왼손목·왼어깨 부담도 함께 잰다
@@ -325,20 +437,22 @@ export function createRig(vrm) {
           });
         } else collect.R = ROLL_TH.map(cR);
       }
-      hqA = wrist('right', roll);
+      hqA = wrist('right', want);
       if (wf <= 0) break;
       const need = wantSweet.clone().sub(sweetFrom(V3(), hqA));
-      tgt = tgt.clone().lerp(rh.clone().add(need.sub(rh).clampLength(0, 0.2).multiplyScalar(wf)), 0.5);   // 반씩 옮겨 두 자세 사이를 오가지 않게
+      tgt = tgt.clone().lerp(rh2.clone().add(need.sub(rh2).clampLength(0, 0.2).multiplyScalar(wf)), 0.5);   // 반씩 옮겨 두 자세 사이를 오가지 않게
     }
     setFingers('right', 1);
     // 왼팔: 라켓을 잡거나(오른손을 거울에 비춘 쥐는 법) 정한 자리로 뻗는다
     const rqW = hqA.clone().multiply(gq), rOrg = GRIP_POS.clone().applyQuaternion(hqA).add(wp('rightHand'));
 
     let hd = holdOf(hold.type, rqW, rOrg);
-    const lhAt = h => V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)).lerp(h.p, tw);
-    { const lt = lhAt(hd); ik(LIMB.leftArm, lt, lp(lt)); }
-    if (collect) { const c = rollCost('left', hd.q, hd.sA, 0.0005); collect.L = ROLL_TH.map(th => HOLD[hold.type].free ? holdWgt(tw) * c(th) : 0); }
-    else if (tw > 0 && HOLD[hold.type].free) { hd = holdOf(hold.type, rqW, rOrg, rollBase('L', t)); const lt = lhAt(hd); ik(LIMB.leftArm, lt, lp(lt)); }
+    const lhAt = h => { const p = V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)); return (collect ? p : outOfTorso(p)).lerp(h.p, tw); };
+    let lDel = null;
+    const lPole = tg => { const p = lp(tg); if (collect || over?.lp || !GUARD.pole) return p; if (lDel === null) lDel = limitDelta('left', tg, p); return lDel ? p.applyAxisAngle(tg.clone().sub(wp('leftUpperArm')).normalize(), lDel * D) : p; };
+    { const lt = lhAt(hd); ik(LIMB.leftArm, lt, lPole(lt)); }
+    if (collect) { const c = rollCost('left', hd.q, hd.sA, 0.0005); collect.L = ROLL_TH.map(th => holdFree(hold.type) ? holdWgt(tw) * c(th) : 0); }
+    else if (tw > 0 && holdFree(hold.type)) { hd = holdOf(hold.type, rqW, rOrg, rollBase('L', t)); const lt = lhAt(hd); ik(LIMB.leftArm, lt, lPole(lt)); }
     wrist('left', hd.q, tw);
     setFingers('left', tw > 0 ? (1 - tw) * (has('lk') ? sample(t, 'lk')[0] : 0.2) + tw * HOLD[hold.type].curl : has('lk') ? sample(t, 'lk')[0] : 0.2);
     return { miss, hq: hqA, legMiss };
@@ -365,7 +479,7 @@ export function createRig(vrm) {
           } else if (hold.w > 0.5) {
             const hqR = new THREE.Quaternion(); B('rightHand').getWorldQuaternion(hqR);
             const rq = hqR.clone().multiply(gripAt(t)), hd = holdOf(hold.type, rq, V3()), li = lowerArmInv('left');
-            c += HOLD[hold.type].free ? Math.min(...ROLL_TH.map(th => wristCost(wristAngles('left', li.clone().multiply(holdOf(hold.type, rq, V3(), th).q))))) : wristCost(wristAngles('left', li.clone().multiply(hd.q)));
+            c += holdFree(hold.type) ? Math.min(...ROLL_TH.map(th => wristCost(wristAngles('left', li.clone().multiply(holdOf(hold.type, rq, V3(), th).q))))) : wristCost(wristAngles('left', li.clone().multiply(hd.q)));
           }
           const rot = shoulderRot(side);
           // 위팔이 몸통 뒤로 많이 넘어가거나 팔꿈치가 머리에 닿는 것도 피한다
@@ -461,6 +575,10 @@ export function createRig(vrm) {
     autoPoles();
     toSwivel();
     buildRoll();
+    // 라켓 비키기 고침: 정의에 미리 구워 둔 것(cor)이 있고 키를 고치지 않았으면 그것을, 아니면 지금 구한다
+    if (d.noCor) S.COR = null;   // 이 샷은 비키기를 쓰지 않는다(빠른 팔로스로에서 고침이 오히려 튄다: 서브·스매시)
+    else if (d.cor && keys === d.keys && GUARD.racket) { const c = d.cor, n = c.w.length / 3, ts = [], W = [], Dd = []; for (let i = 0; i < n; i++) { ts.push(S.T0 + i * c.dt); W.push(V3(c.w[3 * i], c.w[3 * i + 1], c.w[3 * i + 2])); Dd.push(V3(c.d[3 * i], c.d[3 * i + 1], c.d[3 * i + 2])); } S.COR = { ts, W, D: Dd }; }
+    else buildCor();
     S.FAR = (BALL_FROM[S.ball] || BALL_FROM.ground)(S.C0);
     if (S.ball === 'toss') { pose(S.toss, 'mid'); S.tossAt = handBall(); }
     S.lookStart = null; pose(S.T0, 'mid'); S.lookStart = S.ball === 'toss' && S.T0 < S.toss ? handBall() : BALL_PATH[S.ball](S.T0, S.C0, true);
@@ -518,7 +636,7 @@ export function createRig(vrm) {
   return {
     vrm, B, BONES, ALLB, REST, HIPS0, ARM, ANKLE, LIMB, racket, SWEET, GRIP_POS, HOLD, gripQL, gripOf,
     get S() { return S; }, setShot, useShot: s => { S = s; racket.matrix.copy(gripOf(s.bevel)).setPosition(GRIP_POS); },
-    pose, ik, wrist, wristAngles, wristCost, lowerArmInv, shoulderRot, elbowIn, swRef, swOf, poleFromSw, wrapD,
+    GUARD, pose, ik, wrist, wristAngles, wristCost, lowerArmInv, shoulderRot, elbowIn, armViol, racketPen, swRef, swOf, poleFromSw, wrapD,
     sample, sampleQ, has, chan, ballsOf, bevelAt, gripAt, handAt, racketAt, holdAt, holdOf, racketQuatFor, handQuatFor, sweetFrom, handBall,
     lookAt, lookTarget, BALL_PATH, BALL_FROM, wp, setFingers, toSwivel, buildRoll, autoPoles, autoFaces, rollCost, ROLL_TH, rollBase,
     corrW, faceW, tiltOf, setIK: v => { useIK = v; }, getIK: () => useIK,
