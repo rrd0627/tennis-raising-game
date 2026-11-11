@@ -765,7 +765,7 @@ function trainGrid() {
 // 설정. 지우기 전에 한 번 더 묻는다
 function settingsHTML() {
   if (V.sheet === 'restart') return `<div class="overlay ev"><div class="sheet event"><h3>맨 처음부터 할까요?</h3><p>지금까지의 기록이 모두 사라지고 되돌릴 수 없어요.</p><div class="choices"><button class="btn" data-a="cancelsheet">계속 할게요</button><button class="btn danger" data-a="restart">처음부터 하기</button></div></div></div>`;
-  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1"><h3>설정</h3>${V.check ? '<button class="btn primary" data-a="checkhome">확인할 장면 목록으로</button>' : ''}<button class="btn danger" data-a="restartAsk">맨 처음부터 하기</button><p class="hint">타이틀 화면으로 돌아가 이름을 정하는 것부터 다시 시작합니다.</p><button class="btn" data-a="cancelsheet">닫기</button></div></div>`;
+  return `<div class="overlay" data-a="closesheet"><div class="sheet" data-stop="1"><h3>설정</h3>${V.check ? '<button class="btn primary" data-a="checkhome">확인할 장면 목록으로</button>' : ''}<button class="btn danger" data-a="restartAsk">맨 처음부터 하기</button><p class="hint">타이틀 화면으로 돌아가 이름을 정하는 것부터 다시 시작합니다.</p><button class="btn" data-a="cancelsheet">닫기</button><p class="hint credits">출처 · 3D 선수 동작: Tennis-MoCap(github.com/jdpulgarin/Tennis-MoCap, CC BY-SA 3.0)을 바꿔 썼고 바꾼 동작도 CC BY-SA 3.0입니다 · 3D 선수 모델: VRoid 샘플(© pixiv Inc., VRM 공개 라이선스 1.0) · three.js, three-vrm(MIT)</p></div></div>`;
 }
 // 못 고르는 버튼을 눌렀을 때 하는 혼잣말
 function nopeLine(id) {

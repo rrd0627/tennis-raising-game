@@ -2,3 +2,5 @@ node_modules/
 dist/
 art/incoming/
 tools/char3d/models/
+tools/char3d/mocap/raw/
+tools/char3d/mocap/clips.json

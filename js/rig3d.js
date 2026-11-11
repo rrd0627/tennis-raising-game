@@ -78,7 +78,7 @@ export function createRig(vrm) {
   }
 
 
-  // 지금 샷
+  // 지금 샷. rollK: 라켓을 축으로 돌리는 것을 얼마나 아낄지(모션캡처 샷은 손목 회전이 실제라 크게)
   let S = null;
   const sampleKeys = (L, t, key, sub) => {
     const n = L.length; t = clamp(t, L[0].t, L[n - 1].t);
@@ -283,7 +283,7 @@ export function createRig(vrm) {
       const hk = side[0] + 'heel';
       let heel = has(hk) ? Math.max(0, sample(t, hk)[0]) : 0;
       const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
-      if (overL > 0) heel = Math.min(38, heel + 700 * overL * overL / (overL + 0.01));
+      if (overL > 0) heel = Math.max(heel, Math.min(38, heel + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
       legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));
       // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
       const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
@@ -302,9 +302,11 @@ export function createRig(vrm) {
       const want0 = S.C0.clone().add(dl).sub(sweetFrom(V3(), hq0));
       rh.add(want0.sub(V3(...S.K7.rh)).sub(S0).multiplyScalar(w));
     }
-    const lp = tg => over?.lp || (has('lsw') ? poleFromSw('left', tg.clone().sub(wp('leftUpperArm')).normalize(), sample(t, 'lsw')[0]) : V3(...sample(t, 'lp')));
-    const rpAt = tg => over?.rp || (has('rsw') ? poleFromSw('right', tg.clone().sub(wp('rightUpperArm')).normalize(), sample(t, 'rsw')[0]) : V3(...sample(t, 'rp')));
-    const sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gq)), lam = 0.0005 + 0.02 * faceW(t);
+    // 모션캡처 샷(chestPoles): 팔꿈치 쪽을 가슴 기준 방향(rpc/lpc)으로 이어서 쓴다(팔이 위 뒤를 가리켜도 스위블 기준이 흔들리지 않게)
+    const chq = S.chestPoles ? new THREE.Quaternion() : null; if (chq) B('upperChest').getWorldQuaternion(chq);
+    const lp = tg => over?.lp || (chq && has('lpc') ? V3(...sample(t, 'lpc')).applyQuaternion(chq) : has('lsw') ? poleFromSw('left', tg.clone().sub(wp('leftUpperArm')).normalize(), sample(t, 'lsw')[0]) : V3(...sample(t, 'lp')));
+    const rpAt = tg => over?.rp || (chq && has('rpc') ? V3(...sample(t, 'rpc')).applyQuaternion(chq) : has('rsw') ? poleFromSw('right', tg.clone().sub(wp('rightUpperArm')).normalize(), sample(t, 'rsw')[0]) : V3(...sample(t, 'rp')));
+    const sDir = V3(0, 1, 0).applyQuaternion(hq.clone().multiply(gq)), lam = 0.0005 + 0.02 * faceW(t) + (S.rollK || 0);
     const hold = holdAt(t), tw = hold.w, two = hold.type === 'grip2' && tw > 0;
     // 라켓을 축으로 돌린 양(롤)은 미리 구한 기준 곡선에서. 임팩트 앞뒤에는 실제(손목 범위에 묶인) 라켓의 가운데가 원래 자리(공)에 오도록 손목 자리를 다시 잡는다
     const rollTh = over?.roll ?? (collect ? 0 : rollBase('R', t));
@@ -352,7 +354,7 @@ export function createRig(vrm) {
         const t = k.t; pose(t, 'mid');
         const L = LIMB[side + 'Arm'], target = wp(side + 'Hand'), ax = target.clone().sub(wp(L.up)).normalize();
         if (!k[flag]) { const p = V3(...k[key]).normalize(); return [{ p, sw: swOf(side, ax, p), c: 0 }]; }
-        const hold = holdAt(t), lam = 0.0005 + 0.02 * faceW(t), out = [];
+        const hold = holdAt(t), lam = 0.0005 + 0.02 * faceW(t) + (S.rollK || 0), out = [];
         for (let a = -180; a < 180; a += 15) {
           const p = poleFromSw(side, ax, a);
           ik(L, target, p);
@@ -448,6 +450,8 @@ export function createRig(vrm) {
     for (const k of S.K) { if (k.rp === 'auto') { k.rpAuto = true; k.rp = [0, -1, -0.3]; } if (k.lp === 'auto') { k.lpAuto = true; k.lp = [0.6, -1, 0]; } }
     S.CH = {};
     // 가슴 기준으로 정한 팔꿈치 쪽(rpc/lpc: 가슴의 +x 왼쪽, +y 위, +z 앞)을 그 키 때의 세계 방향으로 바꾼다
+    for (const k of S.K) { if (k.rpc && k.rp === undefined) k.rp = k.rpc.slice(); if (k.lpc && k.lp === undefined) k.lp = k.lpc.slice(); }   // 바꾸는 동안 쓸 임시 값
+    S.CH = {};
     for (const [ck, key, flag] of [['rpc', 'rp', 'rpAuto'], ['lpc', 'lp', 'lpAuto']]) for (const k of S.K.filter(k => k[ck])) {
       pose(k.t, 'mid'); const ch = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(ch);
       k[key] = V3(...k[ck]).normalize().applyQuaternion(ch).toArray(); k[flag] = false;

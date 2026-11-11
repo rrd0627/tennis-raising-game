@@ -6,6 +6,7 @@
 // rf/lf: 발 앞꿈치(엄지발가락 뿌리 밑 바닥) [x, z, 발끝 방향, 들기]. 디딘 발은 앞꿈치를 축으로 돈다. rheel/lheel: 뒤꿈치 드는 각도
 // rh: 오른손목 자리, s/f: 라켓 방향(손잡이→머리)과 줄 면 앞, rp: 팔꿈치가 향하는 쪽('auto'면 손목·어깨가 편하고 팔꿈치가 몸에 닿지 않는 쪽을 불러올 때 찾는다)
 // lh: 왼손목 자리, 'throat'면 라켓 목, 'grip2'면 손잡이 위쪽(양손)을 잡는다. lp: 왼팔꿈치 쪽('auto' 가능). lk: 왼손가락 굽힘(0~1, 공을 쥘 때 등)
+import { MOCAP } from './swings_mocap.js';
 export const SHOTS = [];
 // 포핸드: 스플릿 스텝 → 오른발을 옆으로 내디디며 유닛턴 → 라켓을 위로 들었다가 떨어뜨려 → 팔꿈치를 굽힌 채 끌고 와 몸 앞에서 뻗어 맞히고 → 왼어깨 뒤로 와이퍼 피니시
 const FH_READY = { hip: [0, -0.06, 0, 0], chest: [0, 9, 0], rf: [-0.2, 0.11, -6, 0], lf: [0.2, 0.11, 6, 0], rheel: [0], rh: [-0.1, 0.98, 0.17], s: [0.25, 0.5, 1], f: [1, 0, -0.25], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] };
@@ -242,3 +243,14 @@ SHOTS.push({
   step: { right: [-1.14, -0.98, 0.38, 0.56], left: [-0.8, -0.65, 0.7, 0.84], body: [-1.15, -0.6, 0.4, 0.8] }, STEP: { body: [0.7, 0.8], right: [0.75, 0.85], left: [0.7, 0.8] },
   cam: [0.1, 0.5, 0],
 });
+
+// 모션캡처 키(js/swings_mocap.js, CC BY-SA 3.0)가 있으면 그것을 쓴다. 손으로 짠 키는 handKeys로 남겨 시험 화면에서 견줘 본다
+for (const s of SHOTS) {
+  s.handKeys = s.keys; s.handToss = s.toss; s.handBevel = s.bevel;
+  const m = MOCAP[s.id];
+  if (m) {
+    // 공 쪽으로 옮겨 디디는 때(step)가 모션캡처 동작보다 먼저 시작하지 않게(한 바퀴 이음새에서 발이 튀지 않게)
+    const T0 = m.keys[0].t; s.handStep = s.step;
+    s.step = Object.fromEntries(Object.entries(s.step).map(([w, [a, b, c, d]]) => { const a2 = Math.max(a, T0 + 0.05), b2 = Math.max(b, a2 + 0.12); return [w, [a2, b2, Math.max(c, b2 + 0.05), Math.max(d, b2 + 0.2)]]; }));
+    s.keys = m.keys; s.src = m.src; if (m.bevel != null) s.bevel = m.bevel; s.rollK = m.rollK || 0; s.chestPoles = !!m.chestPoles; s.handLroll = s.lroll; if (m.lroll != null) s.lroll = m.lroll; if (m.toss != null) s.toss = m.toss; }
+}

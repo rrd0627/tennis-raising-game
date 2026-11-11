@@ -81,6 +81,12 @@ export class Players3D {
     const rigs = vrms.map(v => createRig(v));
     // 스윙 준비(몸 크기에만 달려 있으니 한 번 해서 넷이 같이 쓴다). 한 샷씩 쉬어 가며(화면이 멈추지 않게)
     for (const d of SHOTS) { rigs[0].setShot(d); this.shots[d.id] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false; }
+    // 기다리는 자세는 손으로 짠 준비 자세(모션캡처 스윙의 첫 자세는 이미 준비 동작 중이라): 뒤에서는 포핸드, 네트 앞에서는 발리 준비
+    for (const [rid, sid] of [['readyB', 'fh'], ['readyN', 'fv']]) {
+      const d = SHOTS.find(x => x.id === sid);
+      rigs[0].setShot({ ...d, id: rid, keys: d.handKeys || d.keys, bevel: d.handBevel ?? d.bevel, toss: d.handToss ?? d.toss, step: d.handStep ?? d.step, lroll: d.handLroll, rollK: 0, chestPoles: false });
+      this.shots[rid] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false;
+    }
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
@@ -131,7 +137,7 @@ export class Players3D {
     let sw = c.sw;
     if (sw && this.bt > sw.tImpact + sw.tail) { if (sw.id === 'sv') c.serve = null; c.sw = sw = null; c.release = null; }
     const inSw = sw && this.bt >= sw.tStart;
-    const id = inSw ? sw.id : c.serve ? 'sv' : Math.abs(p.z) < 6.5 ? 'fv' : 'fh', S = this.shots[id];
+    const id = inSw ? sw.id : c.serve ? 'sv' : Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB', S = this.shots[id];
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : S.T0;
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
@@ -190,7 +196,10 @@ export class Players3D {
       R.B('hips').position.lerpVectors(c.snap.hips, R.B('hips').position.clone(), u);
       c.fade = Math.max(0, c.fade - pdt);
     }
-    c.last = { q: bones.map(b => b.quaternion.clone()), hips: R.B('hips').position.clone() };
+    // 라켓을 쥔 법(손잡이 둘레 각)도 바뀌는 동안 부드럽게
+    const rk = R.racket, rq = new THREE.Quaternion().setFromRotationMatrix(rk.matrix);
+    if (c.fade > 0 && c.snap?.rq) { rq.slerpQuaternions(c.snap.rq, rq.clone(), sstep(0, 1, 1 - c.fade / FADE)); rk.matrix.compose(R.GRIP_POS, rq, V3(1, 1, 1)); }
+    c.last = { q: bones.map(b => b.quaternion.clone()), hips: R.B('hips').position.clone(), rq };
     // 코트 위로
     vrm.scene.position.set(rx, p.hop, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
     vrm.scene.updateMatrixWorld(true);

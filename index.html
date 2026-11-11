@@ -19,7 +19,7 @@
   } catch { /* 번호를 못 받으면 그냥 연다 */ }
   const base = new URL('.', location.href).href;
   const imports = { three: base + 'vendor/three.module.min.js' };
-  for (const f of ['art', 'checks', 'commentary', 'data', 'game', 'main', 'match3d', 'stadium', 'ball', 'rally', 'scenes', 'sim', 'ui', 'players3d', 'rig3d', 'swings']) imports[base + 'js/' + f + '.js'] = base + 'js/' + f + '.js' + q;
+  for (const f of ['art', 'checks', 'commentary', 'data', 'game', 'main', 'match3d', 'stadium', 'ball', 'rally', 'scenes', 'sim', 'ui', 'players3d', 'rig3d', 'swings', 'swings_mocap']) imports[base + 'js/' + f + '.js'] = base + 'js/' + f + '.js' + q;
   const map = document.createElement('script');
   map.type = 'importmap'; map.textContent = JSON.stringify({ imports });
   document.head.append(map);

@@ -103,7 +103,13 @@ function withEdits(keys, id) {
   return K.sort((a, b) => a.t - b.t);
 }
 // 샷을 고른다: 정의 위에 관절 잡기에서 고친 것을 덮어 리그가 준비한다
-function setShot(id) { const d = SHOTS.find(s => s.id === id) || SHOTS[0]; R.setShot(d, withEdits(d.keys, d.id)); S = R.S; }
+// 동작 출처: 모션캡처(기본) 또는 손으로 짠 것(?src=hand, '동작' 버튼). 손으로 짠 것은 샷 이름 뒤에 ':hand'를 붙여 고친 것도 따로 둔다
+let useHand = q.get('src') === 'hand';
+function setShot(id) {
+  const base = String(id).replace(/:hand$/, ''), d = SHOTS.find(s => s.id === base) || SHOTS[0];
+  const def = useHand ? { ...d, id: d.id + ':hand', toss: d.handToss ?? d.toss, bevel: d.handBevel ?? d.bevel, rollK: 0, lroll: d.handLroll, chestPoles: false, step: d.handStep ?? d.step } : d;
+  R.setShot(def, withEdits(useHand ? d.handKeys : d.keys, def.id)); S = R.S;
+}
 
 // ── 화면 ──
 // 시점: 카메라 자리와 보는 곳. 세로 화면(휴대폰)에서는 가로로 덜 보이므로 뒤로 물러선다. 샷마다 보는 곳을 조금 옮긴다(cam)
@@ -139,9 +145,10 @@ function ballButtons() {
 }
 function chooseShot(id) { setShot(id); ballButtons(); clock = 0; rep = 0; trailHist.length = 0; }
 setShot(q.get('shot') || 'fh');
-for (const s of SHOTS) btn(barS, s.name, () => chooseShot(s.id), 'sh', s.id === S.id);
+for (const s of SHOTS) btn(barS, s.name, () => chooseShot(s.id), 'sh', s.id === S.id.replace(/:hand$/, ''));
 ballButtons();
 for (const k of Object.keys(CAMS)) btn(bar2, CAM_NAME[k], () => camK = k, 'c', camK === k);
+const srcBtn = btn(bar3, useHand ? '동작: 손으로 짠 것' : '동작: 모션캡처', () => { useHand = !useHand; srcBtn.textContent = useHand ? '동작: 손으로 짠 것' : '동작: 모션캡처'; chooseShot(S.id.replace(/:hand$/, '')); });
 const ikBtn = btn(bar3, 'IK 켬', () => { R.setIK(useIK = !useIK); ikBtn.textContent = useIK ? 'IK 켬' : 'IK 끔'; ikBtn.classList.toggle('on', useIK); }, null, useIK);
 if (!useIK) ikBtn.textContent = 'IK 끔';
 for (const sp of [1, 0.5, 0.25]) btn(bar3, sp === 1 ? '보통 빠르기' : `${sp}배`, () => speed = sp, 's', speed === sp);
@@ -172,7 +179,7 @@ function tick(dt) {
   hitMark.material.color.set(hit ? 0x33dd77 : 0xff3366);
   applyCam(camK);
   if (ED.on) { edUpdate(t); renderer.render(scene, cam); return; }
-  note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작은 손으로 짠 임시 동작(실제는 촬영 동작으로)`;
+  note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작: ${useHand ? '손으로 짠 임시 동작' : '모션캡처 ' + (SHOTS.find(s => s.id === S.id)?.src || '') + ' · 출처 Tennis-MoCap(CC BY-SA 3.0)'}`;
   renderer.render(scene, cam);
 }
 requestAnimationFrame(frame);
@@ -242,8 +249,8 @@ function applyDrag(id, P, t) {
     const side = id === 'rp' ? 'right' : 'left', sk = id === 'rp' ? 'rsw' : 'lsw';
     const sh = wp(side + 'UpperArm'), ax = wp(side + 'Hand').sub(sh).normalize(), pole = P.clone().sub(sh);
     const cur = has(sk) ? sample(t, sk)[0] : 0;
-    k[sk] = [cur + wrapD(swOf(side, ax, pole) - cur)]; k[id] = r3(pole.normalize().toArray()); delete k[id + 'c']; k[id + 'Auto'] = false;
-    setEdit(t, id, k[id]);
+    if (S.chestPoles) { const cq = new THREE.Quaternion(); B('upperChest').getWorldQuaternion(cq); k[id + 'c'] = r3(pole.normalize().applyQuaternion(cq.invert()).toArray()); setEdit(t, id + 'c', k[id + 'c']); }
+    else { k[sk] = [cur + wrapD(swOf(side, ax, pole) - cur)]; k[id] = r3(pole.normalize().toArray()); delete k[id + 'c']; k[id + 'Auto'] = false; setEdit(t, id, k[id]); }
   } else if (id === 'rk') {
     const o = V3().applyMatrix4(racket.matrixWorld), sv = P.clone().sub(o).normalize();
     const f0 = V3(0, 0, 1).applyQuaternion(racketAt(t)); let f = f0.sub(sv.clone().multiplyScalar(f0.dot(sv)));
@@ -286,7 +293,7 @@ function edBars() {
     btn(barR, '오른어깨 내리기 5°', () => nudge('chest', 2, 5)); btn(barR, '오른어깨 올리기 5°', () => nudge('chest', 2, -5));
   }
   if (sel === 'lh') { btn(barR, '왼손: 라켓 목 잡기', () => setVal('lh', 'throat')); btn(barR, '왼손: 손잡이 위 잡기(양손)', () => setVal('lh', 'grip2')); btn(barR, '왼손: 놓기', () => setVal('lh', r3(wp('leftHand').toArray()))); }
-  if (sel === 'rp' || sel === 'lp') btn(barR, '이 키 팔꿈치는 알아서', () => setVal(sel, 'auto'));
+  if ((sel === 'rp' || sel === 'lp') && !S.chestPoles) btn(barR, '이 키 팔꿈치는 알아서', () => setVal(sel, 'auto'));
 }
 function toFree() {
   if (camK === 'free') return;
@@ -345,7 +352,7 @@ if (q.get('edit') === '1') edToggle(true);
 // 관절 검사(개발용): 자세를 시간마다 만들어 관절 각도와 튀는 곳을 잰다. 샷마다 값이 바뀌므로 읽을 때마다 지금 샷 것을 준다
 window.__dbg = {
   wrist, LIMB, ik, sample, sampleQ, handQuatFor, gripQL, GRIP_POS, HOLD, THREE, pose, lookAt, lookTarget, sweetFrom, B, BONES, ALLB, racket, vrm, SWEET, ANKLE, SHOTS, shoulderRot, elbowIn, handBall,
-  setIK: v => { R.setIK(useIK = v); }, setShot: id => chooseShot(id), ED, HANDLES, applyDrag, commitEdits, edToggle, cam, get EDITS() { return EDITS; },
+  R, setIK: v => { R.setIK(useIK = v); }, setShot: id => chooseShot(id), ED, HANDLES, applyDrag, commitEdits, edToggle, cam, get EDITS() { return EDITS; },
   get S() { return S; }, get K() { return S.K; }, get T0() { return S.T0; }, get T1() { return S.T1; }, get LOOP() { return S.LOOP; }, get C0() { return S.C0; },
   get ORDER() { return S.order; }, get BALLS() { return ballsOf(); }, get gripQ() { return gripAt(0); }, gripAt, handAt, racketAt, bevelAt,
   ballAt: (t, C, hit) => S.ball === 'toss' && t < S.toss ? handBall() : BALL_PATH[S.ball](t, C, hit),
