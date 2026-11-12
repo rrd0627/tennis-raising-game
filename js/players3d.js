@@ -110,7 +110,7 @@ export class Players3D {
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
-      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0], gait: { on: false, t: 0 }, hipP: null, chestP: null });
+      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0], gait: { on: false, t: 0 }, hipP: null, chestP: null, sep: [0, 0] });
     }
     this.bones = rigs[0].ALLB;
     this.ready = true;
@@ -152,6 +152,21 @@ export class Players3D {
     if (!this.ready) return;
     const v = this.view, pdt = dt * v.speed;
     this.bt += pdt;
+    // 3D 선수끼리 겹치지 않게(사용자 2026-11-12: 몸이 겹친다): 65cm보다 가까우면 서로 밀어낸다(초속 1.5m까지)
+    for (let i = 0; i < 4; i++) {
+      const a = this.list[i]; if (!a.rp) continue;
+      let px = 0, pz = 0;
+      for (let j = 0; j < 4; j++) {
+        const b = this.list[j]; if (j === i || !b.rp) continue;
+        const dx = a.rp[0] - b.rp[0], dz = a.rp[1] - b.rp[1], d = Math.hypot(dx, dz);
+        if (d < 0.65) { const k = (0.65 - d) / 2 / Math.max(d, 0.05); px += dx * k; pz += dz * k; }
+      }
+      const mx = 1.5 * pdt, L = Math.hypot(px - a.sep[0], pz - a.sep[1]);
+      const tx = px === 0 && pz === 0 ? 0 : px, tz = px === 0 && pz === 0 ? 0 : pz;
+      const dx2 = tx - a.sep[0], dz2 = tz - a.sep[1], L2 = Math.hypot(dx2, dz2);
+      if (L2 > mx) { a.sep[0] += dx2 * mx / L2; a.sep[1] += dz2 * mx / L2; } else { a.sep[0] = tx; a.sep[1] = tz; }
+      void L;
+    }
     for (let i = 0; i < 4; i++) this.updateOne(i, pdt, dt);
   }
 
@@ -168,16 +183,17 @@ export class Players3D {
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
     if (md > 1e-4) c.dir = [mdx / md, mdz / md];
     // 몸(뿌리)이 움직이는 빠르기: 그림 선수 자리 + 공에 맞추려고 옮긴 만큼(c.off). 발놀림과 몸 돌리기에 쓴다
-    const rx0 = p.x + c.off.x, rz0 = p.z + c.off.z;
+    const rx0 = p.x + c.off.x + c.sep[0], rz0 = p.z + c.off.z + c.sep[1];
     // 포인트 사이에 자리를 한 번에 옮긴 것(순간이동)은 달린 것이 아니다: 발을 새 자리에 바로 놓는다(빠르기를 초속 24m로 읽어 발이 몇 m 밖으로 날아갔다)
-    const tele = md > Math.max(0.35, pdt * 12);
+    // 순간이동은 3D 몸 자리로 판단한다(그림 선수만 옮겨지고 3D 몸은 그대로일 때 발을 옮기면 발만 순간이동한다)
+    const tele = !!c.rp && Math.hypot(rx0 - c.rp[0], rz0 - c.rp[1]) > Math.max(0.35, pdt * 12), spriteJump = md > Math.max(0.35, pdt * 12);
     if (tele) { c.v = [0, 0]; c.pv = [0, 0]; c.rp = null; c.ft.left.init = c.ft.right.init = false; }
     if (pdt > 0 && c.rp) { const k = Math.min(1, pdt * 12); c.v[0] += ((rx0 - c.rp[0]) / pdt - c.v[0]) * k; c.v[1] += ((rz0 - c.rp[1]) / pdt - c.v[1]) * k; }
     { const vv = Math.hypot(c.v[0], c.v[1]); if (vv > 7) { c.v[0] *= 7 / vv; c.v[1] *= 7 / vv; } }
     c.rp = [rx0, rz0];
     const spd = Math.hypot(c.v[0], c.v[1]), mv = sstep(0.4, 2.5, spd);
     // 선수가 실제로 달리는 빠르기(그림 선수 자리만. 공에 맞추려고 옮긴 양은 빼야 몸 돌리기와 서로 물고 돌지 않는다)
-    if (pdt > 0 && !tele) { const k = Math.min(1, pdt * 10); c.pv[0] += (mdx / pdt - c.pv[0]) * k; c.pv[1] += (mdz / pdt - c.pv[1]) * k; }
+    if (pdt > 0 && !tele && !spriteJump) { const k = Math.min(1, pdt * 10); c.pv[0] += (mdx / pdt - c.pv[0]) * k; c.pv[1] += (mdz / pdt - c.pv[1]) * k; }
     const rspd = Math.hypot(c.pv[0], c.pv[1]);
     // 바라보는 쪽: 네트 쪽. 스윙할 때는 보내는 쪽으로 조금(반쯤, 25도까지)
     let yawT = base;
@@ -214,15 +230,23 @@ export class Players3D {
     // 서브: 임팩트까지 앞꿈치는 베이스라인 뒤에(사용자 2026-11-11: 서브할 때 라인 밟지 않게)
     const svSide = id === 'sv' && (c.serve || sw)?.contact ? Math.sign((c.serve || sw).contact.z) : 0, toeK = svSide ? 1 - sstep(0, 0.1, tc) : 0;
     const toIn = sw ? sw.tImpact - this.bt : 9, adj = !!sw && sw.id !== 'sv' && toIn > 0.25 && toIn < 0.9 && spd < 0.6;
-    const ctx = { rx: rx0, rz: rz0, cy, sy, yawD: c.yaw / D, pw, clip: pw < 0.5, adj, air: !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air), spd, bob: 0, pdt };
+    const ctx = { rx: rx0, rz: rz0, cy, sy, yawD: c.yaw / D, pw, clip: pw < 0.5, adj, air: !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air), airT: c.jmp?.air, spd, bob: 0, pdt };
     this.planSteps(c, ctx);
     const over = {
       foot: (side, f) => {
         if (jw) { const sd = side === 'right' ? -1 : 1; f = [f[0] + sd * jw, f[1], f[2] + sd * jw * 120, f[3]]; }   // 스플릿 착지: 발을 벌리고 발끝을 조금 밖으로
         const o = this.footOut(c, side, f, ctx);
         if (toeK > 0) {
-          const wz = rz0 + K * (-o[0] * sy + o[1] * cy), over_ = BASELINE + TOE_GAP - wz * svSide;
-          if (over_ > 0) { const dz = over_ * toeK * svSide, dx = 0; o[0] += (dx * cy - dz * sy) / K; o[1] += (dx * sy + dz * cy) / K; }
+          const wz = rz0 + K * (-o[0] * sy + o[1] * cy), over_ = BASELINE + TOE_GAP - wz * svSide, F = c.ft[side];
+          if (over_ > 0.005) {
+            if (!ctx.clip && !F.sw && !F.air) {
+              // 서브 준비 중 라인 안에 디딘 발은 라인 뒤로 한 걸음 물러나 딛는다(한 프레임에 옮기면 순간이동처럼 보였다)
+              F.sw = { t: 0, T: Math.max(0.18, over_ / 2), fx: F.x, fz: F.z, fy: F.y, tx: F.x, tz: F.z + (over_ + 0.02) * svSide, ty: F.y, h: 0.05 };
+            } else if (ctx.clip) {
+              // 토스 중: 라인 뒤에 붙여 둔다(디딘 자리도 같이 옮겨 다음 프레임과 어긋나지 않게)
+              const dz = over_ * toeK * svSide; o[0] += (-dz * sy) / K; o[1] += (dz * cy) / K; if (!F.sw) F.z += dz;
+            }
+          }
         }
         return o;
       },
@@ -252,7 +276,7 @@ export class Players3D {
         const mx = clamp(left > 0.08 && w > 0.5 ? d.length() / left : 0, 3, 6) * pdt;
         if (d.length() > mx) d.setLength(mx); c.off.add(d);
       }   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
-    } else { const L = c.off.length(), mx = 2.2 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때도 초속 2.2m까지
+    } else { const L = c.off.length(), mx = 1.3 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때는 초속 1.3m까지(그림 선수가 뛰는 빠르기에 더해져 휙 움직였다)
     // 스윙 구간(동작의 발을 따르는 동안)에는 몸 자리를 멈춘다. 디딘 발과 몸이 벌어지지 않게(사용자 2026-11-12: 발이 미끄러진다). 공에 맞추는 이동은 그 전에 끝낸다
     if (inSw && sw.id !== 'sv' && pw < 0.5) { if (!c.hold) c.hold = [p.x + c.off.x, p.z + c.off.z]; c.off.set(c.hold[0] - p.x, 0, c.hold[1] - p.z); } else c.hold = null;
     // 자세는 리그 기준(제자리, 돌리지 않음)으로 만들고 나서 코트 위로 옮긴다
@@ -298,9 +322,19 @@ export class Players3D {
     const vlx = c.v[0] * x.cy - c.v[1] * x.sy, vlz = c.v[0] * x.sy + c.v[1] * x.cy, spd = x.spd;   // 몸 기준 빠르기(+x 왼쪽, +z 앞)
     const lateral = Math.abs(vlx) > Math.abs(vlz) * 0.8;
     const mode = spd < 0.35 ? 'idle' : lateral ? (spd > 1.9 ? 'cross' : 'side') : spd > 1.6 ? 'run' : 'walk';
+    g.mode = mode;
     const toW = (a, b) => [x.rx + K * (a * x.cy + b * x.sy), x.rz + K * (-a * x.sy + b * x.cy)];
-    const start = (side, tx, tz, ty, T, h) => {
+    const toR = (wx, wz) => { const dx = (wx - x.rx) / K, dz = (wz - x.rz) / K; return [dx * x.cy - dz * x.sy, dx * x.sy + dz * x.cy]; };
+    const noCross = (side, tx, tz) => {
+      const O = c.ft[side === 'left' ? 'right' : 'left'], ot = O.sw ? [O.sw.tx, O.sw.tz] : [O.x, O.z], rt = toR(tx, tz), ro = toR(ot[0], ot[1]);
+      if (side === 'left' && rt[0] < ro[0] + 0.12) rt[0] = ro[0] + 0.12;
+      if (side === 'right' && rt[0] > ro[0] - 0.12) rt[0] = ro[0] - 0.12;
+      return toW(rt[0], rt[1]);
+    };
+    const start = (side, tx, tz, ty, T, h, cross = false) => {
+      if (!cross) [tx, tz] = noCross(side, tx, tz);
       const F = c.ft[side], len = Math.hypot(tx - F.x, tz - F.z);
+      T = Math.max(T, len / clamp(1.5 + 1.2 * x.spd, 3, 8));   // 발의 평균 빠르기는 몸 빠르기 + 알맞게(한 프레임에 크게 튀지 않게)
       F.sw = { t: 0, T, fx: F.x, fz: F.z, fy: F.y, tx, tz, ty, h: h ?? (0.03 + 0.05 * Math.min(1, len / 0.7)), re: null };
       c.lastSide = side; c.lastStep = bt; g.t = 0;
     };
@@ -309,6 +343,14 @@ export class Players3D {
       if (F.sw || Math.hypot(F.x - x.rx, F.z - x.rz) < 0.72) continue;
       let [tx, tz] = toW(F.fp[0], F.fp[1]); tx += c.v[0] * 0.2; tz += c.v[1] * 0.2;
       start(side, tx, tz, F.fp[2] + x.yawD, 0.16, 0.06);
+    }
+    // 몸이 크게 돌아(크로스오버 뒤 다시 설 때 등) 디딘 두 발이 몸 기준으로 엇갈리면 바로 한 걸음 옮겨 바로잡는다(다리가 겹치지 않게)
+    if (!L.sw && !Rf.sw && mode !== 'cross') {
+      const lr = toR(L.x, L.z), rr = toR(Rf.x, Rf.z);
+      if (lr[0] < rr[0] + 0.04) {
+        const side = Math.abs(lr[0] - L.fp[0]) > Math.abs(rr[0] - Rf.fp[0]) ? 'left' : 'right', F = c.ft[side];
+        const [tx, tz] = toW(F.fp[0], F.fp[1]); start(side, tx, tz, F.fp[2] + x.yawD, 0.2, 0.06); return;
+      }
     }
     if (mode === 'idle') {
       // 멈춰 있을 때: 자세가 원하는 자리에서 멀어진 발만 한 걸음(한 번에 한 발). 칠 공을 기다릴 때는 1초에 약 2.8번 잔발
@@ -335,8 +377,8 @@ export class Players3D {
     // 딛는 자리: 이 발이 땅에 있는 동안의 가운데쯤 몸이 올 자리 + 이 발의 자리(모드별 폭)
     const sd = side === 'left' ? 1 : -1, lead = lateral && Math.sign(vlx) === sd;
     let ox = F.fp[0], oz = F.fp[1];
-    if (mode === 'run') { ox = sd * 0.1; oz = 0; }
-    else if (mode === 'walk') { ox = sd * 0.12; oz = 0.02; }
+    if (mode === 'run') { ox = sd * 0.14; oz = 0; }   // 두 발 폭을 너무 좁히면 무릎이 스친다
+    else if (mode === 'walk') { ox = sd * 0.14; oz = 0.02; }
     else if (mode === 'side') { ox = sd * 0.24; oz = 0.05; }
     else if (mode === 'cross') { ox = lead ? sd * 0.24 : -sd * 0.06; oz = lead ? 0.02 : 0.16; }   // 뒷발은 앞발 앞으로 엇갈려 딛는다
     const ahead = Ts + Tsw / 2;
@@ -344,7 +386,7 @@ export class Players3D {
     const len = Math.hypot(tx - F.x, tz - F.z), maxL = 1.8;
     if (len > maxL) { tx = F.x + (tx - F.x) * maxL / len; tz = F.z + (tz - F.z) * maxL / len; }
     const h = mode === 'run' ? 0.1 + 0.02 * spd : mode === 'cross' ? 0.08 : mode === 'side' ? 0.05 : 0.06;
-    start(side, tx, tz, F.fp[2] + x.yawD + (mode === 'cross' && !lead ? -sd * 25 : 0), Tsw, h);
+    start(side, tx, tz, F.fp[2] + x.yawD + (mode === 'cross' && !lead ? -sd * 25 : 0), Tsw, h, mode === 'cross' && !lead);
     F.sw.re = { ox, oz, ahead, Tsw };   // 떠 있는 동안 몸 빠르기가 바뀌면 딛을 자리를 조금씩 고친다
   }
 
@@ -355,15 +397,26 @@ export class Players3D {
     const toR = (wx, wz) => { const dx = (wx - x.rx) / K, dz = (wz - x.rz) / K; return [dx * x.cy - dz * x.sy, dx * x.sy + dz * x.cy]; };
     const [ix, iz] = toW(f[0], f[1]), iy = f[2] + x.yawD;
     const fpPrev = F.fp; F.fp = f.slice();
-    if (!F.init || x.air) { F.x = ix; F.z = iz; F.y = iy; F.sw = null; F.follow = null; F.init = true; return f; }   // 뜬 동안은 몸과 같이
+    if (!F.init) { F.x = ix; F.z = iz; F.y = iy; F.sw = null; F.follow = null; F.air = null; F.init = true; return f; }
+    if (x.air) {
+      // 뜬 동안: 몸에 대한 발 자리를 떠날 때 자리에서 자세 자리(넓힌 자리)로 부드럽게 옮긴다(뜨는 순간 발을 한 번에 옮기면 순간이동처럼 보였다)
+      if (!F.air) { const r0 = toR(F.x, F.z); F.air = { r0, y0: wrapD(F.y - x.yawD), t: 0 }; F.sw = null; F.follow = null; }
+      F.air.t += pdt; const u = sstep(0, 1, F.air.t / Math.max(0.08, x.airT || 0.17));
+      const rx_ = F.air.r0[0] + (f[0] - F.air.r0[0]) * u, rz_ = F.air.r0[1] + (f[1] - F.air.r0[1]) * u, ry = F.air.y0 + wrapD(f[2] - F.air.y0) * u;
+      [F.x, F.z] = toW(rx_, rz_); F.y = ry + x.yawD;
+      return [rx_, rz_, ry, 0];
+    }
+    F.air = null;
     let lift = 0;
     if (x.clip) {
       // 동작(모션캡처)의 발: 땅에 있으면 붙여 두고, 들면 따라간다. 동작의 발은 땅에서도 3~6cm 떠 있게 적혀 있어 그 아래는 땅으로 본다
-      const vr = fpPrev ? Math.hypot(f[0] - fpPrev[0], f[1] - fpPrev[1]) * K / Math.max(pdt, 1e-3) : 0, onGround = f[3] < 0.07 && vr < 0.6;
-      if (F.sw) { F.sw.tx = ix; F.sw.tz = iz; F.sw.ty = iy; }
+      const vr = fpPrev ? Math.hypot(f[0] - fpPrev[0], f[1] - fpPrev[1]) * K / Math.max(pdt, 1e-3) : 0, onGround = F.follow ? f[3] < 0.06 && vr < 0.45 : f[3] < 0.08 && vr < 0.8;   // 여유 폭(떨리지 않게)
+      if (F.sw && !F.sw.clip) { const gap = Math.hypot(ix - F.x, iz - F.z); F.sw = { t: 0, T: clamp(gap / 4, 0.1, 0.3), fx: F.x, fz: F.z, fy: F.y, tx: ix, tz: iz, ty: iy, h: 0.04, clip: true }; }   // 걸음 중이던 발은 지금 자리에서 새 걸음으로(목표만 바꾸면 한 프레임에 건너뛴다)
+      else if (F.sw) { F.sw.tx = ix; F.sw.tz = iz; F.sw.ty = iy; }
       else if (onGround) {
         F.follow = null;
-        if (Math.hypot(ix - F.x, iz - F.z) > 0.3) F.sw = { t: 0, T: 0.14, fx: F.x, fz: F.z, fy: F.y, tx: ix, tz: iz, ty: iy, h: 0.04 };   // 너무 벌어지면 한 걸음
+        const gap = Math.hypot(ix - F.x, iz - F.z);
+        if (gap > 0.3) F.sw = { t: 0, T: Math.max(0.14, gap / 4), fx: F.x, fz: F.z, fy: F.y, tx: ix, tz: iz, ty: iy, h: 0.04, clip: true };   // 너무 벌어지면 한 걸음
         else F.y += wrapD(iy - F.y) * Math.min(1, pdt * 12);   // 앞꿈치를 축으로 돈다(자리는 그대로)
       } else {
         if (!F.follow) F.follow = [F.x - ix, F.z - iz];
@@ -373,13 +426,16 @@ export class Players3D {
     } else F.follow = null;
     if (F.sw) {
       const W = F.sw; W.t += pdt;
-      const u = Math.min(1, W.t / W.T), e = sstep(0.12, 0.88, u);   // 먼저 들고, 옮기고, 내려놓는다
+      const u = Math.min(1, W.t / W.T), e = 0.5 * sstep(0.06, 0.94, u) + 0.5 * clamp((u - 0.06) / 0.88, 0, 1);   // 먼저 들고, 옮기고, 내려놓는다(가운데에 몰리지 않게)
       if (W.re && u < 0.7 && !x.clip) {   // 걸음 계획에서 정한 자리를 몸 빠르기에 맞춰 조금씩 고친다
         let [tx, tz] = toW(W.re.ox, W.re.oz); const left = Math.max(0, W.T - W.t) + W.re.ahead - W.re.Tsw;
         tx += c.v[0] * left; tz += c.v[1] * left;
         W.tx += (tx - W.tx) * Math.min(1, pdt * 8); W.tz += (tz - W.tz) * Math.min(1, pdt * 8);
       }
       F.x = W.fx + (W.tx - W.fx) * e; F.z = W.fz + (W.tz - W.fz) * e; F.y = W.fy + wrapD(W.ty - W.fy) * e;
+      // 디딘 다른 발 둘레 18cm 안으로는 들어오지 않고 돌아간다(다리를 관통하지 않게)
+      const O = c.ft[side === 'left' ? 'right' : 'left'];
+      if (O.init) { const dx = F.x - O.x, dz = F.z - O.z, d = Math.hypot(dx, dz), m = 0.2; if (d < m && u > 0.05 && u < 0.95) { const k = (m - Math.max(d, 1e-3)) / Math.max(d, 1e-3); F.x += dx * k; F.z += dz * k; } }   // 다른 발이 떠 있어도 피한다
       lift = W.h * Math.pow(Math.sin(Math.PI * u), 0.7); x.bob += (W.T < 0.2 ? 0.02 : 0.012) * Math.sin(Math.PI * u);
       if (u >= 1) F.sw = null;
     }

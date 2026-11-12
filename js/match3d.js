@@ -430,7 +430,9 @@ export class MatchView {
 
   placeAll() {
     const s3 = this.show3d;
-    for (const p of this.players) {
+    // 3D 선수일 때는 그림자·발밑 고리·감정 표시를 3D 몸 자리에(그림 선수 자리와 최대 1m 어긋난다)
+    const at = i => (s3 && this.p3d.list[i]?.rp) || [this.players[i].x, this.players[i].z];
+    for (const [pi, p] of this.players.entries()) {
       p.sp.visible = !s3;
       // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
       const y = Math.abs(Math.sin(p.stride)) * 0.14 + p.hop;
@@ -438,11 +440,12 @@ export class MatchView {
       // 그림은 빈 곳을 잘라 올렸으므로(trim) 잘린 크기만큼만 키운다
       if (p.base) p.sp.scale.set(p.base * (p.trim?.uw ?? 1) * (1 + p.sq * 0.5 + p.crouch * 0.03), p.base * (p.trim?.vh ?? 1) * (1 - p.sq - p.crouch * 0.07), 1);
       p.sp.material.rotation = p.lean + p.kick;
-      p.shadow.position.set(p.x, 0.012, p.z);
-      p.emote.position.set(p.x, 2.35 + y, p.z);
+      const [ax, az] = at(pi);
+      p.shadow.position.set(ax, 0.012, az);
+      p.emote.position.set(ax, 2.35 + y, az);
     }
-    this.myRing.position.set(this.players[0].x, 0.014, this.players[0].z);
-    for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) a.position.set(this.players[i].x, 0.016, this.players[i].z); }
+    { const [ax, az] = at(0); this.myRing.position.set(ax, 0.014, az); }
+    for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) { const [ax, az] = at(i); a.position.set(ax, 0.016, az); } }
     // 1인칭에서는 주인공이 카메라 자리에 있으므로 그림과 발밑 표시를 숨긴다
     const me = this.players[0], hide = !!this.fpv;
     me.sp.visible = !hide && !s3; me.shadow.visible = !hide; this.myRing.visible = !hide;
