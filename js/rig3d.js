@@ -397,6 +397,8 @@ export function createRig(vrm) {
       // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
       const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
       const lean_ = Math.atan2(shin.dot(out_), shin.y), roll = lean_ - soft(lean_, -18 * D, 18 * D);
+      // 날로 기울 때는 앞꿈치를 축으로(발목을 축으로 돌리면 디딘 앞꿈치가 옆으로 밀려 미끄러져 보인다, 사용자 2026-11-12)
+      if (Math.abs(roll) > 0.01) { const a0 = ankleAt(heel), up = V3(0, Math.max(0, lift), 0), r0 = pivot.clone().add(up).sub(a0); ik(L, pivot.clone().add(up).sub(r0.applyAxisAngle(fwd, roll)), fwd.clone().add(V3(0, 0.25, 0))); }
       setWorldQuat(B(side + 'Foot'), new THREE.Quaternion().setFromAxisAngle(fwd, roll).multiply(yq).multiply(new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), heel * D)));
       B(side + 'Toes')?.quaternion.setFromAxisAngle(V3(1, 0, 0), -heel * D);
     }
