@@ -210,7 +210,7 @@ export class Players3D {
         const gap = Math.hypot(tgx - B.x, tgz - B.z), tr = sw ? this.bt - sw.tImpact : 9;
         // 디딘 발로 낼 수 있는 힘: 선수 가속도(첫발)보다 조금 크게(그림 선수가 이미 그 가속도로 움직이고 공에 맞추는 만큼 더한다). 많이 뒤처지면 조금 더
         const pa = p.acc || 6, hit = sw && sw.id !== 'sv', Tgo = hit ? -tr : 9, lunge = Tgo > 0 && Tgo < 0.4, tg = Math.max(Tgo, 0.06);
-        // 칠 공 0.4초 전부터는 임팩트 때 그 자리에 닿게 내딛는다(뻗어 받는 공·늦게 온 발리는 한 발 크게: 초속² 18m, 초속 5~6m까지. 모자란 만큼은 팔을 뻗는다 reach). 친 뒤 0.35초는 디딘 발로 세게 멈춘다
+        // 칠 공 0.4초 전부터는 임팩트 때 그 자리에 닿게 내딛는다(뻗어 받는 공·늦게 온 발리는 한 발 크게: 초속² 18m, 초속 4~5.5m까지. 모자란 만큼은 팔을 뻗는다 reach). 친 뒤 0.35초는 디딘 발로 세게 멈춘다
         let amax = air ? 0.8 : gap > 1.2 ? Math.max(14, pa * 2.2) : (hit && tr > -0.6 && tr < 0.1) ? Math.max(12, pa * 1.9) : Math.max(8, pa * 1.6);
         if (!air && lunge) amax = Math.max(amax, Math.min(18, 2.2 * gap / (tg * tg)));
         if (!air && hit && tr >= 0 && tr < 0.35) amax = Math.max(amax, 18);
@@ -219,7 +219,8 @@ export class Players3D {
         const vdx = c.tv[0] + (tgx - B.x) * vr, vdz = c.tv[1] + (tgz - B.z) * vr;
         let ax = (vdx - B.vx) / pdt, az = (vdz - B.vz) / pdt; const al = Math.hypot(ax, az); if (al > amax) { ax *= amax / al; az *= amax / al; }
         B.vx += ax * pdt; B.vz += az * pdt;
-        const vcap = lunge ? clamp(Math.hypot(c.tv[0], c.tv[1]) + 1.5, 5, 7.5) : 7.5, vv = Math.hypot(B.vx, B.vz); if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
+        // 사람 빠르기 안에서(사용자 2026-11-13: 최대 속도가 너무 빠르다)
+        const vcap = lunge ? clamp(Math.hypot(c.tv[0], c.tv[1]) + 1.2, 4, 5.5) : 5.5, vv = Math.hypot(B.vx, B.vz); if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
         B.x += B.vx * pdt; B.z += B.vz * pdt;
         if (lunge && Tgo < 0.1) { const ex = tgx - B.x, ez = tgz - B.z, el = Math.hypot(ex, ez), m = Math.min(el * Math.min(1, pdt / Tgo) * 0.6, 0.02); if (el > 1e-4) { B.x += ex / el * m; B.z += ez / el * m; } }   // 마지막 0.1초에 남은 차이를 조금씩(한 프레임 2cm까지)   // 마지막 0.1초에 남은 차이를 조금씩(라켓이 공을 지나치지 않게)
         const ka = Math.min(1, pdt * 8); c.acc[0] += (ax - c.acc[0]) * ka; c.acc[1] += (az - c.acc[1]) * ka;

@@ -63,14 +63,19 @@ export function bodyOf(st, F = 0) {
   const tired = 1 - clamp(F * 0.02, 0, 0.2);
   return {
     react: clamp(0.31 - st.first_step * 0.0018, 0.12, 0.3),
-    top: (3.9 + st.speed * 0.03) * tired,
+    // 최고 속도(m/s). 여자 동호인 기준(사용자 2026-11-13: 최대 속도가 너무 빠르다. 예전 스피드 45면 5.25, 70이면 6.0): 스피드 30 → 3.6, 45 → 3.9, 70 → 4.4, 90 → 4.9
+    top: (2.9 + st.speed * 0.022) * tired,
     reach: 0.85 + st.flex * 0.007,
-    recov: (2.6 + st.positioning * 0.032) * tired,
+    recov: (1.9 + st.positioning * 0.024) * tired,   // 치고 돌아가는 빠르기: 포지셔닝 45 → 3.0, 70 → 3.6
     // 가속도(m/s²): 첫발(순발력)이 좋을수록 빨리 속도를 낸다(사용자 2026-11-13: 0에서 바로 최고 속도가 되면 이상하다). 첫발 30 → 5.1, 50 → 6.1, 70 → 7.1, 90 → 8.1.
     // 멈출 때는 1.5배. 엔진(닿을 수 있는 거리)과 중계(그림 선수·3D 선수)가 같은 값을 쓴다
     acc: (3.6 + st.first_step * 0.05) * (1 - clamp(F * 0.008, 0, 0.12)),
   };
 }
+// 뒤로 물러나기(사용자 2026-11-13: 뒤로 가면서 치는 건 굉장히 어렵다): 네트에서 멀어지는 쪽으로는 몸을 돌리거나 뒷걸음질해야 해서
+// 출발이 늦고(돌아서는 데 0.2초까지) 최고 속도와 가속도가 낮다(곧장 뒤로면 0.7배, 0.75배). b = 뒤로 가는 정도(0~1)
+export function backOf(from, to) { const d = dist(from, to); return d > 0.05 ? clamp((Math.abs(to[1]) - Math.abs(from[1])) / d, 0, 1) : 0; }
+export function bodyDir(body, b) { return b > 0.01 ? { ...body, react: body.react + 0.2 * b, top: body.top * (1 - 0.3 * b), acc: (body.acc ?? 12.5) * (1 - 0.25 * b) } : body; }
 // 멈춘 몸이 가속도 acc로 최고 속도 top까지 올리며 tau초 동안 달린 거리
 export function runDist(tau, top, acc) { return tau <= 0 ? 0 : tau < top / acc ? 0.5 * acc * tau * tau : top * tau - (top * top) / (2 * acc); }
 // 공이 오는 T초 동안 닿을 수 있는 거리. late = 그 공에 늦게 반응한 만큼

@@ -1,7 +1,7 @@
 // 경기 시뮬레이션 엔진 — 포인트 단위 확률 엔진 (기획 문서 7장)
 // 엔진은 결과와 포인트 로그만 만들고, 화면(match3d.js)은 로그를 재생만 한다.
 import { COUNTER_OF, ALL_STATS, OPP_ARCH, STAT_NAME, grade } from './data.js';
-import { BALL_V, flightTime, bodyOf, reachOf, standOf, runDist } from './rally.js';
+import { BALL_V, flightTime, bodyOf, reachOf, standOf, runDist, backOf, bodyDir } from './rally.js';
 
 export function mulberry32(a) {
   return function () {
@@ -22,12 +22,15 @@ export const TUNE = {
   // 강타는 초반에 밀어붙이지만 오래가면 실수가 늘고, 끈질기게 버티는 쪽은 후반에 힘이 난다.
   planGames: 8,
   plan: {
-    power: { early: { q: 5, err: 0.92 }, late: { q: 1, err: 1.08 }, tire: 1.15 },
+    power: { early: { q: 4, err: 0.92 }, late: { q: 0, err: 1.08 }, tire: 1.15 },
     twoup: { early: { q: 3, err: 1 }, late: { q: 2, err: 1.02 }, tire: 1.05 },
-    twoback: { early: { q: -2, err: 0.98 }, late: { q: 2, err: 0.95 }, tire: 0.95 },
-    lob: { early: { q: 0, err: 1 }, late: { q: 7, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림
+    twoback: { early: { q: -1, err: 0.98 }, late: { q: 3, err: 0.95 }, tire: 0.95 },
+    lob: { early: { q: -1, err: 1 }, late: { q: 6, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림. 2026-11-13: 뒤로 밀리며 치기가 어려워져(TUNE.back) 강타·로브를 조금 내리고 후위를 올림
   },
   rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
+  // 뒤로 물러나며 치기(사용자 2026-11-13: 뒤로 가면서 치는 건 굉장히 어렵다). back = 깊은 공에 밀린 정도(0~1), 전위가 머리 위로 넘어간 로브를 쫓아가면 1.
+  // 그 사람의 다음 샷 품질이 q만큼 낮아지고 범실이 err만큼 는다
+  back: { q: 10, err: 0.07 },
   // 기술. 배운 사람만 쓴다. 안 배우면 기존과 같아서 승률 표는 기술 없는 기준이다. 배열은 수준 0, 1, 2.
   skill: {
     use: { drop: [1, 2, 3], smash: [1, 1.5, 2], swing: [1, 4, 7] }, // 고르는 빈도
@@ -148,9 +151,10 @@ function toFence(P, w, L) {
 // 서브 리턴: 바운드 뒤 공이 떴다가 내려올 때 친다(바운드에서 받는 곳까지 m). 깊게 들어온 서브일수록 뒤에서 받는다
 const retD = v => 5.4 + v * 0.05;
 // 바운드에서 받는 곳까지(m). 이 수준(동호인)은 튀어 오르는 공(라이징)을 잘 못 치고 꼭대기를 지나 떨어지는 공을 친다(사용자 2026-11-09).
-// 공이 튀어 오르는 모양은 들어온 공의 회전으로 다르다(js/ball.js로 잰 값): 탑스핀은 바운드 뒤 약 4.3m에서 꼭대기라 그 뒤 6~6.5m에서,
+// 공이 튀어 오르는 모양은 들어온 공의 회전으로 다르다(js/ball.js로 잰 값): 탑스핀은 바운드 뒤 약 4.5m에서 꼭대기라 그 뒤 5~5.5m에서(꼭대기를 0.5~1m 지나서.
+// 예전에는 6.5m에서 받아 꼭대기를 2m 지나 무릎 높이까지 떨어지기를 기다렸다. 사용자 2026-11-13: 바운드되고 공이 너무 느려진다),
 // 슬라이스는 낮게 깔려 1.7m에서 꼭대기라 3m쯤에서, 발리처럼 회전이 적은 공은 그 사이, 스매시는 높이 튀어 멀리서 받는다
-const bounceD = (v, st = '') => (/slice|chip/.test(st) ? 2.4 + v * 0.05 : /volley/.test(st) ? 2.6 + v * 0.05 : st === 'smash' ? 5.6 + v * 0.04 : 4.7 + v * 0.11);
+const bounceD = (v, st = '') => (/slice|chip/.test(st) ? 2.4 + v * 0.05 : /volley/.test(st) ? 2.6 + v * 0.05 : st === 'smash' ? 5.6 + v * 0.04 : 4.0 + v * 0.08);
 function bounceOf(from, C, v, rz, st) {
   const w = unit(from, C), bd = bounceD(v, st);
   let B = [C[0] - w[0] * bd, C[1] - w[1] * bd];
@@ -250,9 +254,18 @@ export class MatchSim {
     }
     if (lob) {
       // 로브는 높이 튀어 오른다. 꼭대기를 지나 떨어질 때 치려고 바운드 뒤 4.4m쯤 물러나서 받는다
-      const C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (11.4 + Math.min(f, 1.3) * 2.6)];
-      const B = onLineAtZ(from, C, rz * (C[1] * rz - 4.4));
-      return { C, B, T: flightTime(from, C, B, v, st) };
+      let C = [clamp(P[0] + n1 * 1.5 * Math.min(f, 1.4), -5.4, 5.4), rz * (11.4 + Math.min(f, 1.3) * 2.6)], post = 4.4, bz = C[1] * rz - post;
+      let B = onLineAtZ(from, C, rz * bz), T = flightTime(from, C, B, v, st);
+      // 뒤로 뛰어(돌아서 달려) 닿을 수 있는 만큼만(사용자 2026-11-13: 최고 속도를 낮췄다). 모자라면 바운드 뒤 바로(1.2m까지) 치고, 그래도 모자라면 로브가 짧게 떨어진다
+      if (f < 1) for (let it = 0; it < 4; it++) {
+        const can = reachOf(bodyDir(body, backOf(P, C)), T, late), d = Math.hypot(C[0] - P[0], C[1] - P[1]);
+        if (d <= can + 0.05) break;
+        const cut = d - can, p2 = Math.max(1.2, post - cut);
+        bz = Math.max(Math.abs(P[1]) + 0.6, bz - Math.max(0, cut - (post - p2))); post = p2;
+        C = onLineAtZ(from, C, rz * (bz + post));
+        B = onLineAtZ(from, C, rz * bz); T = flightTime(from, C, B, v, st);
+      }
+      return { C, B, T };
     }
     if (short) {
       // 짧은 공: 네트 가까이 떨어진다. 뒤에서 달려오는 사람이 닿을 수 있게, 바운드 뒤 죽어 가는 공을 조금 더 깊은 곳에서 받는다
@@ -283,8 +296,10 @@ export class MatchSim {
     const xw = volley ? 5.25 : 6.4;
     const fit = c => [clamp(c[0], side > 0 ? -1.6 : -xw, side > 0 ? xw : 1.6), rz * clamp(c[1] * rz, z0, z1)];
     let C = P, B = null, T = 0.9;
+    // 뒤로 가는 공은 뒤로 닿을 수 있는 거리로(돌아서는 데 늦고 느리다)
+    const bodyU = bodyDir(body, Math.max(0, u[1] * rz));
     for (let it = 0; it < 3; it++) {
-      const want = dir === 'body' ? Math.min(0.6, f * 0.6) : f * reachOf(body, T, late);
+      const want = dir === 'body' ? Math.min(0.6, f * 0.6) : f * reachOf(bodyU, T, late);
       C = fit([P[0] + u[0] * want, P[1] + u[1] * want]);
       if (!volley) ({ B, C } = bounceOf(from, C, v, rz, st));
       T = flightTime(from, C, B, v, st);
@@ -451,7 +466,7 @@ export class MatchSim {
       const d = Math.hypot(m.x - at[j][0], m.z - at[j][1]);
       const k = d > 0.01 ? Math.min(1, runDist(ft - m.t0, m.v, body[j].acc) / d) : 1;   // 가속도까지 넣어 실제로 갈 수 있는 만큼
       at[j] = [at[j][0] + (m.x - at[j][0]) * k, at[j][1] + (m.z - at[j][1]) * k];
-      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}), ...(m.chase ? { chase: 1 } : {}), ...(m.body ? { top: r2(m.body.top), reach: r2(m.body.reach), react: r2(m.body.react) } : {}) };
+      return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.top && !m.body ? { top: r2(m.top) } : {}), ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}), ...(m.chase ? { chase: 1 } : {}), ...(m.body ? { top: r2(m.body.top), reach: r2(m.body.reach), react: r2(m.body.react) } : {}) };
     });
     // 팀마다 밀어붙이는 정도. 친 쪽의 공이 좋으면 오르고 상대는 내려가는데, 샷마다 조금씩만 움직인다
     const lvl = [0, 0];
@@ -469,12 +484,14 @@ export class MatchSim {
     };
     // 받는 사람이 C까지 가는 계획. 공보다 먼저 닿게 뛴다
     // 쉬운 공(set)은 전속력이 아니라 조금 여유 있게 닿을 만큼만 뛴다. 멀거나 몸쪽 공은 전속력
+    // 가는 쪽의 최고 속도를 넘지 않는다(뒤로 가면 돌아서는 만큼 늦게 출발하고 느리다). 모자라면 팔을 뻗어 받는다
     const runAt = (j, C, ft, t0, k) => {
-      const d = Math.max(0, Math.hypot(C[0] - at[j][0], C[1] - at[j][1]) - 0.6), avail = Math.max(0.15, ft - t0 - 0.03), need = d / avail;
+      const bd = bodyDir(body[j], backOf(at[j], C)), t0b = t0 + (bd.react - body[j].react);
+      const d = Math.max(0, Math.hypot(C[0] - at[j][0], C[1] - at[j][1]) - 0.6), avail = Math.max(0.15, ft - t0b - 0.03), need = d / avail;
       const early = clamp((this.P[j].stats.positioning - 35) / 70, 0, 0.6);   // 포지셔닝 35 이하는 여유 없음, 77이면 60% 빨리
-      const v = k === 'set' ? Math.min(body[j].top, Math.max(need * (1 + early), d > 0.3 ? 1.6 : 0)) : body[j].top;
-      const vv = Math.max(v, need), margin = vv > 0 ? avail - d / vv : avail;   // 공보다 몇 초 먼저 도착하나
-      return { x: C[0], z: C[1], t0, v: vv, k, m: margin, ...(k === 'reach' ? { far: body[j].reach * 0.85 } : {}) };
+      const v = k === 'set' ? Math.min(bd.top, Math.max(need * (1 + early), d > 0.3 ? 1.6 : 0)) : bd.top;
+      const vv = Math.min(Math.max(v, need), bd.top * 1.1), margin = vv > 0 ? avail - d / vv : avail;   // 공보다 몇 초 먼저 도착하나
+      return { x: C[0], z: C[1], t0: t0b, v: vv, k, m: margin, top: bd.top, ...(k === 'reach' ? { far: body[j].reach * 0.85 } : {}) };
     };
     // 받지 않는 사람(대개 전위) 곁을 낮게 지나가면 그 사람이 쳤어야 할 공으로 보인다. 닿지 않게 옆으로 비킨다
     const clearOf = (R, from, sp, v, st) => {
@@ -506,21 +523,21 @@ export class MatchSim {
       // 앞에 떨어지는 공은 그쪽에 선 사람이 쫓는다(엔진이 판단을 맡긴 사람이 화면에서 반대편에 서 있을 수 있다)
       { const k = os[0] === j ? os[1] : os[0]; if (after > 0 && lands(k) && gap(k) < gap(j) - 0.5) j = k; }
       const o = os[0] === j ? os[1] : os[0];
-      const X = near(j), t0 = body[j].react, u = unit(at[j], X), ch = lands(j);
+      const X = near(j), bj = bodyDir(body[j], backOf(at[j], X)), t0 = bj.react, u = unit(at[j], X), ch = lands(j);
       const tAll = ch ? ft + after / Math.max(4, v * 0.55) : ft;
-      const go = clamp(Math.min(gap(j) - 0.7, Math.max(0, tAll - t0 - 0.1) * body[j].top * 0.9), 0.35, ch ? 7 : 4.5);
+      const go = clamp(Math.min(gap(j) - 0.7, Math.max(0, tAll - t0 - 0.1) * bj.top * 0.9), 0.35, ch ? 7 : 4.5);
       // body: 중계가 실제 공 길을 보고 누가 어디까지 쫓을지 다시 정할 때 쓴다(js/match3d.js chasePlan)
-      plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: body[j].top * (ch ? 0.95 : 0.85), k: 'let', ...(ch ? { chase: 1 } : {}), body: body[j] };
+      plan[j] = { x: at[j][0] + u[0] * go, z: at[j][1] + u[1] * go, t0, v: bj.top * (ch ? 0.95 : 0.85), k: 'let', ...(ch ? { chase: 1 } : {}), body: bj };
       plan[o] = { x: at[o][0] + (X[0] - at[o][0]) * 0.12, z: at[o][1], t0: body[o].react * 1.2, v: body[o].recov, k: 'shift', body: body[o] };
       plan.who = j;
       return plan;
     };
     // 닿지 못하는 사람: 공 쪽으로 뛰다가 몸을 던진다
     const missAt = (j, X, ft, late = 0) => {
-      const t0 = body[j].react + late, d = Math.hypot(X[0] - at[j][0], X[1] - at[j][1]);
-      const go = Math.max(0, Math.min((ft - t0 - 0.18) * body[j].top, d - body[j].reach - 0.35));
+      const bd = bodyDir(body[j], backOf(at[j], X)), t0 = bd.react + late, d = Math.hypot(X[0] - at[j][0], X[1] - at[j][1]);
+      const go = Math.max(0, Math.min((ft - t0 - 0.18) * bd.top, d - bd.reach - 0.35));
       const w = unit(at[j], X);
-      return { x: at[j][0] + w[0] * go, z: at[j][1] + w[1] * go, t0, v: body[j].top, k: 'miss', body: body[j] };
+      return { x: at[j][0] + w[0] * go, z: at[j][1] + w[1] * go, t0, v: bd.top, k: 'miss', body: bd };
     };
     let winner = null, endType = null, endBy = null, lastByTeam = [null, null];
     const tempoOf = t => TUNE.tempo[t.choices.tempo] || TUNE.tempo.normal;
@@ -610,9 +627,10 @@ export class MatchSim {
       if ((T.choices.plan === 'twoback' || T.choices.plan === 'lob') && this.games[1 - H.team] - this.games[H.team] >= 2) Q += Math.max(0, (H.stats.resilience + H.stats.stamina) / 2 - 25) * TUNE.gritK;
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
       let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) * TUNE.skill.risk[skillLv] + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
+      if (inc.back) { Q -= TUNE.back.q * inc.back; err += TUNE.back.err * inc.back; }
       err = clamp(err, 0.02, 0.65);
       const info = shotInfo(H, shotUse(st, dir, inc.forceBh, pressure), accOfQ(Q));
-      { const stn = stanceOf(st, shots[shots.length - 1]?.mv?.[this.P.indexOf(H)], inc.D); if (stn) info.stance = stn; }
+      { const stn = stanceOf(st, shots[shots.length - 1]?.mv?.[this.P.indexOf(H)], inc.D); if (stn) info.stance = inc.back > 0.5 ? 'run' : stn; }   // 뒤로 밀리며 치면 달리면서
       tire(H);
       const posNow = this.snapshot();
       const hi = this.P.indexOf(H);
@@ -788,6 +806,9 @@ export class MatchSim {
       // 뒤로 오는 로브는 닿기만 하면 스매시로(사용자 2026-11-11). 덜 좋은 로브(부담이 작은 공)일수록, 스매시를 잘할수록 닿는다.
       // 뒤에 선 사람은 짧은 로브만. 닿지 않으면 예전처럼 뒤로 뛰어가 바운드된 공을 친다
       const air = lob && nextD <= smashReach(R) - (R.pos === 'net' ? 0 : 14);
+      // 뒤로 밀리는 정도: 깊은 공에 밀린 후위, 머리 위로 넘어간 로브를 쫓는 전위(엔진 값으로만 정한다. 화면 위치는 승패에 쓰지 않는다)
+      const backFw = clamp(1.4 - (R.stats.first_step + R.stats.speed + R.stats.positioning) / 300, 0.5, 1.2);   // 발이 좋을수록 덜 밀린다(40 → 1배, 60 → 0.8배, 80 → 0.6배)
+      const backN = backFw * (lob ? (air ? 0 : R.pos === 'net' ? 1 : 0.4 * f) : dir === 'deep' && R.pos === 'base' ? f : 0);
       const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2, air), v, st);
       if (lob && R.pos === 'net' && !air) R.pos = 'base';
       const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v) };
@@ -806,7 +827,7 @@ export class MatchSim {
       }
       lastByTeam[H.team] = H; lastShooter = H;
       inc = {
-        D: nextD, height: HEIGHT[st] || 'mid', type: st, from: H, counter, smashable: air,
+        D: nextD, height: HEIGHT[st] || 'mid', type: st, from: H, counter, smashable: air, back: backN,
         forceBh: T.choices.attack === 'back' && rng() < 0.6,
       };
       H = R;

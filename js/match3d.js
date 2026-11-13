@@ -16,7 +16,8 @@ const SURFACE = {
   clay: { court: '#e8894d', out: '#de7f46', line: '#fffaf2', grain: 'rgba(120,40,10,0.06)', wear: 'rgba(150,60,20,0.16)', brush: true },
 };
 
-const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, RUN_CAP = 8.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
+// 사용자 2026-11-13: 최대 속도가 너무 빠르다. 선수 최고 속도는 엔진(bodyOf().top, 가는 쪽, mv.top)이 정하고 이 값들은 넘지 않는 끝
+const RUN_SPEED = 3.5, MAX_RUN_SPEED = 5.5, RUN_CAP = 5.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
 // 발: 출발해서 속도를 올리고(acc), 멈출 때는 미리 줄인다(dec). m/s². 선수마다 첫발(순발력)로 정한다(bodyOf().acc, 사용자 2026-11-13: 0에서 바로 최고 속도가 되면 이상하다).
 // 예전에는 모두 22·18이라 순식간에 최고 속도가 났다. 값이 없으면 아래 기본값
 const ACC = 6, DEC = 9;
@@ -797,7 +798,7 @@ export class MatchView {
     if (fl.end) { const st = Float64Array.from(fl.end); let t = fl.dur; for (let k = 0; k < 45; k++) { for (let q = 0; q < 4; q++) stepFree(st, 1 / 120, this.surface); t += 1 / 30; path.push([t, st[0], st[2], st[1]]); } }
     const run = (tau, top, a) => (tau <= 0 ? 0 : tau < top / a ? 0.5 * a * tau * tau : top * tau - top * top / (2 * a));
     const best = j => {
-      const m = s.mv?.[j], p = this.players[j], top = m?.top || 4.8, reach = m?.reach || 1.1, react = m?.react ?? 0.22, a = p.acc || ACC;
+      const m = s.mv?.[j], p = this.players[j], top = m?.top || 3.9, reach = m?.reach || 1.1, react = m?.react ?? 0.22, a = p.acc || ACC;
       let b = null;
       for (const [t, x, z, y] of path) {
         if (y > 2.4 || (t > fl.t1 && (t > fl.t1 + 1.1 || y < 0.1))) continue;   // 너무 높거나, 두 번 튀어 끝난 공(바운드 뒤 1.1초까지만 칠 수 있다)
@@ -953,7 +954,7 @@ export class MatchView {
         const D = Math.hypot(tx - p.x, tz - p.z);
         // 쭉 뻗어 받는 공: 공이 느려 시간이 남아도 천천히 걸어가지 않는다. 늦게 읽고(그만큼 늦게 출발해) 힘껏 달려가 겨우 닿는다
         if (m.k === 'reach' && D > 0.5) { const full = runTime(D, m.v, false, p.acc, p.dec) * 1.1; if (T > full) { t0 += T - full; T = full; } }
-        sp = cruise(D, T, set, p.acc, p.dec);
+        sp = Math.min(cruise(D, T, set, p.acc, p.dec), m.top ? m.top * 1.05 : RUN_CAP);   // 그 사람이 그쪽으로 낼 수 있는 최고 속도까지
         // 멈추지 못하는 사람은 공 자리를 지나쳐 계속 달린다(치는 순간에도 움직이고 있다)
         if (!set && D > 0.3) { tx += (tx - p.x) / D * 0.7; tz += (tz - p.z) / D * 0.7; }
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14) * (p.motion ? 0.35 : 1);
