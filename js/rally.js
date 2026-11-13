@@ -16,7 +16,7 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 // 서브는 sim.js의 serveV가 정한다(여기 serve, serve2는 값이 없을 때만 쓴다)
 export const BALL_V = { serve: 15, serve2: 12.5, smash: 21.9, fh_drive: 18.2, bh_drive: 17.3, passing: 18.9, return: 17.3, swing_volley: 18, fh_volley: 15.4, bh_volley: 14.4, low_volley: 12.6, half_volley: 12.6, fh_slice: 14.9, bh_slice: 14.9, chip_return: 14.2, topspin_lob: 11, def_lob: 9, moon_volley: 9, dropshot: 9, drop_volley: 8 };
 export const AFTER_BOUNCE = 0.62;   // 바운드 뒤에는 공이 느려진다
-export const START = 0.18;          // 멈춘 몸이 속도를 내기까지 잃는 시간
+export const START = 0.18;          // (예전) 멈춘 몸이 속도를 내기까지 잃는 시간. 지금은 가속도(bodyOf().acc, runDist)로 센다
 
 // 공이 가는 시간(초). 엔진과 중계가 같은 시간을 쓴다. 중계(js/ball.js)는 이 시간에 맞는 실제 궤적을 푼다.
 // 강하게 치는 공은 라켓을 떠나는 빠르기(v × LAUNCH, 화면 km/h와 같다)로 나가 공기 저항을 받으며 느려지고,
@@ -66,10 +66,15 @@ export function bodyOf(st, F = 0) {
     top: (3.9 + st.speed * 0.03) * tired,
     reach: 0.85 + st.flex * 0.007,
     recov: (2.6 + st.positioning * 0.032) * tired,
+    // 가속도(m/s²): 첫발(순발력)이 좋을수록 빨리 속도를 낸다(사용자 2026-11-13: 0에서 바로 최고 속도가 되면 이상하다). 첫발 30 → 5.1, 50 → 6.1, 70 → 7.1, 90 → 8.1.
+    // 멈출 때는 1.5배. 엔진(닿을 수 있는 거리)과 중계(그림 선수·3D 선수)가 같은 값을 쓴다
+    acc: (3.6 + st.first_step * 0.05) * (1 - clamp(F * 0.008, 0, 0.12)),
   };
 }
+// 멈춘 몸이 가속도 acc로 최고 속도 top까지 올리며 tau초 동안 달린 거리
+export function runDist(tau, top, acc) { return tau <= 0 ? 0 : tau < top / acc ? 0.5 * acc * tau * tau : top * tau - (top * top) / (2 * acc); }
 // 공이 오는 T초 동안 닿을 수 있는 거리. late = 그 공에 늦게 반응한 만큼
-export function reachOf(body, T, late = 0) { return body.reach + Math.max(0, T - body.react - late - START) * body.top; }
+export function reachOf(body, T, late = 0) { return body.reach + runDist(T - body.react - late, body.top, body.acc ?? 12.5); }
 
 // 포핸드 쪽인지 백핸드 쪽인지. before = 공을 향해 뛰기 시작한 곳
 const RIGHT = team => (team === 0 ? 1 : -1);   // 앞쪽 팀은 +x가 오른손 쪽

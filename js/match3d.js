@@ -17,17 +17,18 @@ const SURFACE = {
 };
 
 const RUN_SPEED = 5.2, MAX_RUN_SPEED = 9.5, RUN_CAP = 8.5;   // RUN_CAP: 받으러 갈 때 이보다 빨리 뛰지 않는다
-// 발: 출발해서 속도를 올리고(ACC), 멈출 때는 미리 줄인다(DEC). m/s²
-const ACC = 22, DEC = 18;
+// 발: 출발해서 속도를 올리고(acc), 멈출 때는 미리 줄인다(dec). m/s². 선수마다 첫발(순발력)로 정한다(bodyOf().acc, 사용자 2026-11-13: 0에서 바로 최고 속도가 되면 이상하다).
+// 예전에는 모두 22·18이라 순식간에 최고 속도가 났다. 값이 없으면 아래 기본값
+const ACC = 6, DEC = 9;
 // 거리 D를 T초 안에 가려면 얼마나 빨리 달려야 하나(속도를 올리는 시간, 멈추면 줄이는 시간까지 넣어서)
-function cruise(D, T, brake) {
-  const c = 1 / (2 * ACC) + (brake ? 1 / (2 * DEC) : 0), disc = T * T - 4 * c * D;
+function cruise(D, T, brake, acc = ACC, dec = DEC) {
+  const c = 1 / (2 * acc) + (brake ? 1 / (2 * dec) : 0), disc = T * T - 4 * c * D;
   const v = disc >= 0 ? (T - Math.sqrt(disc)) / (2 * c) : T / (2 * c);
   return Math.min(RUN_CAP, Math.max(1.2, v));
 }
 // 거리 D를 최고 속도 v로 달려가는 데 걸리는 시간(속도를 올리는 시간, 멈추면 줄이는 시간까지)
-function runTime(D, v, brake) {
-  const c = 1 / (2 * ACC) + (brake ? 1 / (2 * DEC) : 0);
+function runTime(D, v, brake, acc = ACC, dec = DEC) {
+  const c = 1 / (2 * acc) + (brake ? 1 / (2 * dec) : 0);
   return D >= v * v * c ? D / v + v * c : 2 * Math.sqrt(D / c) * c;
 }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -114,7 +115,7 @@ export class MatchView {
     // 경기장 그림자(지붕, 전광판, 조명탑)는 움직이지 않으니 한 번만 그린다
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.autoUpdate = true;   // 빛마다 정한다: 경기장 해는 한 번만(sun.shadow.autoUpdate = false), 선수 전용 해는 매 프레임
     container.appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(48, w / h, 0.1, 800);
@@ -214,7 +215,13 @@ export class MatchView {
     const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(-40, 24.5, 6).setLength(52); this.scene.add(sun);
     sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -46, right: 46, top: 46, bottom: -46, near: 5, far: 160 });
-    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
+    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05; sun.shadow.autoUpdate = false; sun.shadow.needsUpdate = true; this.sun = sun;
+    // 3D 선수 그림자(사용자 2026-11-13: 동그란 그림자 말고 자연스럽게): 같은 해 방향, 빛은 0이라 밝기는 그대로이고 바닥의 그림자 판에만 진다.
+    // 선수만 그린다(레이어 1). 그림자 범위는 선수 넷 둘레로 좁혀(`fitPlayerShadow`) 가까이서도 또렷하다
+    const pSun = new THREE.DirectionalLight(0xffffff, 0); pSun.castShadow = false; pSun.shadow.mapSize.set(1024, 1024);
+    pSun.shadow.camera.layers.set(1); pSun.shadow.bias = -0.0008; pSun.shadow.normalBias = 0.02; pSun.shadow.radius = 2.5;
+    this.scene.add(pSun); this.scene.add(pSun.target); this.pSun = pSun; this.sunDir = sun.position.clone().normalize();
+    this.camera.layers.enable(1);
     // 바닥: 벽 안쪽 전체(바깥 바닥)와 코트를 칠한다. 빛을 받지 않는 그림이라 고른 색이 그대로 밝게 보인다.
     // 경기장 그림자(벽, 펜스 기둥)는 그 위에 그림자만 그리는 판으로 얹는다
     const FX0 = -11.05, FX1 = 11.05, FZ0 = -19.5, FZ1 = 21.2;
@@ -270,7 +277,7 @@ export class MatchView {
     const lines = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: S.line }));
     lines.position.y = 0.009; this.scene.add(lines);   // 높이를 몇 mm씩 띄워 겹치지 않게 한다(바닥 0, 코트 0.005, 라인 0.009, 그림자 0.011, 발밑 그림 0.012~)
     // 경기장 그림자(벽, 펜스 기둥, 네트 기둥)만 바닥에 얹는다
-    const shadeFloor = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.ShadowMaterial({ color: 0x1a2a66, opacity: 0.22, depthWrite: false }));
+    const shadeFloor = new THREE.Mesh(new THREE.PlaneGeometry(FX1 - FX0, FZ1 - FZ0), new THREE.ShadowMaterial({ color: 0x1a2a66, opacity: 0.33, depthWrite: false }));
     shadeFloor.rotation.x = -Math.PI / 2; shadeFloor.position.set(0, 0.011, (FZ0 + FZ1) / 2); shadeFloor.receiveShadow = true; shadeFloor.renderOrder = 1;
     this.scene.add(shadeFloor);
     // 네트: 윗줄은 가운데 0.914m, 기둥 쪽 1.07m로 처진다(공이 네트에 걸리는 높이 js/ball.js와 같다). 가운데 띠, 흰 테이프
@@ -295,7 +302,7 @@ export class MatchView {
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.06, 10), toonMaterial(new THREE.Color('#ffffff')));
       cap.position.set(x, 1.12, 0); this.scene.add(cap);
     }
-    this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.shadowMap.needsUpdate = true; if (this.sun) this.sun.shadow.needsUpdate = true;
     // 코트 바깥: Blender로 만든 툰풍 경기장(js/stadium.js). 아직 못 불러왔으면 예전 배경을 두었다가 바꾼다
     if (stadiumData()) this.addStadium(stadiumData());
     else {
@@ -312,7 +319,7 @@ export class MatchView {
     this.stadium = buildStadium(d, { banner: this.banner || '동호인 테니스 대회', crowd: this.crowdFill });
     this.scene.add(this.stadium.group);
     if (this.board) this.stadium.setBoard(this.board);
-    this.renderer.shadowMap.needsUpdate = true;
+    this.renderer.shadowMap.needsUpdate = true; if (this.sun) this.sun.shadow.needsUpdate = true;
   }
   // 전광판 점수: { rows: [{ name, games, point, serve }], label }
   setBoard(b) { this.board = b; this.stadium?.setBoard(b); }
@@ -384,7 +391,8 @@ export class MatchView {
       // 첫 포인트 전(VS 화면, 소개 해설 동안)에도 복식 자리에 서 있게: 한 명은 뒤, 한 명은 네트 앞, 좌우로 갈라서
       const zs = i < 2 ? 1 : -1, xs = zs * (i % 2 === 0 ? 1 : -1);
       const x0 = xs * (i % 2 === 0 ? 2.8 : 2.3), z0 = zs * (i % 2 === 0 ? 11.2 : 3.6);
-      list.push({ sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      const acc = info.acc || ACC;
+      list.push({ acc, dec: acc * 1.5, sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.players = list;
     for (let i = 0; i < 4; i++) this.setPose(i, 'ready');
@@ -428,6 +436,19 @@ export class MatchView {
   }
   get show3d() { return !!(this.p3dOn && this.p3d?.ready); }
 
+  // 선수 전용 해: 선수 넷을 담는 좁은 범위로 맞춘다(해 방향은 경기장 해와 같다)
+  fitPlayerShadow(on) {
+    const L = this.pSun; if (!L) return;
+    L.castShadow = !!on; if (!on) return;
+    const pts = this.p3d.list.map(c => c.rp).filter(Boolean); if (!pts.length) return;
+    let cx = 0, cz = 0; for (const [x, z] of pts) { cx += x; cz += z; } cx /= pts.length; cz /= pts.length;
+    let r = 0; for (const [x, z] of pts) r = Math.max(r, Math.hypot(x - cx, z - cz));
+    r += 2.2;
+    L.target.position.set(cx, 0, cz); L.position.set(cx, 0, cz).addScaledVector(this.sunDir, 40);
+    L.target.updateMatrixWorld(); L.updateMatrixWorld();
+    const cam = L.shadow.camera; Object.assign(cam, { left: -r, right: r, top: r, bottom: -r, near: 20, far: 60 }); cam.updateProjectionMatrix();
+  }
+
   placeAll() {
     const s3 = this.show3d;
     // 3D 선수일 때는 그림자·발밑 고리·감정 표시를 3D 몸 자리에(그림 선수 자리와 최대 1m 어긋난다)
@@ -441,14 +462,15 @@ export class MatchView {
       if (p.base) p.sp.scale.set(p.base * (p.trim?.uw ?? 1) * (1 + p.sq * 0.5 + p.crouch * 0.03), p.base * (p.trim?.vh ?? 1) * (1 - p.sq - p.crouch * 0.07), 1);
       p.sp.material.rotation = p.lean + p.kick;
       const [ax, az] = at(pi);
-      p.shadow.position.set(ax, 0.012, az);
+      p.shadow.position.set(ax, 0.012, az); p.shadow.visible = !s3;   // 3D 선수는 해 방향 그림자(선수 전용 해)
       p.emote.position.set(ax, 2.35 + y, az);
     }
     { const [ax, az] = at(0); this.myRing.position.set(ax, 0.014, az); }
     for (let i = 0; i < 4; i++) { const a = this.auras?.[i]; if (a) { const [ax, az] = at(i); a.position.set(ax, 0.016, az); } }
     // 1인칭에서는 주인공이 카메라 자리에 있으므로 그림과 발밑 표시를 숨긴다
     const me = this.players[0], hide = !!this.fpv;
-    me.sp.visible = !hide && !s3; me.shadow.visible = !hide; this.myRing.visible = !hide;
+    me.sp.visible = !hide && !s3; me.shadow.visible = !hide && !s3; this.myRing.visible = !hide;
+    this.fitPlayerShadow(s3);
     if (hide) me.emote.visible = false;
     // 어깨 너머 시점에서는 주인공 머리 위 표시가 카메라 바로 앞이라 너무 크다. 작게, 머리 옆으로
     const near = this.view3 === 'tps';
@@ -773,14 +795,14 @@ export class MatchView {
     const path = [];
     for (let t = 0.1; t <= fl.dur + 1e-6; t += 1 / 30) { const [x, z, y] = fl.at(t); path.push([t, x, z, y]); }
     if (fl.end) { const st = Float64Array.from(fl.end); let t = fl.dur; for (let k = 0; k < 45; k++) { for (let q = 0; q < 4; q++) stepFree(st, 1 / 120, this.surface); t += 1 / 30; path.push([t, st[0], st[2], st[1]]); } }
-    const run = (tau, top) => (tau <= 0 ? 0 : tau < top / ACC ? 0.5 * ACC * tau * tau : top * tau - top * top / (2 * ACC));
+    const run = (tau, top, a) => (tau <= 0 ? 0 : tau < top / a ? 0.5 * a * tau * tau : top * tau - top * top / (2 * a));
     const best = j => {
-      const m = s.mv?.[j], p = this.players[j], top = m?.top || 4.8, reach = m?.reach || 1.1, react = m?.react ?? 0.22;
+      const m = s.mv?.[j], p = this.players[j], top = m?.top || 4.8, reach = m?.reach || 1.1, react = m?.react ?? 0.22, a = p.acc || ACC;
       let b = null;
       for (const [t, x, z, y] of path) {
         if (y > 2.4 || (t > fl.t1 && (t > fl.t1 + 1.1 || y < 0.1))) continue;   // 너무 높거나, 두 번 튀어 끝난 공(바운드 뒤 1.1초까지만 칠 수 있다)
         if (Math.abs(x) > 10.4 || z < -18.9 || z > 20.4) continue;   // 펜스 너머
-        const def = Math.hypot(x - p.x, z - p.z) - reach - run(t - react, top);
+        const def = Math.hypot(x - p.x, z - p.z) - reach - run(t - react, top, a);
         if (!b || def < b.def) b = { t, x, z, y, def, top, react, reach };
       }
       return b;
@@ -897,7 +919,7 @@ export class MatchView {
       if (touch && j === touch.j) {
         const [bx, bz] = touch.p, dx = m.x - bx, dz = m.z - bz, dd = Math.hypot(dx, dz) || 1, off = touch.kind === 'body' ? 0.2 : 0.75;
         tx = bx + dx / dd * off; tz = bz + dz / dd * off;
-        sp = Math.max(m.v, cruise(Math.hypot(tx - p.x, tz - p.z), Math.max(0.2, touch.t - 0.05 - m.t0), true));
+        sp = Math.max(m.v, cruise(Math.hypot(tx - p.x, tz - p.z), Math.max(0.2, touch.t - 0.05 - m.t0), true, p.acc, p.dec));
       }
       // 나가는 공: 받을 것처럼 공이 지나는 선 옆까지 가서 준비하다가, 지나가기 직전에 라켓을 거두고 한 발 물러선다(판단)
       // 그 사람 앞에 떨어지는 공(옆줄 밖으로 나가는 공, 폴트 서브): 들어왔다면 칠 곳(떨어진 곳 너머)으로 쫓아가다가,
@@ -930,8 +952,8 @@ export class MatchView {
         let T = Math.max(0.12, dur - m.t0 - (set ? Math.min(m.m ?? 0.3, 0.45) : 0) - 0.02);
         const D = Math.hypot(tx - p.x, tz - p.z);
         // 쭉 뻗어 받는 공: 공이 느려 시간이 남아도 천천히 걸어가지 않는다. 늦게 읽고(그만큼 늦게 출발해) 힘껏 달려가 겨우 닿는다
-        if (m.k === 'reach' && D > 0.5) { const full = runTime(D, m.v, false) * 1.1; if (T > full) { t0 += T - full; T = full; } }
-        sp = cruise(D, T, set);
+        if (m.k === 'reach' && D > 0.5) { const full = runTime(D, m.v, false, p.acc, p.dec) * 1.1; if (T > full) { t0 += T - full; T = full; } }
+        sp = cruise(D, T, set, p.acc, p.dec);
         // 멈추지 못하는 사람은 공 자리를 지나쳐 계속 달린다(치는 순간에도 움직이고 있다)
         if (!set && D > 0.3) { tx += (tx - p.x) / D * 0.7; tz += (tz - p.z) / D * 0.7; }
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14) * (p.motion ? 0.35 : 1);
@@ -947,12 +969,12 @@ export class MatchView {
       // 위너를 맞는 사람: 공이 느려 시간이 남으면 반대쪽으로 몸이 쏠렸다가(역동작) 늦게 쫓아가 몸을 던진다
       // 역동작은 잠깐(0.3초쯤)만. 그 뒤로는 공 쪽으로 계속 움직이다 몸을 던진다(사용자 2026-11-09: 잘 친 공이라도 그쪽으로 움직이는 느낌이 있어야)
       if (m.k === 'miss') {
-        const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true);
+        const D = Math.hypot(tx - p.x, tz - p.z), go = lungeAt - 0.05 - runTime(D, m.v, true, p.acc, p.dec);
         if (go - m.t0 > 0.2 && D > 0.3) {
           const wx = (tx - p.x) / D, wz = (tz - p.z) / D, wf = Math.min(0.35, (go - m.t0) * 0.8);
           this.later(m.t0, () => this.runTo(j, p.x - wx * wf, p.z - wz * wf, 0, 2.6));
           t0 = Math.min(go, m.t0 + 0.3);
-          sp = Math.min(m.v, cruise(D + wf, Math.max(0.2, lungeAt - 0.05 - t0), true));
+          sp = Math.min(m.v, cruise(D + wf, Math.max(0.2, lungeAt - 0.05 - t0), true, p.acc, p.dec));
         }
       }
       this.later(t0, () => this.runTo(j, tx, tz, 0, sp, opt));
@@ -1122,9 +1144,9 @@ export class MatchView {
         const dx = p.tx - p.x, dz = p.tz - p.z, d = Math.hypot(dx, dz);
         if (d > 0.02) {
           let want = p.speed;
-          if (p.brake) want = Math.min(want, Math.sqrt(2 * DEC * Math.max(0, d - 0.02)) + 0.4);
+          if (p.brake) want = Math.min(want, Math.sqrt(2 * p.dec * Math.max(0, d - 0.02)) + 0.4);
           const braking = want < p.vel - 0.6;
-          p.vel += clamp(want - p.vel, -DEC * pdt, ACC * pdt);
+          p.vel += clamp(want - p.vel, -p.dec * pdt, p.acc * pdt);   // 선수마다 가속도(첫발)
           const step = Math.min(d, Math.max(0.2, p.vel) * pdt);
           p.x += dx / d * step; p.z += dz / d * step;
           p.stride += step * 2.6;

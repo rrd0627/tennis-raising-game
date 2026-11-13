@@ -1,7 +1,7 @@
 // 경기 시뮬레이션 엔진 — 포인트 단위 확률 엔진 (기획 문서 7장)
 // 엔진은 결과와 포인트 로그만 만들고, 화면(match3d.js)은 로그를 재생만 한다.
 import { COUNTER_OF, ALL_STATS, OPP_ARCH, STAT_NAME, grade } from './data.js';
-import { BALL_V, flightTime, bodyOf, reachOf, standOf } from './rally.js';
+import { BALL_V, flightTime, bodyOf, reachOf, standOf, runDist } from './rally.js';
 
 export function mulberry32(a) {
   return function () {
@@ -449,7 +449,7 @@ export class MatchSim {
       if (!m) return null;
       runFrom[j] = [...at[j]];
       const d = Math.hypot(m.x - at[j][0], m.z - at[j][1]);
-      const k = d > 0.01 ? Math.min(1, Math.max(0, ft - m.t0) * m.v / d) : 1;
+      const k = d > 0.01 ? Math.min(1, runDist(ft - m.t0, m.v, body[j].acc) / d) : 1;   // 가속도까지 넣어 실제로 갈 수 있는 만큼
       at[j] = [at[j][0] + (m.x - at[j][0]) * k, at[j][1] + (m.z - at[j][1]) * k];
       return { x: r2(m.x), z: r2(m.z), t0: r2(m.t0), v: r2(m.v), k: m.k, ...(m.far ? { far: r2(m.far) } : {}), ...(m.m !== undefined ? { m: r2(m.m) } : {}), ...(m.chase ? { chase: 1 } : {}), ...(m.body ? { top: r2(m.body.top), reach: r2(m.body.reach), react: r2(m.body.react) } : {}) };
     });

@@ -7,6 +7,7 @@ import {
 import { MatchSim, aiChoices, CHOICE_DEFS, DEFAULT_CHOICES, LOCKED_SHOT_OPTS, PLAN_OPTS, PLAN_SET, SHOT_NAME } from './sim.js';
 import { MatchView, webglOK, p3dPref, setP3dPref, prefetchP3d } from './match3d.js';
 import { launchKmh, spinRpm } from './ball.js';
+import { bodyOf } from './rally.js';
 import { portraitURL, heroURL, sceneURL, bgPath, fairyURL, introURL, PLAYER_LOOK, oppLook } from './art.js';
 import { HOME_LINES, STATE_LINES, LOCK_LINES, FAIL_WORD, PARTY_LINES, PARTY_WORD, TOUR_JOY, END_LINES } from './scenes.js';
 import { CHECKS } from './checks.js';
@@ -1092,6 +1093,8 @@ async function runMatch() {
     { charId: 'player', look: PLAYER_LOOK }, { charId: tr.partner, look: { ...PARTNER[tr.partner].color, band: '#ffffff' } },
     { charId: 'oppa', look: oppLook(opp.seed % 997, 0) }, { charId: 'oppb', look: oppLook(opp.seed % 997, 1) },
   ];
+  // 선수마다 가속도(첫발): 중계의 그림 선수·3D 선수가 엔진과 같은 빠르기로 속도를 낸다
+  players.forEach((p, i) => { const q = sim.P[i]; if (q) p.acc = bodyOf(q.stats, q.F).acc; });
   if (webglOK()) {
     try {
       // 확인 링크에서는 늘 3D 선수로 시작한다(확인하려고). 버튼으로 바꿀 수 있다

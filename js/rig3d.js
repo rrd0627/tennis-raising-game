@@ -412,6 +412,7 @@ export function createRig(vrm) {
       const hq0 = new THREE.Quaternion().setFromAxisAngle(S.TILT_AX, tiltOf(dl)).multiply(S.HQ7);
       const want0 = S.C0.clone().add(dl).sub(sweetFrom(V3(), hq0));
       rh.add(want0.sub(V3(...S.K7.rh)).sub(S0).multiplyScalar(w));
+      if (over?.reach) rh.add(over.reach.clone().multiplyScalar(w));   // 경기: 몸이 다 못 간 만큼 손을 더 뻗는다(발은 그대로)
     }
     // 모션캡처 샷(chestPoles): 팔꿈치 쪽을 가슴 기준 방향(rpc/lpc)으로 이어서 쓴다(팔이 위 뒤를 가리켜도 스위블 기준이 흔들리지 않게)
     const chq = S.chestPoles ? new THREE.Quaternion() : null; if (chq) B('upperChest').getWorldQuaternion(chq);
