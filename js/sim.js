@@ -15,22 +15,30 @@ export function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 밸런스 상수 (tools/balance.js 로 조정)
 export const TUNE = {
-  errBase: 0.15, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72,
+  errBase: 0.11, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72,
   // 작전. err·win: 범실·위너 배율, q: 샷 품질, serve: 퍼스트 서브 성공률. 범실이 위너보다 많아 win을 크게 잡는다
   tempo: { safe: { err: 0.92, win: 0.8, q: -8, serve: 0.03 }, normal: { err: 1, win: 1, q: 0, serve: 0 }, attack: { err: 1.12, win: 1.4, q: 8, serve: -0.03 } },
   // 작전의 구간별 힘. early는 첫 게임, late는 planGames번째 게임부터. q: 샷 품질, err: 범실 배율, tire: 지치는 속도.
   // 강타는 초반에 밀어붙이지만 오래가면 실수가 늘고, 끈질기게 버티는 쪽은 후반에 힘이 난다.
   planGames: 8,
   plan: {
-    power: { early: { q: 4, err: 0.92 }, late: { q: 0, err: 1.08 }, tire: 1.15 },
-    twoup: { early: { q: 3, err: 1 }, late: { q: 2, err: 1.02 }, tire: 1.05 },
-    twoback: { early: { q: -1, err: 0.98 }, late: { q: 3, err: 0.95 }, tire: 0.95 },
-    lob: { early: { q: -1, err: 1 }, late: { q: 6, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림. 2026-11-13: 뒤로 밀리며 치기가 어려워져(TUNE.back) 강타·로브를 조금 내리고 후위를 올림
+    power: { early: { q: 1, err: 0.92 }, late: { q: -2, err: 1.08 }, tire: 1.15 },
+    twoup: { early: { q: 7, err: 1 }, late: { q: 6, err: 1.02 }, tire: 1.05 },
+    twoback: { early: { q: -3, err: 0.98 }, late: { q: 1, err: 0.95 }, tire: 0.95 },
+    lob: { early: { q: 4, err: 1 }, late: { q: 10, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림. 2026-11-13: 뒤로 밀리며 치기가 어려워져(TUNE.back) 강타·로브를 조금 내리고 후위를 올림. 같은 날 어려운 공·하프 발리·스매시·빗맞음 범실(TUNE.hard 등)로 전위·로브가 약해져 올리고 강타·후위를 내림
   },
   rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
   // 뒤로 물러나며 치기(사용자 2026-11-13: 뒤로 가면서 치는 건 굉장히 어렵다). back = 깊은 공에 밀린 정도(0~1), 전위가 머리 위로 넘어간 로브를 쫓아가면 1.
   // 그 사람의 다음 샷 품질이 q만큼 낮아지고 범실이 err만큼 는다
   back: { q: 10, err: 0.07 },
+  // 어려운 공·움직이며 치기·기술 샷·빗맞음(사용자 2026-11-13: 어려운 공인데 수비 범위가 너무 넓고 실수가 없다, 개나리는 하프 발리를 잘 못하고
+  // 스매시 실수가 잦다, 빗맞는 경우가 많다, 치기 직전까지 움직이면 실수가 는다). 예전에는 쭉 뻗어 받은 공 범실 16.5%, 쉬운 공 14.5%로 거의 같았다
+  hard: 0.004,        // 받은 공의 부담 D가 30을 넘는 만큼 범실(D 42 → +4.8%p, 60 → +12%p)
+  rush: 0.07,         // 치는 순간까지 움직이고 있으면(여유 0.05초 안, 쭉 뻗어 받음) 범실 +7%p, 여유 0.15초 안·몸쪽 공은 절반
+  // 그 샷 능력치가 35면 이만큼 범실이 늘고, 75면 거의 없다(기술이 있으면 TUNE.skill.risk만큼 줄어든다)
+  tech: { half_volley: 0.3, smash: 0.1, low_volley: 0.04, swing_volley: 0.07, drop_volley: 0.06, dropshot: 0.06 },
+  // 빗맞음: 그 샷 능력치 35에 여유 있는 공이면 샷의 5%, 움직이며·어려운 공일수록 많다. 그중 err만큼은 범실, 나머지는 힘없이 넘어간다(품질 q만큼 낮게)
+  mis: { base: 0.05, err: 0.55, q: 22 },
   // 기술. 배운 사람만 쓴다. 안 배우면 기존과 같아서 승률 표는 기술 없는 기준이다. 배열은 수준 0, 1, 2.
   skill: {
     use: { drop: [1, 2, 3], smash: [1, 1.5, 2], swing: [1, 4, 7] }, // 고르는 빈도
@@ -628,8 +636,19 @@ export class MatchSim {
       if ((st === 'fh_slice' || st === 'bh_slice') && T.choices.shot === 'deep_slice') Q += 5;
       let err = (TUNE.errBase + (inc.D - S) * TUNE.errSlope + (RISK[st] || 0) * TUNE.skill.risk[skillLv] + (DIR_RISK[dir] || 0) - H.stats.focus / 1300 + fat(H) / 350 + (this.mentalState(H) === 'tilt' ? 0.06 : 0) + (T.choices.plan === 'power' && k >= 3 ? (k - 2) * TUNE.rallyErr : 0)) * tempoOf(T).err * planVal(T, 'err');
       if (inc.back) { Q -= TUNE.back.q * inc.back; err += TUNE.back.err * inc.back; }
-      err = clamp(err, 0.02, 0.65);
+      // 치는 순간까지 움직이고 있었나(받으러 갈 때 엔진이 정한 종류와 여유: 쭉 뻗어 받음, 몸쪽 공, 공보다 먼저 닿은 시간)
+      const mvH = shots[shots.length - 1]?.mv?.[this.P.indexOf(H)];
+      const rush = !mvH ? 0 : mvH.k === 'reach' ? 1 : mvH.k === 'jam' ? 0.5 : mvH.m === undefined ? 0 : mvH.m < 0.05 ? 1 : mvH.m < 0.15 ? 0.5 : 0;
+      const hardD = Math.max(0, inc.D - 30), techK = clamp((75 - S) / 40, 0.1, 1.3);
+      err += TUNE.hard * hardD + TUNE.rush * rush + (TUNE.tech[st] || 0) * techK * TUNE.skill.risk[skillLv];
+      // 빗맞음: 능력치가 낮을수록, 움직이며 칠수록, 어려운 공일수록
+      const mishit = rng() < TUNE.mis.base * clamp((75 - S) / 40, 0.15, 1.4) * (1 + rush + hardD / 40);
+      const misErr = mishit && rng() < TUNE.mis.err;
+      if (mishit && !misErr) Q -= TUNE.mis.q;
+      err = clamp(err, 0.02, 0.75);
+      if (misErr) err = 1;
       const info = shotInfo(H, shotUse(st, dir, inc.forceBh, pressure), accOfQ(Q));
+      if (mishit) info.mishit = 1;
       { const stn = stanceOf(st, shots[shots.length - 1]?.mv?.[this.P.indexOf(H)], inc.D); if (stn) info.stance = inc.back > 0.5 ? 'run' : stn; }   // 뒤로 밀리며 치면 달리면서
       tire(H);
       const posNow = this.snapshot();

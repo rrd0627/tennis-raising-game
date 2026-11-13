@@ -720,11 +720,26 @@ export class MatchView {
     return { t, l, zoom };
   }
 
-  // 포인트 시작: 모두 시작 자리에 선 채로 보이고, 잠깐 숨을 고른 뒤 서브한다
+  // 장면 끊기(중계처럼): 화면을 잠깐 어둡게 했다가 밝힌다. 어두운 동안 자리를 옮기면 순간이동이 보이지 않는다(사용자 2026-11-13: 순간이동 없애 줘)
+  cutFade(to, dur) {
+    if (!this.fadeEl) {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:absolute;left:0;top:0;right:0;bottom:0;background:#0d1220;opacity:0;pointer-events:none;z-index:3';
+      this.el.appendChild(d); this.fadeEl = d;
+    }
+    const el = this.fadeEl, from = +el.style.opacity || 0;
+    return new Promise(res => this.tweens.push({ t: 0, dur, step: k => { el.style.opacity = String(from + (to - from) * k); }, done: res }));
+  }
+
+  // 포인트 시작: 모두 시작 자리에 선 채로 보이고, 잠깐 숨을 고른 뒤 서브한다.
+  // 자리를 옮겨야 하면 화면을 잠깐 어둡게 끊고 옮긴다(this.cutting 동안 3D 선수도 새 자리에 바로 선다)
   async beginPoint(s0) {
     const start = s0.pos;
     const first = !this.started;
     this.started = true;
+    const far = !first && this.players.some((p, i) => { const [x, z] = i === s0.h ? s0.from : start[i]; return Math.hypot(p.x - x, p.z - z) > 0.3; });
+    if (far) await this.cutFade(1, 0.14);
+    this.cutting = far;
     for (let i = 0; i < 4; i++) {
       const [x, z] = i === s0.h ? s0.from : start[i];
       const p = this.players[i];
@@ -744,7 +759,8 @@ export class MatchView {
     this.tpsSide = 1;   // 어깨 너머 시점은 오른쪽 어깨에서 시작
     this.camX = s0.from[0]; this.camZ = s0.from[1];
     this.setCamera(s0.h < 2 ? 'serveUs' : 'serveThem', true);
-    await this.wait(first ? 0.25 : 0.45);
+    if (far) { await this.wait(0.05); this.cutting = false; this.cutFade(0, 0.22); await this.wait(0.4); }
+    else await this.wait(first ? 0.25 : 0.45);
   }
 
   // 큰 포인트의 서브 전: 공을 두 번 튀기며 숨을 고른다
@@ -863,6 +879,7 @@ export class MatchView {
     }
     // 스윙: 타구 순간 몸을 돌리고 잠깐 뒤 준비 자세로. 쭉 뻗어 받은 공이면 몸이 더 기운다
     const hitter = this.players[s.h];
+    if (s.info?.mishit) this.popText(hitter.x, 2.3, hitter.z, '빗맞음!');   // 라켓 가운데에 맞지 않았다(사용자 2026-11-13: 빗맞는 경우가 많다)
     const stretched = prev?.mv?.[s.h]?.k === 'reach';
     // 받으러 갈 때 정해 둔 동작(swing)이 있으면 임팩트 → 팔로스로, 없으면(발리·스매시·서브) 예전 그림 하나
     const sw = hitter.swing?.type === s.type ? hitter.swing : null;

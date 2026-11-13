@@ -197,14 +197,21 @@ export class Players3D {
     // 몸(뿌리): 그림 선수 자리(+공에 맞추려고 옮긴 만큼 c.off, 서로 밀어낸 만큼 c.sep)를 목표로 따라가되, 땅을 디딘 발로만 밀어 빨라지거나 느려진다
     // (사용자 2026-11-13: 발과 상관없이 물리적으로 말도 안 되게 움직인다). 두 발이 다 떠 있으면(달리기의 뜬 순간, 뛰기) 가던 대로 간다
     // 친 뒤(c.hold): 임팩트 자리에서 0.1~0.5초에 걸쳐 그림 선수 자리로 풀린다(그 자리에 멈춰 섰다가 한꺼번에 쫓아가면 휙 움직였다)
-    const hu = c.hold && sw ? sstep(0.1, 0.5, this.bt - sw.tImpact) : 1;
+    const hu = c.hold ? sstep(0.1, 0.5, this.bt - c.hold[2]) : 1;   // 그 임팩트 시각 기준(곧바로 다음 스윙이 시작돼도 이어서 풀린다)
     const tgx = (c.hold ? c.hold[0] + (p.x + c.off.x - c.hold[0]) * hu : p.x + c.off.x) + c.sep[0], tgz = (c.hold ? c.hold[1] + (p.z + c.off.z - c.hold[1]) * hu : p.z + c.off.z) + c.sep[1], B = c.body;
     // 포인트 사이에 자리를 한 번에 옮긴 것(순간이동)은 달린 것이 아니다: 몸과 발을 새 자리에 바로 놓는다
-    const tele = !B.init || Math.hypot(tgx - c.tp[0], tgz - c.tp[1]) > Math.max(0.35, pdt * 12) || Math.hypot(tgx - B.x, tgz - B.z) > 2.5, spriteJump = md > Math.max(0.35, pdt * 12);
+    // 순간이동(사용자 2026-11-13: 없애 줘): 그림 선수가 자리를 한 번에 옮긴 것(포인트 시작, 화면을 끊는 동안)만 몸과 발을 새 자리에 바로 놓는다.
+    // 몸이 많이 뒤처진 것은 바로 옮기지 않고 따라잡는다(아래 vcap)
+    // 그림 선수 자체가 한 번에 옮겨졌을 때만 순간이동으로 본다(공에 맞추는 이동·친 뒤 풀림 같은 목표의 움직임은 몸이 따라간다)
+    const spriteJump = md > Math.max(0.35, pdt * 12);
+    const tele = !B.init || spriteJump || (v.cutting && Math.hypot(tgx - B.x, tgz - B.z) > 0.05) || Math.hypot(tgx - B.x, tgz - B.z) > 8;
     if (tele) { Object.assign(B, { init: true, x: tgx, z: tgz, vx: 0, vz: 0 }); c.tv = [0, 0]; c.acc = [0, 0]; c.pv = [0, 0]; c.rp = null; c.ft.left.init = c.ft.right.init = false; }
     else if (pdt > 0) {
-      const k = Math.min(1, pdt * 10); c.tv[0] += ((tgx - c.tp[0]) / pdt - c.tv[0]) * k; c.tv[1] += ((tgz - c.tp[1]) / pdt - c.tv[1]) * k;
-      if (id === 'sv' && inSw) Object.assign(B, { x: tgx, z: tgz, vx: 0, vz: 0 });   // 서브 토스부터는 맞춰 둔 자리 그대로
+      // 목표가 움직이는 빠르기(목표가 한 번에 바뀐 프레임은 초속 8m까지만 읽는다)
+      let ivx = (tgx - c.tp[0]) / pdt, ivz = (tgz - c.tp[1]) / pdt; const il = Math.hypot(ivx, ivz); if (il > 8) { ivx *= 8 / il; ivz *= 8 / il; }
+      const k = Math.min(1, pdt * 10); c.tv[0] += (ivx - c.tv[0]) * k; c.tv[1] += (ivz - c.tv[1]) * k;
+      // 서버: 기다리는 동안에도 칠 자리를 그대로 따라간다(그 자리는 몸이 서브 방향으로 돌며 조금씩 움직인다. 기다리는 동안 따로 움직이다 토스 때 한 번에 맞추면 30~40cm 순간이동했다). 토스부터는 그 자리 그대로
+      if (id === 'sv') Object.assign(B, { x: tgx, z: tgz, vx: inSw ? 0 : c.tv[0], vz: inSw ? 0 : c.tv[1] });
       else {
         const air = !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air) || (!!c.ft.left.sw && !!c.ft.right.sw && !c.ft.left.sw.clip && !c.ft.right.sw.clip);
         const gap = Math.hypot(tgx - B.x, tgz - B.z), tr = sw ? this.bt - sw.tImpact : 9;
@@ -220,7 +227,7 @@ export class Players3D {
         let ax = (vdx - B.vx) / pdt, az = (vdz - B.vz) / pdt; const al = Math.hypot(ax, az); if (al > amax) { ax *= amax / al; az *= amax / al; }
         B.vx += ax * pdt; B.vz += az * pdt;
         // 사람 빠르기 안에서(사용자 2026-11-13: 최대 속도가 너무 빠르다)
-        const vcap = lunge ? clamp(Math.hypot(c.tv[0], c.tv[1]) + 1.2, 4, 5.5) : 5.5, vv = Math.hypot(B.vx, B.vz); if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
+        const tvs = Math.hypot(c.tv[0], c.tv[1]), vcap = lunge ? clamp(tvs + 1.2, 4, 5.5) : gap > 1 ? Math.max(5.5, tvs + 2) : 5.5, vv = Math.hypot(B.vx, B.vz);   // 1m 넘게 뒤처지면 그림 선수보다 초속 2m 빨리 따라잡는다 if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
         B.x += B.vx * pdt; B.z += B.vz * pdt;
         if (lunge && Tgo < 0.1) { const ex = tgx - B.x, ez = tgz - B.z, el = Math.hypot(ex, ez), m = Math.min(el * Math.min(1, pdt / Tgo) * 0.6, 0.02); if (el > 1e-4) { B.x += ex / el * m; B.z += ez / el * m; } }   // 마지막 0.1초에 남은 차이를 조금씩(한 프레임 2cm까지)   // 마지막 0.1초에 남은 차이를 조금씩(라켓이 공을 지나치지 않게)
         const ka = Math.min(1, pdt * 8); c.acc[0] += (ax - c.acc[0]) * ka; c.acc[1] += (az - c.acc[1]) * ka;
@@ -337,7 +344,7 @@ export class Players3D {
       const Tgo = sw && sw.id !== 'sv' ? Math.max(0, sw.tImpact - this.bt) : 0, [qx, qz] = Tgo > 0 ? spriteAt(p, Math.min(Tgo, 1.5)) : [p.x, p.z];
       const need = V3(contact.x - wx - qx, 0, contact.z - wz - qz);
       if (sw?.dive) need.clampLength(0, 0.9); else need.clampLength(0, 1.6);
-      if (id === 'sv') c.off.lerp(need.multiplyScalar(w), inSw ? 1 : Math.min(1, pdt * 5));
+      if (id === 'sv') c.off.lerp(need.multiplyScalar(w), inSw || v.cutting ? 1 : Math.min(1, pdt * 5));   // 화면을 끊는 동안 서버는 칠 자리에 바로 선다(토스할 때 미끄러지지 않게)
       else {
         // 몸 옮기는 빠르기는 초속 3m까지(튀지 않게). 공이 곧 오는데(발리) 못 닿을 만큼 남았으면 임팩트 0.05초 전까지 닿게 그만큼만 빠르게
         const tgt = need.multiplyScalar(w), d = tgt.sub(c.off), left = sw ? sw.tImpact - 0.05 - this.bt : 1;
@@ -346,7 +353,8 @@ export class Players3D {
       }   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
     } else { const L = c.off.length(), mx = 1.3 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때는 초속 1.3m까지(그림 선수가 뛰는 빠르기에 더해져 휙 움직였다)
     // 친 뒤 팔로스로(동작의 발을 따르는 동안)에는 임팩트 자리에서 천천히 풀린다(위 hu). 디딘 발과 몸이 벌어지지 않게(사용자 2026-11-12: 발이 미끄러진다)
-    if (inSw && sw.id !== 'sv' && this.bt >= sw.tImpact && pw < 0.5) { if (!c.hold) c.hold = [p.x + c.off.x, p.z + c.off.z]; } else c.hold = null;
+    if (inSw && sw.id !== 'sv' && this.bt >= sw.tImpact && pw < 0.5) { if (!c.hold || c.hold[2] !== sw.tImpact) c.hold = [p.x + c.off.x, p.z + c.off.z, sw.tImpact]; }
+    else if (c.hold && this.bt - c.hold[2] > 0.5) c.hold = null;
     // 자세는 리그 기준(제자리, 돌리지 않음)으로 만들고 나서 코트 위로 옮긴다
     const key = id + (inSw ? ':' + sw.tImpact.toFixed(3) : ':idle');
     if (key !== c.key) { if (c.last && !(c.key === 'sv:idle' && id === 'sv')) { c.snap = c.last; c.fade = FADE; c.snapHip = c.hipP; c.snapChest = c.chestP; } c.key = key; if (!inSw) c.release = null; }   // 서브 준비 → 토스는 같은 자세라 섞지 않는다(섞으면 발이 밀린다)

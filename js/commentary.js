@@ -104,6 +104,8 @@ export function duringShot(s, i, pt, st) {
     if (!st.longSaid) { st.longSaid = true; return [C(`${n}구째! 이런 랠리는 정말 보기 드뭅니다!`, 1)]; }
     return [C(pick([`${n}구째! 또 긴 랠리입니다.`, `${n}구째, 오늘 랠리가 정말 길어요.`, '끝까지 안 놓칩니다!']), 1)];
   }
+  // 빗맞음(사용자 2026-11-13: 빗맞는 경우가 많다). 넘어가면 힘없는 공, 아니면 실수
+  if (s.info?.mishit) return [C(s.res === 'in' ? pick(['빗맞았는데 넘어갑니다!', '아, 빗맞았어요. 공에 힘이 없습니다.']) : pick(['아, 빗맞았어요!', '라켓 가운데에 안 맞았네요.']), 1)];
   // 나가는 공을 쳐 버렸다(판단 실수)
   if (pt.shots[i - 1]?.outBall) return [C(pick(['아, 나가는 공인데 칩니다!', '나가는 공을 쳐 버렸어요!', '어, 그건 나가는 공이었는데요!']), 2)];
   const pj = (s.mv || []).findIndex(m => m && m.k === 'poach');
