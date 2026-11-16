@@ -29,6 +29,39 @@ const wrapD = a => ((a % 360) + 540) % 360 - 180;   // 각(도)을 -180~180으�
 const NOFADE = /^(hips|spine|chest|upperChest|(left|right)(UpperLeg|LowerLeg|Foot|Toes))$/;
 const K = 1.12;   // 키(그림 선수가 실제보다 크게 보여서 맞춘다)
 const FADE = 0.16;   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
+// 기다리는 자세(2026-11-16 개나리 경기 비교: 무릎을 편 채 다리를 벌리고 꼿꼿이 서서 라켓을 어깨 옆에 세워 들었다).
+// 실제처럼 무릎을 굽히고 상체를 앞으로, 라켓은 가슴 앞에 두 손으로(왼손은 라켓 목). 네트 앞은 라켓을 조금 더 높이
+const READY = {
+  readyB: { hip: [0, -0.13, 0, 0], chest: [0, 16, 0], rf: [-0.25, 0.1, -10, 0], lf: [0.25, 0.1, 10, 0], rheel: [0], lheel: [0], rh: [-0.1, 1.0, 0.33], s: [0.2, 0.55, 1], f: [1, 0, -0.2], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] },
+  readyN: { hip: [0, -0.12, 0, 0], chest: [0, 14, 0], rf: [-0.25, 0.1, -10, 0], lf: [0.25, 0.1, 10, 0], rheel: [0], lheel: [0], rh: [-0.08, 1.12, 0.36], s: [0.15, 0.8, 0.7], f: [1, 0, -0.15], rp: [-0.6, -1, -0.3], lh: 'throat', lp: [0.7, -1, 0] },
+};
+// 스윙 동작(모션캡처)이 임팩트 앞뒤가 아닐 때 무릎을 더 굽힌다(m). 모션캡처 선수는 샷 사이에 거의 서 있고, 발리·스매시는 골반 높이가 그대로라 다리가 펴져 보였다.
+// 발리는 임팩트 때도 굽힌다(동호인 전위의 낮은 자세)
+const CROUCH = { fh: 0.06, bh: 0.06, fv: 0.1, bv: 0.1, sm: 0.04, fs: 0.06, bs: 0.06 };
+// 친 뒤 동작을 이만큼(초)만 쓰고 기다리는 자세로 돌아간다(모션캡처 끝의 라켓을 머리 옆에 세워 든 채 서 있는 부분은 쓰지 않는다)
+// 포인트가 끝난 몸짓(2026-11-16: 3D 선수에게는 없었다). 이긴 쪽은 라켓을 든 손을 높이 들고 왼주먹을 쥐어 당기고(파트너와 가까우면 손뼉을 마주치는 것처럼 보인다),
+// 실수한 사람은 고개를 숙이고 팔과 라켓을 늘어뜨린다. 그림 선수의 'cheer', 'sad' 자세를 따른다
+const GESTURE = {
+  cheerP: { hip: [0, -0.05, 0, 0], chest: [0, -4, 0], rf: [-0.2, 0.1, -8, 0], lf: [0.2, 0.1, 8, 0], rheel: [0], lheel: [0], rh: [-0.2, 1.72, 0.18], s: [0, 1, 0.12], f: [1, 0, 0], rp: [-1, -0.2, -0.3], lh: [0.22, 1.18, 0.2], lp: [1, -0.6, 0], lk: [1] },
+  sadP: { hip: [0, -0.03, 0, 0], chest: [0, 26, 0], rf: [-0.17, 0.1, -6, 0], lf: [0.17, 0.1, 6, 0], rheel: [0], lheel: [0], rh: [-0.2, 0.74, 0.12], s: [0.1, -1, 0.35], f: [1, 0, 0], rp: [-0.3, -1, 0], lh: [0.17, 0.78, 0.12], lp: [0.4, -1, 0], lk: [0.3] },
+};
+// 세컨 서브(2026-11-16: 동호인 세컨은 살살 넣는 서브가 많다): 토스는 그대로, 트로피 뒤부터 착지 전까지 손·라켓·몸 돌기를 임팩트 자세 쪽으로 30% 당겨 작고 느긋하게
+function softServe(keys) {
+  const j = keys.findIndex(k => k.t > 0), a = keys[j - 1], b = keys[j], u = (0 - a.t) / (b.t - a.t);
+  const k0 = {}; for (const n of Object.keys(a)) if (Array.isArray(a[n]) && Array.isArray(b[n])) k0[n] = a[n].map((v, i) => v + (b[n][i] - v) * u);
+  const nrm = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
+  return keys.map(k => {
+    const w = 0.3 * sstep(-0.75, -0.45, k.t) * (1 - sstep(0.5, 0.9, k.t));
+    if (w <= 0) return k;
+    const o = { ...k }, tw = (n, A) => { if (Array.isArray(k[n]) && k0[n]) o[n] = k[n].map((v, i) => k0[n][i] + (v - k0[n][i]) * (1 - A)); };
+    tw('rh', w); tw('chest', w); if (Array.isArray(k.lh)) tw('lh', w * 0.6);
+    for (const n of ['s', 'f', 'rpc', 'lpc']) { tw(n, w); if (Array.isArray(o[n])) o[n] = nrm(o[n]); }
+    if (Array.isArray(o.s) && Array.isArray(o.f)) { const d = o.f.reduce((x, v, i) => x + v * o.s[i], 0); o.f = nrm(o.f.map((v, i) => v - d * o.s[i])); }
+    if (Array.isArray(k.hip) && k0.hip) o.hip = [k.hip[0], k.hip[1], k.hip[2], k0.hip[3] + (k.hip[3] - k0.hip[3]) * (1 - w * 0.8)];
+    return o;
+  });
+}
+const TAIL = { fh: 0.72, bh: 0.72, fv: 0.45, bv: 0.45, sm: 0.85, fs: 0.65, bs: 0.65 };
 export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
 const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
@@ -70,6 +103,7 @@ function clipOf(type, wing) {
   if (type === 'serve' || type === 'serve2') return 'sv';
   if (type === 'smash') return 'sm';
   if (/volley/.test(type) && type !== 'swing_volley') return wing === 'bh' ? 'bv' : 'fv';
+  if (/slice|chip_return|dropshot|def_lob/.test(type)) return wing === 'bh' ? 'bs' : 'fs';   // 슬라이스 동작(백핸드는 한 손, 2026-11-16)
   return wing === 'bh' ? 'bh' : 'fh';
 }
 const meshesOf = v => { const a = []; v.scene.traverse(o => { if (o.isMesh) a.push(o); }); return a; };
@@ -106,6 +140,8 @@ export class Players3D {
         }
       });
     });
+    // 머리카락(스프링 뼈): 칠 때마다 옆으로 크게 휘날려 눈에 띄었다(2026-11-16). 공기 저항을 늘리고 덜 늘어나게
+    for (const v of vrms) for (const j of v.springBoneManager?.joints || []) { const st = j.settings; st.dragForce = Math.max(st.dragForce, 0.62); st.stiffness = st.stiffness * 1.6 + 0.3; }
     const rigs = vrms.map(v => createRig(v));
     // 스윙 준비(몸 크기에만 달려 있으니 한 번 해서 넷이 같이 쓴다). 한 샷씩 쉬어 가며(화면이 멈추지 않게)
     for (const d of SHOTS) { rigs[0].setShot(d); this.shots[d.id] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false; }
@@ -114,11 +150,14 @@ export class Players3D {
       for (let t = -SV_TOSS + 0.05; t <= Sv.toss; t += 0.01) { const a = R.sample(t, 'lh'), b = R.sample(t + 0.01, 'lh'); if (Array.isArray(a) && Array.isArray(b) && (b[1] - a[1]) > bv) { bv = b[1] - a[1]; best = t; } }
       Sv.tossR = best; }
     // 기다리는 자세는 손으로 짠 준비 자세(모션캡처 스윙의 첫 자세는 이미 준비 동작 중이라): 뒤에서는 포핸드, 네트 앞에서는 발리 준비
-    for (const [rid, sid] of [['readyB', 'fh'], ['readyN', 'fv']]) {
+    const POSES = { ...READY, ...GESTURE };
+    for (const [rid, sid] of [['readyB', 'fh'], ['readyN', 'fv'], ['cheerP', 'fh'], ['sadP', 'fh']]) {
       const d = SHOTS.find(x => x.id === sid);
-      rigs[0].setShot({ ...d, id: rid, keys: d.handKeys || d.keys, bevel: d.handBevel ?? d.bevel, toss: d.handToss ?? d.toss, step: d.handStep ?? d.step, lroll: d.handLroll, rollK: 0, chestPoles: false });
+      rigs[0].setShot({ ...d, id: rid, keys: [{ t: -1, ...POSES[rid] }, { t: 1, ...POSES[rid] }], bevel: d.handBevel ?? d.bevel, toss: d.handToss ?? d.toss, step: d.handStep ?? d.step, lroll: d.handLroll, rollK: 0, chestPoles: false });
       this.shots[rid] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false;
     }
+    // 세컨 서브 동작(라켓이 몸을 뚫지 않게 하는 고침은 새로 구한다)
+    { const d = SHOTS.find(x => x.id === 'sv'); rigs[0].setShot({ ...d, id: 'sv2', keys: softServe(d.keys), cor: null }); this.shots.sv2 = rigs[0].S; this.shots.sv2.tossR = this.shots.sv.tossR; await yieldFrame(); if (!this.view.alive) return false; }
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
@@ -135,7 +174,7 @@ export class Players3D {
     const id = clipOf(type, wing), S = this.shots[id];
     const lead = opt.from != null ? -opt.from : Math.min(Math.max(dt, 0.25), id === 'sv' ? 1.3 : 0.95);
     if (id !== 'sv') c.serve = null;
-    c.sw = { id, t0: this.bt, tImpact: this.bt + dt, tStart: this.bt + dt - lead, contact: contact ? contact.clone() : null, aim, full: !!opt.full, tail: Math.min(S.T1, 1.0), dive: !!opt.dive };
+    c.sw = { id, t0: this.bt, tImpact: this.bt + dt, tStart: this.bt + dt - lead, contact: contact ? contact.clone() : null, aim, full: !!opt.full, tail: Math.min(S.T1, TAIL[id] ?? 1.0), dive: !!opt.dive, second: type === 'serve2' };
   }
   // 서브: 포인트를 시작할 때부터 서브 준비 자세로 공이 맞을 자리에 맞춰 선다
   prepServe(i, contact, aim) {
@@ -189,7 +228,10 @@ export class Players3D {
     let sw = c.sw;
     if (sw && this.bt > sw.tImpact + sw.tail) { if (sw.id === 'sv' && !(c.serve && c.serve.at > sw.tStart)) c.serve = null;   /* 폴트 뒤 세컨 서브를 미리 준비했으면 그대로 */ c.sw = sw = null; c.release = null; }
     const inSw = sw && this.bt >= sw.tStart;
-    const id = inSw ? sw.id : c.serve ? 'sv' : Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB', S = this.shots[id];
+    // 포인트가 끝난 몸짓(그림 선수의 cheer·sad 자세를 따른다)
+    const gest = !inSw && !c.serve && !v.cutting && (p.pose === 'cheer' || p.pose === 'sad') ? (p.pose === 'cheer' ? 'cheerP' : 'sadP') : null;
+    const id = inSw ? sw.id : c.serve ? 'sv' : gest || (Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB');
+    const S = id === 'sv' && inSw && sw.second && this.shots.sv2 ? this.shots.sv2 : this.shots[id];   // 세컨 서브는 작고 느긋한 동작
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
@@ -304,6 +346,9 @@ export class Players3D {
     // 몸이 공에 맞출 자리까지 다 못 갔으면 그만큼 팔을 뻗는다(손 자리만, 30cm까지. 리그가 임팩트 둘레에서만 쓴다)
     let reach = null;
     if (inSw && sw.id !== 'sv' && c.res) { const dx = c.res[0] / K, dz = c.res[1] / K; reach = V3(dx * cy - dz * sy, 0, dx * sy + dz * cy); if (reach.length() > 0.3) reach.setLength(0.3); }
+    // 스윙 동작 중 무릎 굽히기(CROUCH): 땅·발리는 임팩트 둘레를 빼고, 발리는 늘
+    let crouch = 0;
+    if (inSw && CROUCH[id]) { const core = /^[fb]v$/.test(id) ? 0 : sstep(-0.42, -0.15, tc) * (1 - sstep(0.2, 0.55, tc)); crouch = CROUCH[id] * (1 - core); }
     const over = {
       reach,
       foot: (side, f) => {
@@ -323,8 +368,8 @@ export class Players3D {
         }
         return o;
       },
-      hip: h => { h = [h[0] + gHx, h[1] - 0.035 * mv + gBob - c.sq * 0.6 + jhip * jk, h[2] + gHz, h[3] + gYaw]; if (c.fade > 0 && c.snapHip) { const u = sstep(0, 1, 1 - c.fade / FADE); h = h.map((v, k) => k === 3 ? c.snapHip[3] + wrapD(v - c.snapHip[3]) * u : c.snapHip[k] + (v - c.snapHip[k]) * u); } c.hipP = h; return h; },
-      chest: ch => { ch = [ch[0] + gChY, ch[1] + 8 * mv * Math.min(1, spd / 5) + gPitch, ch[2] + gRoll]; if (c.fade > 0 && c.snapChest) { const u = sstep(0, 1, 1 - c.fade / FADE); ch = ch.map((v, k) => c.snapChest[k] + (v - c.snapChest[k]) * u); } c.chestP = ch; return ch; },
+      hip: h => { h = [h[0] + gHx, h[1] - 0.035 * mv + gBob - c.sq * 0.6 + jhip * jk - crouch, h[2] + gHz, h[3] + gYaw]; if (c.fade > 0 && c.snapHip) { const u = sstep(0, 1, 1 - c.fade / FADE); h = h.map((v, k) => k === 3 ? c.snapHip[3] + wrapD(v - c.snapHip[3]) * u : c.snapHip[k] + (v - c.snapHip[k]) * u); } c.hipP = h; return h; },
+      chest: ch => { ch = [ch[0] + gChY, ch[1] + 8 * mv * Math.min(1, spd / 5) + gPitch + crouch * 70, ch[2] + gRoll]; if (c.fade > 0 && c.snapChest) { const u = sstep(0, 1, 1 - c.fade / FADE); ch = ch.map((v, k) => c.snapChest[k] + (v - c.snapChest[k]) * u); } c.chestP = ch; return ch; },
     };
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
     const contact = sw && (inSw || sw.id !== 'sv') ? sw.contact : c.serve?.contact, Sc = sw ? this.shots[sw.id] : S;
@@ -364,7 +409,8 @@ export class Players3D {
     // 고개: 공(보이면) 쪽, 아니면 네트 너머
     const bp = v.ball?.visible ? v.ball.position : V3(0, 1.2, team === 0 ? -8 : 8);
     const rx = rx0, rz = rz0, tx = (bp.x - rx) / K, tz = (bp.z - rz) / K;
-    R.lookAt(V3(tx * Math.cos(-c.yaw) + tz * Math.sin(-c.yaw), bp.y / K, -tx * Math.sin(-c.yaw) + tz * Math.cos(-c.yaw)));
+    if (id === 'sadP') R.lookAt(V3(0, 0.05, 1.1));   // 고개를 숙여 발 앞을 본다
+    else R.lookAt(V3(tx * Math.cos(-c.yaw) + tz * Math.sin(-c.yaw), bp.y / K, -tx * Math.sin(-c.yaw) + tz * Math.cos(-c.yaw)));
     // 바뀌는 순간은 앞 자세에서 부드럽게
     const bones = this.bones.map(n => R.B(n));
     if (c.fade > 0 && c.snap) {

@@ -14,6 +14,9 @@ CLIPS = {
   'bv': ('astrejos_VReves', -0.8, 0.75, 'throat'),
   'sv': ('mrios_Servicio', -1.6, 1.0, None),
   'sm': ('mrios_Remate', -1.2, 0.8, 'throat'),
+  # 슬라이스(2026-11-16: 개나리는 슬라이스가 흔하다): 발리 자료는 크게 휘두르는 연습 동작이라 줄이지 않고 그대로 쓰면 슬라이스에 가깝다. 백핸드 슬라이스는 한 손(A)
+  'fs': ('mrios_VDerecha', -1.0, 0.8, 'throat'),
+  'bs': ('astrejos_VReves', -1.0, 0.8, 'throat'),
 }
 SRC_LABEL = {'mrios': '여자 선수 C(일반)', 'astrejos': '여자 선수 A(일반)'}
 

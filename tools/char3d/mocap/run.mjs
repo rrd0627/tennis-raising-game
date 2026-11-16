@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 const HERE = import.meta.dirname, ROOT = join(HERE, '..', '..', '..');
 const BAKE_ONLY = process.argv.includes('--bake');   // 키는 그대로 두고 고침만 다시 굽는다
+// --only=fs,bs: 그 샷만 새로 만들어 넣는다(다른 샷의 키와 고침은 그대로)
+const ONLY = (process.argv.find(a => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);
+const ALL = ['fh', 'bh', 'fv', 'bv', 'sv', 'sm', 'fs', 'bs'], IDS = ONLY.length ? ONLY : ALL;
 const URL_ = process.argv.slice(2).find(a => !a.startsWith('--')) || 'http://localhost:8080/tools/char3d/swing.html?ball=mid&t=0';
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const port = 9300 + Math.floor(Math.random() * 500), prof = mkdtempSync(join(tmpdir(), 'mocap-'));
@@ -14,7 +17,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let ws, id = 0; const wait = new Map();
 const send = (m, p = {}) => new Promise(r => { const i = ++id; wait.set(i, r); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
 const ev = async e => { const r = await send('Runtime.evaluate', { expression: e, awaitPromise: true, returnByValue: true }); return r.result?.result?.value ?? r.result?.exceptionDetails?.exception?.description; };
-const SRC = { fh: '여자 선수 C(일반)', bh: '여자 선수 C(일반)', fv: '여자 선수 C(일반)', bv: '여자 선수 A(일반)', sv: '여자 선수 C(일반)', sm: '여자 선수 C(일반)' };
+const SRC = { fh: '여자 선수 C(일반)', bh: '여자 선수 C(일반)', fv: '여자 선수 C(일반)', bv: '여자 선수 A(일반)', sv: '여자 선수 C(일반)', sm: '여자 선수 C(일반)', fs: '여자 선수 C(일반)', bs: '여자 선수 A(일반)' };
 const ORDER = ['t', 'hip', 'chest', 'rf', 'lf', 'rheel', 'lheel', 'rh', 's', 'f', 'rp', 'rpc', 'lh', 'lp', 'lpc', 'lk', 'bevel'];
 const val = v => typeof v === 'string' ? `'${v}'` : Array.isArray(v) ? `[${v.map(x => +(+x).toFixed(3)).join(', ')}]` : String(v);
 try {
@@ -28,21 +31,34 @@ try {
   const res = await ev(`window.__CLIPS = ${readFileSync(join(HERE, 'clips.json'), 'utf8')};\n(async () => { try { return await ${body} } catch (e) { return 'ERR ' + e.stack; } })()`);
   if (typeof res !== 'string' || res.startsWith('ERR')) throw new Error(String(res));
   const { log, out } = JSON.parse(res); console.log(log);
-  const lines = [readFileSync(join(HERE, 'header.txt'), 'utf8').trimEnd(), 'export const MOCAP = {'];
-  for (const sid of ['fh', 'bh', 'fv', 'bv', 'sv', 'sm']) {
-    const x = out[sid];
-    lines.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${sid === 'sv' || sid === 'sm' ? ', corMove: true' : ''}${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}${x.tk ? ', tk: [' + x.tk + ']' : ''}, keys: [`);
-    for (const k of x.keys) lines.push('    { ' + [...ORDER.filter(n => n in k), ...Object.keys(k).filter(n => !ORDER.includes(n))].map(n => `${n}: ${val(k[n])}`).join(', ') + ' },');
-    lines.push('  ] },');
+  // 샷 하나의 글(줄 배열)
+  const entry = sid => {
+    const x = out[sid], L = [];
+    L.push(`  ${sid}: { src: '${SRC[sid]}', bevel: ${x.bevel}, rollK: 0.01, chestPoles: true${sid === 'sv' || sid === 'sm' ? ', corMove: true' : ''}${x.lroll != null ? ', lroll: ' + x.lroll : ''}${x.toss != null ? ', toss: ' + x.toss : ''}${x.tk ? ', tk: [' + x.tk + ']' : ''}, keys: [`);
+    for (const k of x.keys) L.push('    { ' + [...ORDER.filter(n => n in k), ...Object.keys(k).filter(n => !ORDER.includes(n))].map(n => `${n}: ${val(k[n])}`).join(', ') + ' },');
+    L.push('  ] },');
+    return L;
+  };
+  if (ONLY.length) {
+    // 있는 파일에 그 샷만 바꾸거나 넣는다(다른 샷의 키와 고침은 그대로)
+    let txt = readFileSync(join(ROOT, 'js', 'swings_mocap.js'), 'utf8').replace(/\r/g, '');
+    for (const sid of ONLY) {
+      const block = entry(sid).join('\n') + '\n', re = new RegExp(`^  ${sid}: \\{[\\s\\S]*?^  \\] \\},\\n`, 'm');
+      txt = re.test(txt) ? txt.replace(re, block) : txt.replace(/^\};\s*$/m, block + '};\n');
+    }
+    writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), txt);
+  } else {
+    const lines = [readFileSync(join(HERE, 'header.txt'), 'utf8').trimEnd(), 'export const MOCAP = {'];
+    for (const sid of ALL) lines.push(...entry(sid));
+    lines.push('};', '');
+    writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), lines.join('\n'));
   }
-  lines.push('};', '');
-  writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), lines.join('\n'));
   }
   // 라켓이 몸을 뚫지 않게 하는 고침을 구해 같이 굽는다(게임에서 다시 구하지 않게).
   // 고침을 굽지 않은 키는 페이지가 처음 열릴 때 고침을 구하느라 오래 걸린다(몇 분까지 기다린다)
   await send('Page.navigate', { url: URL_ + '&cb=' + Date.now() }); await sleep(1500);
   for (let i = 0; i < 1500 && !(await ev('!!(window.__ready && window.__dbg)')); i++) await sleep(200);
-  const cor = JSON.parse(await ev(`JSON.stringify(Object.fromEntries(['fh', 'bh', 'fv', 'bv', 'sv', 'sm'].map(id => { __dbg.setShot(id); const C = __dbg.R.S.COR; return [id, C ? { dt: 0.01, w: C.W.flatMap(v => v.toArray().map(x => +x.toFixed(4))), d: C.D.flatMap(v => v.toArray().map(x => +x.toFixed(4))) } : null]; })))`));
+  const cor = JSON.parse(await ev(`JSON.stringify(Object.fromEntries(${JSON.stringify(IDS)}.map(id => { __dbg.setShot(id); const C = __dbg.R.S.COR; return [id, C ? { dt: 0.01, w: C.W.flatMap(v => v.toArray().map(x => +x.toFixed(4))), d: C.D.flatMap(v => v.toArray().map(x => +x.toFixed(4))) } : null]; })))`));
   let txt = readFileSync(join(ROOT, 'js', 'swings_mocap.js'), 'utf8');
   for (const [id, c] of Object.entries(cor)) if (c) txt = txt.replace(new RegExp(`^  ${id}: \\{ (.*?), keys: \\[`, 'm'), (m, a) => `  ${id}: { ${a}, cor: ${JSON.stringify(c)}, keys: [`);
   writeFileSync(join(ROOT, 'js', 'swings_mocap.js'), txt);

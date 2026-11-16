@@ -31,6 +31,7 @@
 python -I tools/char3d/mocap/convert.py      # clips.json
 npm run serve                                 # 다른 창에서
 node tools/char3d/mocap/run.mjs               # js/swings_mocap.js
+node tools/char3d/mocap/run.mjs --only=fs,bs  # 그 샷만 새로 만들어 넣는다(다른 샷의 키·고침은 그대로). 슬라이스(fs, bs)는 발리 자료를 줄이지 않고 허리 높이로 맞춘 것
 node tools/char3d/jointcheck.mjs              # 관절 검사
 ```
 

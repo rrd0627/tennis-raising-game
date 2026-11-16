@@ -70,12 +70,13 @@ export function matchIntro(st) {
 // 포인트 전 점수(prev: "40 - 30" 같은 글)로 누가 게임·매치 포인트인지
 function pointsOf(prev, tb) {
   const p = (prev || '0 - 0').split(' - ');
-  const m = { 0: 0, 15: 1, 30: 2, 40: 3 };
+  const m = { 0: 0, 15: 1, 30: 2, 40: 3, AD: 4 };
   return tb ? p.map(Number) : p.map(x => m[x] ?? 0);
 }
-function matchPointFor(pts, games, tb) {
+// 게임 포인트(원듀스 노애드): 40-0~30, 어드밴티지, 두 번째 듀스(decide)
+function matchPointFor(pts, games, tb, decide = false) {
   for (const t of [0, 1]) {
-    const gp = tb ? pts[t] >= 6 && pts[t] > pts[1 - t] : pts[t] === 3;
+    const gp = tb ? pts[t] >= 6 && pts[t] > pts[1 - t] : decide || pts[t] === 4 || (pts[t] === 3 && pts[1 - t] < 3);
     if (!gp) continue;
     const g = games[t] + 1, o = games[1 - t];
     if (tb || (g >= 6 && g - o >= 2) || g === 7) return t;
@@ -88,10 +89,11 @@ export function beforePoint(pt, prevScore, st) {
   const games = pt.games, tb = games[0] === 6 && games[1] === 6;
   const sTeam = pt.shots[0].h < 2 ? 0 : 1, rTeam = 1 - sTeam;
   if (tb && !st.tbSaid) { st.tbSaid = true; return [C('6 대 6! 타이브레이크에 들어갑니다.', 3)]; }
-  const mp = matchPointFor(pointsOf(prevScore, tb), games, tb);
+  const mp = matchPointFor(pointsOf(prevScore, tb), games, tb, pt.label === '듀스 결정 포인트');
   if (mp !== null) return [C(pick([`매치 포인트! ${teamName(st, mp)}, 이 포인트면 승리입니다.`, `매치 포인트입니다. ${teamName(st, mp)}가 승리까지 한 포인트!`]), 3)];
   if (pt.label === '브레이크 포인트') return [C(pick([`브레이크 포인트! ${teamName(st, rTeam)}가 상대 서브 게임을 가져올 기회입니다.`, `브레이크 포인트입니다. ${teamName(st, sTeam)}, 여기서 지켜야 합니다.`]), 3)];
-  if (pt.label === '듀스 결정 포인트') return [C(pick(['듀스! 이 한 포인트로 게임이 갈립니다.', '듀스입니다. 노애드라 이 포인트를 따는 쪽이 게임을 가져갑니다.']), 3)];
+  if (pt.label === '듀스 결정 포인트') return [C(pick(['다시 듀스! 이제 이 한 포인트로 게임이 갈립니다.', '두 번째 듀스입니다. 원듀스 노애드라 이 포인트를 따는 쪽이 게임을 가져갑니다.']), 3)];
+  if (pt.label === '듀스') return [C(pick(['듀스입니다. 두 포인트를 이어 따야 합니다.', '40 대 40, 듀스!']), 2)];
   return [];
 }
 
@@ -213,7 +215,7 @@ export function matchEnd(winner, games, comeback, st) {
 export function stakesOf(pt, prevScore) {
   const games = pt.games, tb = games[0] === 6 && games[1] === 6;
   const p = pointsOf(prevScore, tb), sTeam = pt.shots[0].h < 2 ? 0 : 1;
-  const mp = matchPointFor(p, games, tb);
+  const mp = matchPointFor(p, games, tb, pt.label === '듀스 결정 포인트');
   if (mp !== null) return { L: 3, for: mp, label: '매치 포인트' };
   if (!pt.big) return { L: 0, for: null, label: '' };
   if (pt.label === '브레이크 포인트') return { L: 2, for: 1 - sTeam, label: pt.label };

@@ -13,6 +13,11 @@ export function mulberry32(a) {
 }
 export function gauss(rng) { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// 게임 점수(원듀스 노애드, KATO 본선 규정): 40-40(첫 듀스)에서는 두 포인트를 이어 따야 게임, 다시 듀스(두 번째)가 되면 다음 한 포인트로 결정.
+// p = [포인트, 포인트]. 4-3은 어드밴티지, 4-4는 두 번째 듀스
+export const gameWon = (a, b) => (Math.max(a, b) >= 4 && Math.abs(a - b) >= 2) || Math.max(a, b) >= 5;
+// 이 포인트를 따면 게임을 가져가나
+const gamePoint = (p, t) => { const q = [...p]; q[t]++; return gameWon(q[0], q[1]); };
 // 밸런스 상수 (tools/balance.js 로 조정)
 export const TUNE = {
   errBase: 0.11, errSlope: 0.0006, winBase: 0.05, winSlope: 0.0012, noise: 20, qD: 0.25, dCarry: 0.55, statW: 0.72,
@@ -232,9 +237,10 @@ export class MatchSim {
     const zs = this.zSign(p.team), xs = this.xSign(p);
     if (p.pos === 'net') {
       const lean = 0.3 + Math.max(0, press) * p.stats.poach / 400;
-      return [clamp(xs * 2.2 + bx * lean, -4.4, 4.4), zs * (3.6 - Math.max(0, press) * 0.8 + Math.max(0, -press) * 0.6)];
+      // 전위는 서비스 박스 가운데쯤, 네트에서 두세 걸음(3m, 2026-11-16 개나리 경기 비교: 예전 3.6m)
+      return [clamp(xs * 2.2 + bx * lean, -4.4, 4.4), zs * (3.0 - Math.max(0, press) * 0.6 + Math.max(0, -press) * 0.6)];
     }
-    return [clamp(xs * 2.7 + bx * 0.3, -5, 5), zs * 12.2];   // 후위는 베이스라인 조금 뒤(떨어지는 공을 칠 자리)
+    return [clamp(xs * 2.7 + bx * 0.3, -5, 5), zs * 11.8];   // 후위는 베이스라인 위(개나리는 베이스라인 위·안쪽에 선다, 예전 12.2m)
   }
   // 공 빠르기: 샷 품질과 파워
   // 서브 공 빠르기(바운드까지 평균, m/s). 여자 동호인 서브는 느리다(사용자 경험, 2026-11-08).
@@ -363,7 +369,7 @@ export class MatchSim {
       const court = n % 2; // 0=듀스 1=애드
       const recvs = this.P.filter(p => p.team === rTeam);
       let receiver = recvs.find(p => p.side === court);
-      const deciding = !tb && st.p[0] === 3 && st.p[1] === 3;
+      const deciding = !tb && st.p[0] === 4 && st.p[1] === 4;   // 두 번째 듀스: 받는 팀이 받을 사람을 고른다
       if (deciding) receiver = recvs.reduce((a, b) => (a.stats.return >= b.stats.return ? a : b));
       // 상황 판단
       const ctx = this.situation(st, tb, sTeam);
@@ -377,7 +383,7 @@ export class MatchSim {
       pt.games = [...this.games];
       points.push(pt);
       // 게임 종료?
-      if (!tb && (st.p[0] === 4 || st.p[1] === 4)) break;
+      if (!tb && gameWon(st.p[0], st.p[1])) break;
       if (tb && (st.p[0] >= 7 || st.p[1] >= 7) && Math.abs(st.p[0] - st.p[1]) >= 2) break;
     }
     const gw = st.p[0] > st.p[1] ? 0 : 1;
@@ -412,13 +418,13 @@ export class MatchSim {
     const [a, b] = this.games;
     if (!tb) {
       const ps = st.p;
-      const rWins = ps[rTeam] === 3; // 노애드: 3이면 다음 포인트로 게임
-      const sWins = ps[sTeam] === 3;
-      if (rWins) { bpFor = rTeam; big = true; pressure = true; label = ps[0] === 3 && ps[1] === 3 ? '듀스 결정 포인트' : '브레이크 포인트'; }
-      else if (ps[0] === 3 && ps[1] === 3) { pressure = true; big = true; label = '듀스 결정 포인트'; }
+      const rWins = gamePoint(ps, rTeam);   // 원듀스 노애드
+      const decide = ps[0] === 4 && ps[1] === 4;
+      if (rWins) { bpFor = rTeam; big = true; pressure = true; label = decide ? '듀스 결정 포인트' : '브레이크 포인트'; }
+      else if (ps[0] === 3 && ps[1] === 3) { pressure = true; label = '듀스'; }
       // 매치 포인트
       for (const t of [0, 1]) {
-        if (ps[t] === 3) {
+        if (gamePoint(ps, t)) {
           const g2 = [...this.games]; g2[t]++;
           if ((g2[t] >= 6 && g2[t] - g2[1 - t] >= 2) || g2[t] === 7) { label = '매치 포인트'; big = true; pressure = true; }
         }
@@ -433,8 +439,10 @@ export class MatchSim {
 
   scoreText(st, tb) {
     if (tb) return `${st.p[0]} - ${st.p[1]}`;
-    const n = ['0', '15', '30', '40', '게임'];
-    return `${n[Math.min(4, st.p[0])]} - ${n[Math.min(4, st.p[1])]}`;
+    const n = ['0', '15', '30', '40'], [a, b] = st.p;
+    if (gameWon(a, b)) return a > b ? `게임 - ${n[Math.min(3, b)]}` : `${n[Math.min(3, a)]} - 게임`;
+    if (a >= 3 && b >= 3) return a === b ? '40 - 40' : a > b ? 'AD - 40' : '40 - AD';   // 듀스·어드밴티지
+    return `${n[a]} - ${n[b]}`;
   }
 
   // ── 포인트 ─────────────────────────────────────────────
@@ -562,7 +570,8 @@ export class MatchSim {
     // 서브 품질(중계의 샷 카드용): 퍼스트는 서브와 코스, 세컨은 세컨 서브와 코스
     const sq1 = 0.6 * s.first_serve + 0.4 * s.serve_place + M(server) * 100, sq2 = 0.7 * s.second_serve + 0.3 * s.serve_place + M(server) * 100;
     server.rec.fsTot++;
-    const pin = clamp(0.47 + s.first_serve / 230 + M(server) * 0.8 - fat(server) / 300 + tempoOf(sT).serve, 0.35, 0.9);
+    // 퍼스트 서브 들어가는 비율: 동호인은 반쯤(NTRP 2.5~4.0 53~55%, 2026-11-16 자료 비교). 능력치 35 → 53%, 50 → 57%, 70 → 63%
+    const pin = clamp(0.43 + s.first_serve / 350 + M(server) * 0.8 - fat(server) / 300 + tempoOf(sT).serve, 0.35, 0.85);
     let first = rng() < pin;
     let D, type = 'serve';
     // 서브 코스(중계용): 와이드 / 센터 / 몸쪽
@@ -590,7 +599,7 @@ export class MatchSim {
     } else {
       const fb = fault(), fv = this.serveV(server, true);
       shots.push({ h: si, type: 'serve', from: serverPos, bounce: fb, to: fb, res: 'fault', pos: pos0, v: r2(fv), info: shotInfo(server, ['first_serve', 'serve_place', 'power'], sq1 * 0.45), mv: move(letGo(serverPos, fb, flightTime(serverPos, fb, null, fv, 'serve'), receiver.team, ri, fv, retD(fv)), 0) });
-      const pin2 = clamp(0.80 + s.second_serve / 600 + M(server) - fat(server) / 400, 0.72, 0.97);
+      const pin2 = clamp(0.75 + s.second_serve / 500 + M(server) - fat(server) / 400, 0.65, 0.95);   // 세컨: 능력치 35 → 82%, 70 → 89%(미국 동호인 약 70%. 우리 동호인은 살살 넣는 세컨이 많다)
       if (rng() >= pin2) {
         server.rec.df++;
         server.gauge -= 8 * (1 - server.stats.composure / 170);
@@ -840,8 +849,12 @@ export class MatchSim {
         pushLvl(H.team, nextD > 45 ? 1 : nextD < 15 ? -0.6 : 0);
         const plan = [];
         plan[Ri] = runAt(Ri, contact, ft, Math.max(0.02, body[Ri].react + late), dir === 'body' ? 'jam' : f >= 0.72 ? 'reach' : 'set');
-        const [hx, hz] = this.homeOf(H, contact[0], lvl[H.team]);
-        plan[hi] = { x: hx, z: hz, t0: 0.22, v: H.pos === 'net' && !wasNet ? body[hi].top : body[hi].recov, k: 'back' };
+        // 친 사람이 제자리로: 네트로 나가는 사람은 전속력, 그 밖에는 친 자리에서 제자리 쪽으로 60%만, 조금 늦고 느리게
+        // (2026-11-16 개나리 경기·동호인 자료 비교: 동호인은 친 자리 근처에 머무는 일이 많고 "발이 늦어 자리가 비어 보인다")
+        let [hx, hz] = this.homeOf(H, contact[0], lvl[H.team]);
+        const rush2Net = H.pos === 'net' && !wasNet;
+        if (!rush2Net) { hx = from[0] + (hx - from[0]) * 0.6; hz = from[1] + (hz - from[1]) * 0.6; }
+        plan[hi] = { x: hx, z: hz, t0: rush2Net ? 0.22 : 0.35, v: rush2Net ? body[hi].top : body[hi].recov * 0.85, k: 'back' };
         shot.mv = move(follow(plan, contact[0]), ft);
       }
       lastByTeam[H.team] = H; lastShooter = H;
@@ -917,6 +930,8 @@ export class MatchSim {
     if (dir === 'body') return net || crossT;
     if (dir === 'dtl') return other;
     if (dir === 'center') return this.rng() < 0.5 ? os[0] : os[1];
+    // 대각선 상대가 전위이고 다른 한 명이 뒤에 있으면 크로스 공은 대개 뒤의 사람에게 간다(전위에게 곧장 치지 않는다, 2026-11-16 개나리 경기 비교)
+    if (H.pos === 'base' && crossT.pos === 'net' && other.pos === 'base' && this.rng() < 0.8) return other;
     return crossT;
   }
 
@@ -931,17 +946,19 @@ export class MatchSim {
     const isReturn = inc.type === 'serve' || inc.type === 'serve2';
     if (inc.smashable) { add('smash', 0.85); add('moon_volley', 0.08); }   // 닿는 로브는 거의 스매시
     else if (isReturn) {
-      add('return', 0.62); add('chip_return', 0.18); if (oppNet) add('topspin_lob', 0.08); add('def_lob', inc.D > 60 ? 0.12 : 0.02);
+      add('return', 0.5); add('chip_return', 0.26); if (oppNet) add('topspin_lob', 0.13); add('def_lob', inc.D > 60 ? 0.14 : 0.04);   // 개나리는 슬라이스·로브 리턴이 흔하다(2026-11-16)
     } else if (H.pos === 'net') {
-      if (inc.height === 'high') { add('smash', 0.75); add('moon_volley', 0.1); add('drop_volley', 0.08); }
-      else if (inc.height === 'low') { add('low_volley', 0.55); add('half_volley', 0.2); add('drop_volley', 0.18); add('moon_volley', 0.07); }
-      else { add(fh ? 'fh_volley' : 'bh_volley', 0.62); add('drop_volley', 0.1); add('moon_volley', 0.12); add('swing_volley', 0.06); }
+      // 개나리는 드롭 발리를 거의 안 한다(2026-11-16): 예전 샷의 5.6%
+      if (inc.height === 'high') { add('smash', 0.75); add('moon_volley', 0.12); add('drop_volley', 0.03); }
+      else if (inc.height === 'low') { add('low_volley', 0.6); add('half_volley', 0.22); add('drop_volley', 0.05); add('moon_volley', 0.1); }
+      else { add(fh ? 'fh_volley' : 'bh_volley', 0.66); add('drop_volley', 0.03); add('moon_volley', 0.14); add('swing_volley', 0.06); }
     } else {
       if (inc.height === 'high') { add('smash', 0.18); add('def_lob', 0.3); add(fh ? 'fh_drive' : 'bh_drive', 0.4); add('moon_volley', 0.06); }
       else if (inc.D > 65) { add('def_lob', 0.35); add(fh ? 'fh_slice' : 'bh_slice', 0.35); add(fh ? 'fh_drive' : 'bh_drive', 0.25); }
       else {
-        add(fh ? 'fh_drive' : 'bh_drive', 0.5); add(fh ? 'fh_slice' : 'bh_slice', 0.2);
-        add('topspin_lob', oppNet ? 0.16 : 0.03); add('dropshot', bothBase ? 0.1 : 0.03);
+        // 개나리는 로브(전위 머리 위로, 깊게)와 슬라이스(백핸드는 더)가 흔하다(2026-11-16 개나리 경기·동호인 자료 비교)
+        add(fh ? 'fh_drive' : 'bh_drive', 0.5); add(fh ? 'fh_slice' : 'bh_slice', fh ? 0.22 : 0.38);
+        add('topspin_lob', oppNet ? 0.26 : 0.05); add('def_lob', oppNet ? 0.06 : 0.02); add('dropshot', bothBase ? 0.05 : 0.02);
         add('passing', oppNet ? 0.14 : 0); add('swing_volley', inc.height === 'mid' && inc.D < 35 ? 0.05 : 0);
         add('half_volley', inc.height === 'low' ? 0.05 : 0);
       }
@@ -983,7 +1000,7 @@ export class MatchSim {
     const lob = type === 'topspin_lob' || type === 'def_lob' || type === 'moon_volley';
     if (lob) d.deep = 1;
     else if (type === 'dropshot' || type === 'drop_volley') d.short = 1;
-    else if (H.pos === 'net' || type === 'smash') { if (oppNet) d.body = 0.3; d.center = 0.25; d.angle = 0.25; d.deep = 0.2; }
+    else if (H.pos === 'net' || type === 'smash') { if (oppNet) d.body = 0.12; d.center = 0.25; d.angle = 0.3; d.deep = 0.25; }   // 전위끼리 발리 싸움은 드물다(몸쪽 0.3 → 0.12, 2026-11-16)
     else {
       d.cross = 0.55; d.dtl = oppNet ? 0.15 : 0.08; d.center = 0.15; d.angle = 0.1; d.deep = 0.05;
       // 받은 공에 따라 공격 방향이 달라진다(사용자 경험): 쉬운 공은 다운더라인·앵글로 공격하고, 어려운 공은 크로스·깊게 안전하게 넘긴다

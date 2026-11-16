@@ -56,7 +56,7 @@
     R.setShot(def);
     // 임팩트를 몸 앞으로(사용자 2026-11-11: 공이 임팩트 지점을 지나쳤다가 돌아가는 느낌). 손목이 가장 빠른 때나 라켓이 네트와 나란한 때는
     // 라켓 가운데가 아직 몸 옆(포핸드 발리는 골반보다 뒤)에 있다. 라켓 가운데가 골반 앞 AHEAD m에 처음 오는 때를 0초로 옮긴다
-    const AHEAD = { fh: 0.38, bh: 0.45, fv: 0.45, bv: 0.45 };
+    const AHEAD = { fh: 0.38, bh: 0.45, fv: 0.45, bv: 0.45, fs: 0.4, bs: 0.45 };
     let tk = null;
     if (AHEAD[id] != null) {
       const ah = t => { R.pose(t, 'mid'); const hp = R.B('hips').getWorldPosition(V()); return R.racket.localToWorld(V(0, 0.45, 0)).z - hp.z; };
@@ -90,7 +90,7 @@
     }
     // 임팩트 높이를 게임 공 높이에 맞춘다(사용자 2026-11-11: 포핸드가 급작스럽게 숙여진다). 모션캡처 임팩트는 어깨 높이라(포핸드 1.7m)
     // 허리 높이(1.1m) 공을 칠 때마다 리그가 크게 숙였다. 임팩트 둘레(±W초)의 손 자리를 내리고 그만큼 무릎을 조금 굽힌다
-    const HGT = { fh: 1.3, bh: 1.15, fv: 1.2, bv: 1.05 };   // m(경기 세계, 3D 선수 키 배율 1.12)
+    const HGT = { fh: 1.3, bh: 1.15, fv: 1.2, bv: 1.05, fs: 1.0, bs: 0.95 };   // m(경기 세계, 3D 선수 키 배율 1.12). 슬라이스는 허리 높이
     if (HGT[id]) {
       R.setShot(def); const c0 = R.S.C0.y, d = HGT[id] / 1.12 - c0, W = /v$/.test(id) ? 0.35 : 0.5;
       for (const kk of keys) {
