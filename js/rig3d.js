@@ -391,6 +391,7 @@ export function createRig(vrm) {
       const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
       const hk = side[0] + 'heel';
       let heel = has(hk) ? Math.max(0, sample(t, hk)[0]) : 0;
+      if (over?.heel) heel = over.heel(side, heel);   // 이동 엔진(모션캡처 걷기·달리기)의 뒤꿈치
       const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
       if (overL > 0) heel = Math.max(heel, Math.min(38, heel + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
       legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));

@@ -7,6 +7,7 @@ import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { VRMLoaderPlugin } from '../vendor/three-vrm.module.min.js';
 import { createRig } from './rig3d.js';
 import { SHOTS } from './swings.js';
+import { loadLoco, locoState, locoUpdate } from './loco3d.js';
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -83,7 +84,7 @@ export function setP3dPref(on) { try { localStorage.setItem(PREF, on ? '1' : '0'
 const SRC = (() => { try { const u = new URL('../art/char3d/vroid_sample.vrm', import.meta.url); u.search = new URL(import.meta.url).search; return u.href; } catch { return 'art/char3d/vroid_sample.vrm'; } })();
 let pending = null;
 // 모델 파일을 미리 받아 둔다(대회 첫 화면에서). 경기 화면에 들어오면 곧 3D 선수가 보이게
-export function prefetchP3d() { loadBuf(); }
+export function prefetchP3d() { loadBuf(); loadLoco(); }
 function loadBuf() {
   if (!pending) pending = (async () => {
     if (typeof location !== 'undefined' && location.protocol === 'file:') return null;
@@ -114,8 +115,9 @@ export class Players3D {
 
   // 모델 넷을 만들고(텍스처·모양은 하나를 같이 쓴다) 스윙을 미리 준비한다. 못 하면 false(그림 선수 그대로)
   async load() {
-    const buf = await loadBuf();
+    const [buf, locoDB] = await Promise.all([loadBuf(), loadLoco()]);
     if (!buf || !this.view.alive) return false;
+    this.locoDB = locoDB;   // 이동 엔진 자료(없으면 예전 걸음)
     const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
     const vrms = [];
     for (let i = 0; i < 4; i++) {
@@ -164,6 +166,8 @@ export class Players3D {
       this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0], gait: { on: false, t: 0 }, hipP: null, chestP: null, sep: [0, 0], body: { init: false, x: 0, z: 0, vx: 0, vz: 0 }, tp: [p.x, p.z], tv: [0, 0], acc: [0, 0], ps: [0, 0] });
     }
     this.bones = rigs[0].ALLB;
+    // 이동 자료(m) → 리그 단위(골반 높이 비), 경기 세계(m)
+    if (this.locoDB) { this.locoK = rigs[0].REST.hips.y / this.locoDB.hipH; this.locoSc = this.locoK * K; for (const c of this.list) c.lk = { left: {}, right: {} }; }
     this.ready = true;
     return true;
   }
@@ -233,6 +237,11 @@ export class Players3D {
     const id = inSw ? sw.id : c.serve ? 'sv' : gest || (Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB');
     const S = id === 'sv' && inSw && sw.second && this.shots.sv2 ? this.shots.sv2 : this.shots[id];   // 세컨 서브는 작고 느긋한 동작
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
+    // 이동 엔진(사용자 2026-11-16: 트리플A처럼 갈 곳을 정하고 → 자연스럽게 가고 → 도착하면 다음 동작). 기다리기·움직이기는 모션캡처 걷기·달리기(loco3d.js)로,
+    // 칠 때(임팩트 0.3초 전~0.7초 뒤)·서브·포인트가 끝난 몸짓은 예전처럼 그 동작으로. 스윙 앞부분(백스윙)은 위는 스윙, 아래는 이동 엔진으로 겹친다
+    const pwPre = inSw && sw.id !== 'sv' ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(0.35, 0.7, tc)) : 1;
+    const useLoco = !!this.locoDB && id !== 'sv' && !gest && pwPre >= 0.999;
+    if (!useLoco && c.lc) { c.lc = null; this.locoFade(c); c.gait.on = false; for (const sd of ['left', 'right']) c.lk[sd] = {}; }
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
     if (md > 1e-4) c.dir = [mdx / md, mdz / md];
@@ -247,13 +256,14 @@ export class Players3D {
     // 그림 선수 자체가 한 번에 옮겨졌을 때만 순간이동으로 본다(공에 맞추는 이동·친 뒤 풀림 같은 목표의 움직임은 몸이 따라간다)
     const spriteJump = md > Math.max(0.35, pdt * 12);
     const tele = !B.init || spriteJump || (v.cutting && Math.hypot(tgx - B.x, tgz - B.z) > 0.05) || Math.hypot(tgx - B.x, tgz - B.z) > 8;
-    if (tele) { Object.assign(B, { init: true, x: tgx, z: tgz, vx: 0, vz: 0 }); c.tv = [0, 0]; c.acc = [0, 0]; c.pv = [0, 0]; c.rp = null; c.ft.left.init = c.ft.right.init = false; }
+    if (tele) { Object.assign(B, { init: true, x: tgx, z: tgz, vx: 0, vz: 0 }); c.tv = [0, 0]; c.acc = [0, 0]; c.pv = [0, 0]; c.rp = null; c.ft.left.init = c.ft.right.init = false; c.lc = null; if (c.lk) c.lk = { left: {}, right: {} }; }
     else if (pdt > 0) {
       // 목표가 움직이는 빠르기(목표가 한 번에 바뀐 프레임은 초속 8m까지만 읽는다)
       let ivx = (tgx - c.tp[0]) / pdt, ivz = (tgz - c.tp[1]) / pdt; const il = Math.hypot(ivx, ivz); if (il > 8) { ivx *= 8 / il; ivz *= 8 / il; }
       const k = Math.min(1, pdt * 10); c.tv[0] += (ivx - c.tv[0]) * k; c.tv[1] += (ivz - c.tv[1]) * k;
       // 서버: 기다리는 동안에도 칠 자리를 그대로 따라간다(그 자리는 몸이 서브 방향으로 돌며 조금씩 움직인다. 기다리는 동안 따로 움직이다 토스 때 한 번에 맞추면 30~40cm 순간이동했다). 토스부터는 그 자리 그대로
       if (id === 'sv') Object.assign(B, { x: tgx, z: tgz, vx: inSw ? 0 : c.tv[0], vz: inSw ? 0 : c.tv[1] });
+      else if (useLoco) this.locoStep(c, p, B, tgx, tgz, pdt, base, inSw, sw, tc);
       else {
         const air = !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air) || (!!c.ft.left.sw && !!c.ft.right.sw && !c.ft.left.sw.clip && !c.ft.right.sw.clip);
         const gap = Math.hypot(tgx - B.x, tgz - B.z), tr = sw ? this.bt - sw.tImpact : 9;
@@ -269,7 +279,9 @@ export class Players3D {
         let ax = (vdx - B.vx) / pdt, az = (vdz - B.vz) / pdt; const al = Math.hypot(ax, az); if (al > amax) { ax *= amax / al; az *= amax / al; }
         B.vx += ax * pdt; B.vz += az * pdt;
         // 사람 빠르기 안에서(사용자 2026-11-13: 최대 속도가 너무 빠르다)
-        const tvs = Math.hypot(c.tv[0], c.tv[1]), vcap = lunge ? clamp(tvs + 1.2, 4, 5.5) : gap > 1 ? Math.max(5.5, tvs + 2) : 5.5, vv = Math.hypot(B.vx, B.vz);   // 1m 넘게 뒤처지면 그림 선수보다 초속 2m 빨리 따라잡는다 if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
+        // 1m 넘게 뒤처지면 그림 선수보다 초속 2m 빨리 따라잡는다(2026-11-16: 이 줄의 묶기가 주석 안에 들어가 있어 그동안 묶지 않았다)
+        const tvs = Math.hypot(c.tv[0], c.tv[1]), vcap = lunge ? clamp(tvs + 1.2, 4, 5.5) : gap > 1 ? Math.max(5.5, tvs + 2) : 5.5, vv = Math.hypot(B.vx, B.vz);
+        if (vv > vcap) { B.vx *= vcap / vv; B.vz *= vcap / vv; }
         B.x += B.vx * pdt; B.z += B.vz * pdt;
         if (lunge && Tgo < 0.1) { const ex = tgx - B.x, ez = tgz - B.z, el = Math.hypot(ex, ez), m = Math.min(el * Math.min(1, pdt / Tgo) * 0.6, 0.02); if (el > 1e-4) { B.x += ex / el * m; B.z += ez / el * m; } }   // 마지막 0.1초에 남은 차이를 조금씩(한 프레임 2cm까지)   // 마지막 0.1초에 남은 차이를 조금씩(라켓이 공을 지나치지 않게)
         const ka = Math.min(1, pdt * 8); c.acc[0] += (ax - c.acc[0]) * ka; c.acc[1] += (az - c.acc[1]) * ka;
@@ -294,7 +306,8 @@ export class Players3D {
       const off = Math.abs(rel) > 150 * D ? -80 * D : clamp(rel, -80 * D, 80 * D) * sstep(35 * D, 60 * D, Math.abs(rel));
       yawT += off * sstep(2.0, 3.0, rspd) * (inSw ? 1 - sstep(-0.7, -0.35, tc) : 1);
     }
-    let dy = yawT - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); c.yaw += dy * (id === 'sv' && inSw ? 1 : Math.min(1, pdt * 8));   // 서브: 바로 그 방향으로(돌면서 공에 맞추려고 몸이 미끄러지지 않게)
+    let dy = yawT - c.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    if (!useLoco) c.yaw += dy * (id === 'sv' && inSw ? 1 : Math.min(1, pdt * 8));   // 서브: 바로 그 방향으로(돌면서 공에 맞추려고 몸이 미끄러지지 않게). 이동 엔진이면 그 방향(locoStep)
     const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw);
     // 뛰기: 그림 선수의 hop은 순간 올라갔다가 곧게 내려오는 값이라(그림에는 괜찮다) 3D에서는 중력대로 다시 그린다(사용자 2026-11-11: 스플릿이 이상하다).
     // 스플릿 스텝은 살짝 굽혔다가 몇 cm 떠서 발을 벌리며 내려앉고 무릎을 굽힌다. 기뻐서 뛰는 것은 줄여서 뛴다
@@ -321,14 +334,14 @@ export class Players3D {
     const svSide = id === 'sv' && (c.serve || sw)?.contact ? Math.sign((c.serve || sw).contact.z) : 0, toeK = svSide ? 1 - sstep(0, 0.1, tc) : 0;
     const toIn = sw ? sw.tImpact - this.bt : 9, adj = !!sw && sw.id !== 'sv' && toIn > 0.25 && toIn < 0.9 && spd < 0.6;
     const ctx = { rx: rx0, rz: rz0, cy, sy, yawD: c.yaw / D, pw, clip: pw < 0.5, adj, air: !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air), airT: c.jmp?.air, spd, bob: 0, pdt };
-    this.planSteps(c, ctx);
+    if (!useLoco) this.planSteps(c, ctx);
     // 골반: 한 발이 떠 있으면 디딘 발 쪽으로, 둘 다 디디면 두 발 가운데로 무게를 싣는다. 걷기·사이드 스텝은 디딘 다리 위에서 조금 올라가고,
     // 달리기는 디딜 때 눌렸다가 뜰 때 올라간다. 앞으로 내딛는 다리 쪽으로 골반이 조금 돌고 가슴은 반대로 돈다.
     // 몸은 힘을 준 쪽으로 기운다(빨라질 때 앞으로, 멈출 때 뒤로, 옆으로 밀 때 그쪽으로). 스윙(모션캡처) 동안은 동작의 골반을 쓴다
     let gHx = 0, gHz = 0, gYaw = 0, gBob = 0, gChY = 0, gPitch = 0, gRoll = 0;
     {
       const Lf = c.ft.left, Rf = c.ft.right, gw = pw * (c.jmp ? 0.4 : 1);
-      if (Lf.init && Rf.init && gw > 0) {
+      if (Lf.init && Rf.init && gw > 0 && !useLoco) {   // 이동 엔진은 모션캡처의 골반·몸 기울기를 그대로 쓴다
         const toR_ = (wx, wz) => { const dx = (wx - rx0) / K, dz = (wz - rz0) / K; return [dx * cy - dz * sy, dx * sy + dz * cy]; };
         const lr = toR_(Lf.x, Lf.z), rr = toR_(Rf.x, Rf.z), one = (!!Lf.sw) !== (!!Rf.sw), both = !!Lf.sw && !!Rf.sw;
         const sup = one ? (Lf.sw ? rr : lr) : [(lr[0] + rr[0]) / 2, (lr[1] + rr[1]) / 2];
@@ -349,7 +362,25 @@ export class Players3D {
     // 스윙 동작 중 무릎 굽히기(CROUCH): 땅·발리는 임팩트 둘레를 빼고, 발리는 늘
     let crouch = 0;
     if (inSw && CROUCH[id]) { const core = /^[fb]v$/.test(id) ? 0 : sstep(-0.42, -0.15, tc) * (1 - sstep(0.2, 0.55, tc)); crouch = CROUCH[id] * (1 - core); }
-    const over = {
+    const lp = useLoco ? c.lp : null, LK = this.locoK, idleW = 1 - sstep(0.4, 1.4, spd);
+    const over = lp ? {
+      // 이동 엔진: 아래(골반·발)는 모션캡처 걷기·달리기, 위(손·라켓)는 준비 자세나 스윙. 서 있을 때는 테니스 준비 자세처럼 조금 낮게
+      reach,
+      foot: (side, f) => this.locoFoot(c, side, lp, ctx, jw),
+      heel: side => Math.max(0, lp[side[0] + 'he'] || 0),
+      hip: h => {
+        // 스윙 앞부분(백스윙)을 달리며 할 때: 스윙의 골반 돌기는 대부분 가슴(어깨)으로 옮긴다(다리는 달리는데 골반만 90도 넘게 돌아 꼬였다). 임팩트 0.3초 전에 가까워질수록 스윙대로
+        const hk = inSw ? 0.3 + 0.7 * sstep(-0.65, -0.3, tc) : 1; c.hipMove = h[3] * (1 - hk);
+        h = [lp.hx * LK, h[1] * (0.45 + 0.55 * idleW) + (lp.hy - this.locoDB.hipH) * LK - c.sq * 0.6 + jhip * jk, lp.hz * LK, h[3] * hk + lp.hyaw];
+        if (c.fade > 0 && c.snapHip) { const u = sstep(0, 1, 1 - c.fade / FADE); h = h.map((v, k) => k === 3 ? c.snapHip[3] + wrapD(v - c.snapHip[3]) * u : c.snapHip[k] + (v - c.snapHip[k]) * u); }
+        c.hipP = h; return h;
+      },
+      chest: ch => {
+        ch = [ch[0] + 0.5 * lp.cy + (c.hipMove || 0), ch[1] + 0.5 * (lp.cp - this.locoDB.cp0), ch[2] + 0.5 * lp.cr];
+        if (c.fade > 0 && c.snapChest) { const u = sstep(0, 1, 1 - c.fade / FADE); ch = ch.map((v, k) => c.snapChest[k] + (v - c.snapChest[k]) * u); }
+        c.chestP = ch; return ch;
+      },
+    } : {
       reach,
       foot: (side, f) => {
         if (jw) { const sd = side === 'right' ? -1 : 1; f = [f[0] + sd * jw, f[1], f[2] + sd * jw * 120, f[3]]; }   // 스플릿 착지: 발을 벌리고 발끝을 조금 밖으로
@@ -433,6 +464,62 @@ export class Players3D {
       c.handW = hw; c.handT = this.bt;
     } else { c.handV = null; c.handT = null; }
   }
+
+  // 이동 엔진 한 프레임: 갈 길(그림 선수가 앞으로 있을 자리 + 공에 맞추려고 옮긴 만큼 등)과 바라볼 쪽을 주고, 몸(뿌리)은 그 동작의 움직임대로 간다
+  locoStep(c, p, B, tgx, tgz, pdt, base, inSw, sw, tc) {
+    const db = this.locoDB;
+    if (!c.lc) { c.lc = locoState(db, B.x, B.z, c.yaw, this.locoSc); c.lc.fresh = true; this.locoFade(c); c.lk = { left: {}, right: {} }; }
+    const wr = a => Math.atan2(Math.sin(a), Math.cos(a)), toIn = sw && sw.id !== 'sv' ? sw.tImpact - this.bt : 9;
+    // 바라볼 쪽: 네트 쪽. 칠 때는 보내는 쪽으로 조금(15도까지). 멀리(1.5m 넘게) 빨리 옆·뒤로 갈 때는 가는 쪽으로 돌아 달리고(뒤로는 오른쪽으로 돌아 옆으로 물러난다) 칠 때가 다가오면 다시 선다
+    let face = base;
+    const aim = inSw ? sw.aim : null;
+    if (aim && Math.hypot(aim[0], aim[1]) > 0.1) face = base + clamp(wr(Math.atan2(aim[0], aim[1]) - base) * 0.4, -15 * D, 15 * D);
+    // (빠르게 옆으로 멀리 갈 때 네트를 본 채 옆걸음으로 가면 다리를 크게 벌리고 깡충거린다. 동호인도 그때는 돌아서 달린다. 옆걸음은 짧은 거리·느린 빠르기에만)
+    const ddx = (p.tx ?? p.x) - p.x, ddz = (p.tz ?? p.z) - p.z, dd = Math.hypot(ddx, ddz);
+    if (dd > 0.8 && (p.speed || 0) > 1.6) {
+      const rel = wr(Math.atan2(ddx, ddz) - base);
+      const off = Math.abs(rel) > 150 * D ? -80 * D : clamp(rel, -80 * D, 80 * D) * sstep(35 * D, 60 * D, Math.abs(rel));
+      face += off * sstep(0.8, 1.8, dd) * sstep(1.6, 2.4, p.speed) * sstep(0.4, 0.75, toIn);
+    }
+    const ox = tgx - p.x, oz = tgz - p.z;
+    const Q = { fut: t => { const q = spriteAt(p, t); return [q[0] + ox, q[1] + oz]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh };
+    c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
+    B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
+  }
+  // 이동 엔진의 발: 자료에서 발이 땅에 닿은 동안은 코트 위 그 자리에 붙인다(발 고정). 들면 자료의 자리로, 바뀐 곳은 0.18초에 걸쳐 이어지게.
+  // 서 있을 때는 테니스 준비 자세처럼 발을 조금 더 벌리고 발끝을 밖으로
+  locoFoot(c, side, lp, x, jw) {
+    const s = side[0], LK = this.locoK, sd = s === 'r' ? -1 : 1, idleW = 1 - sstep(0.4, 1.4, x.spd);
+    const fx = lp[s + 'fx'] * LK + sd * (0.12 * idleW + jw), fz = lp[s + 'fz'] * LK - 0.03 * idleW, fy = lp[s + 'fy'] + sd * (8 * idleW + jw * 120), lift = lp[s + 'fl'] * LK;
+    const toW = (a, b) => [x.rx + K * (a * x.cy + b * x.sy), x.rz + K * (-a * x.sy + b * x.cy)];
+    const toR = (wx, wz) => { const dx = (wx - x.rx) / K, dz = (wz - x.rz) / K; return [dx * x.cy - dz * x.sy, dx * x.sy + dz * x.cy]; };
+    const [wx, wz] = toW(fx, fz), wy = fy + x.yawD;
+    const F = c.ft[side], L = c.lk[side], cv = lp[s + 'c'];
+    const con = !x.air && cv > (L.lock ? 0.35 : 0.65);
+    if (!L.seen) {   // 이동 엔진에 막 들어왔다: 디딘 발은 지금 자리에 붙이고, 뜬 발은 지금 자리에서 이어지게
+      L.seen = true;
+      if (F.init) { if (con) L.lock = { x: F.x, z: F.z, y: F.y }; else { L.off = [F.x - wx, F.z - wz, wrapD(F.y - wy)]; L.offT = 0; } }
+    }
+    if (L.off) { L.offT += x.pdt; if (L.offT > 0.18) L.off = null; }
+    const ow = L.off ? 1 - sstep(0, 0.18, L.offT) : 0;
+    let ux = wx + (L.off ? L.off[0] * ow : 0), uz = wz + (L.off ? L.off[1] * ow : 0), uy = wy + (L.off ? L.off[2] * ow : 0);
+    let lf = lift;
+    if (con) {
+      if (!L.lock) L.lock = { x: ux, z: uz, y: uy };
+      // 몸이 목표 쪽으로 당겨지며 디딘 발과 너무 벌어지면(40cm 넘게) 발을 조금씩 끌어 다리가 지나치게 펴지지 않게
+      const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez);
+      if (e > 0.4) { const m = Math.min(e - 0.4, 1.5 * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }
+      L.lock.y += wrapD(wy - L.lock.y) * Math.min(1, x.pdt * 3);   // 디딘 채 앞꿈치를 축으로 조금 돈다
+      ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
+    } else if (L.lock) {
+      L.off = [L.lock.x - wx, L.lock.z - wz, wrapD(L.lock.y - wy)]; L.offT = 0; L.lock = null;
+      ux = wx + L.off[0]; uz = wz + L.off[1]; uy = wy + L.off[2];
+    }
+    Object.assign(F, { x: ux, z: uz, y: uy, init: true, sw: null, follow: null, air: null, fp: [fx, fz, fy, 0] });
+    const r = toR(ux, uz);
+    return [r[0], r[1], uy - x.yawD, lf];
+  }
+  locoFade(c) { if (c.last) { c.snap = c.last; c.fade = FADE; c.snapHip = c.hipP; c.snapChest = c.chestP; } }
 
   // 걸음 계획(자세를 만들기 전에 한 번): 새 걸음을 시작할 발과 딛을 자리. 발 자리는 앞 프레임의 자세 발(F.fp)을 쓴다
   // 걸음 값(초안, 참고: Tennis-MoCap 일반 선수 샷 사이 1초에 약 2.8걸음·한 걸음 18cm, 달리기는 일반적인 값):

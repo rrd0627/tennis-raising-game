@@ -36,3 +36,18 @@ node tools/char3d/jointcheck.mjs              # 관절 검사
 ```
 
 시험 화면 '동작' 버튼으로 손으로 짠 동작과 견줘 볼 수 있다(`?src=hand`). 손으로 짠 키는 `js/swings.js`에 그대로 있고, 경기에서 기다리는 자세(준비 자세)로 쓴다.
+
+## 이동 동작(걷기·달리기, 2026-11-16)
+
+경기의 3D 선수가 기다리고 움직이는 동작(이동 엔진 `js/loco3d.js`)의 재료다.
+
+- 자료: The 100STYLE Dataset, Neutral 스타일 8개(FW 앞으로 걷기, FR 앞으로 달리기, BW·BR 뒤로, SW·SR 옆걸음, ID 서 있기, TR1 바뀌기). https://www.ianxmason.com/100style
+- 라이선스: CC BY 4.0. 바꾼 자료(`art/char3d/loco.bin`)도 출처를 적어 쓴다(게임 ⚙️ 설정).
+- XSens 60fps, 한 사람. 좁은 곳에서 찍어 달리기가 초속 2.2m까지라 게임이 빨리 틀고 보폭을 늘린다.
+
+```
+# 1) BVH 8개를 tools/char3d/mocap/raw/100style/에 받는다(Neutral_FW.bvh … Neutral_TR1.bvh, 커밋하지 않음)
+python -I tools/char3d/mocap/loco.py        # art/char3d/loco.bin
+```
+
+`loco.py`는 T자세 앞뒤 1초를 빼고 30fps로 줄인 뒤, 프레임마다 뿌리(골반을 바닥에 내려 편 자리와 골반·어깨 앞쪽을 편 방향), 뿌리 기준 골반·가슴·발(앞꿈치 자리, 발끝 방향, 들림, 뒤꿈치 각), 발 닿음(앞꿈치 높이 4.5cm 아래, 빠르기 초속 0.4m 아래)을 남긴다.
