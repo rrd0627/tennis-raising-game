@@ -157,10 +157,11 @@ export function locoUpdate(db, s, dt, Q) {
   }
   const kr = 1 - Math.exp(-dt / 0.12);
   s.r += ((s.rT ?? 1) - s.r) * kr; s.w += ((s.wT ?? 1) - s.w) * kr;
-  // 3) 목표와의 차이를 조금씩: 반감기 0.25초, 한 프레임에 (몸 빠르기의 60% + 초속 0.3m)까지. 그래도 maxOff보다 벌어지면 그 안으로
+  // 3) 목표와의 차이를 조금씩: 반감기 0.25초, 한 프레임에 (몸 빠르기의 60% + 초속 0.06m)까지(움직일 때만 당긴다. 서 있는데 당기면 발은 그대로 몸만 옆으로 가 넘어질 자세가 됐다,
+  //    사용자 2026-11-16). 서 있을 때 차이는 동작 찾기가 걸음으로 메운다. 그래도 maxOff보다 벌어지면 그 안으로
   const ex = Q.tx - s.x, ez = Q.tz - s.z, el = Math.hypot(ex, ez);
   if (el > 1e-4) {
-    const sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.25)), (0.6 * sp + 0.3) * dt);
+    const sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.25)), (0.6 * sp + 0.06) * dt);
     s.x += ex / el * m; s.z += ez / el * m;
     const e2 = Math.hypot(Q.tx - s.x, Q.tz - s.z), mo = Q.maxOff ?? 0.45;
     if (e2 > mo) { const u = (e2 - mo) / e2; s.x += (Q.tx - s.x) * u; s.z += (Q.tz - s.z) * u; }
