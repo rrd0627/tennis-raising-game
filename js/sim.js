@@ -27,7 +27,7 @@ export const TUNE = {
   // 강타는 초반에 밀어붙이지만 오래가면 실수가 늘고, 끈질기게 버티는 쪽은 후반에 힘이 난다.
   planGames: 8,
   plan: {
-    power: { early: { q: 1, err: 0.92 }, late: { q: -2, err: 1.08 }, tire: 1.15 },
+    power: { early: { q: 2, err: 0.92 }, late: { q: -1, err: 1.08 }, tire: 1.15 },
     twoup: { early: { q: 8, err: 1 }, late: { q: 7, err: 1.02 }, tire: 1.05 },
     twoback: { early: { q: -1, err: 0.98 }, late: { q: 3, err: 0.95 }, tire: 0.95 },
     lob: { early: { q: 4, err: 1 }, late: { q: 10, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림. 2026-11-13: 뒤로 밀리며 치기가 어려워져(TUNE.back) 강타·로브를 조금 내리고 후위를 올림. 같은 날 어려운 공·하프 발리·스매시·빗맞음 범실(TUNE.hard 등)로 전위·로브가 약해져 올리고 강타·후위를 내림
@@ -237,6 +237,7 @@ export class MatchSim {
   // press는 샷마다 조금씩만 바뀐다. 그래야 전위가 샷마다 앞뒤로 들썩이지 않는다
   homeOf(p, bx = 0, press = 0) {
     const zs = this.zSign(p.team), xs = this.xSign(p);
+    bx = clamp(bx, -4.5, 4.5);   // 옆줄 밖으로 나가는 공까지 따라 옮기지 않는다
     if (p.pos === 'net') {
       const lean = 0.3 + Math.max(0, press) * p.stats.poach / 400;
       // 전위는 서비스 박스 가운데쯤, 네트에서 두세 걸음(3m, 2026-11-16 개나리 경기 비교: 예전 3.6m)
@@ -298,7 +299,7 @@ export class MatchSim {
       }
       return { C, B, T };
     }
-    const volley = R.pos === 'net', rgt = R.team === 0 ? 1 : -1;   // rgt: 받는 사람의 포핸드 쪽(+x면 1)
+    const volley = R.pos === 'net' && st !== 'smash', rgt = R.team === 0 ? 1 : -1;   // rgt: 받는 사람의 포핸드 쪽(+x면 1). 스매시는 물러나 바운드 뒤에 받는다
     let u;
     if (dir === 'dtl') u = [side, 0.15 * rz];
     else if (dir === 'angle') u = [side, -0.7 * rz];
@@ -307,7 +308,7 @@ export class MatchSim {
     else if (dir === 'body') u = [side * 0.4, 0.3 * rz];
     else u = [toBh ? -rgt : n1 >= 0 ? 1 : -1, (u2 - 0.5) * 0.8 * rz];
     const n = Math.hypot(u[0], u[1]); u = [u[0] / n, u[1] / n];
-    const [z0, z1] = volley ? [1.3, 5.6] : [6.5, 15.0];   // 떨어지는 공을 치려고 베이스라인 뒤까지 물러난다
+    const [z0, z1] = volley ? [1.3, 5.6] : st === 'smash' && R.pos === 'net' ? [4.6, 12] : [6.5, 15.0];   // 떨어지는 공을 치려고 베이스라인 뒤까지 물러난다
     // 받는 곳. 바운드 없이 받는 공(발리)은 옆줄 안쪽에서 받는다(옆줄 밖에서 발리하면 나가는 공을 친 것처럼 보인다, 사용자 2026-11-09)
     const xw = volley ? 5.25 : 6.4;
     const fit = c => [clamp(c[0], side > 0 ? -1.6 : -xw, side > 0 ? xw : 1.6), rz * clamp(c[1] * rz, z0, z1)];
@@ -695,7 +696,9 @@ export class MatchSim {
         // 승패는 엔진 값으로만 정하고(누가 받는지, 얼마나 나갔는지), 화면의 위치는 쓰지 않는다
         let judged = -1;
         if (!isNet && !LOBS.has(st)) {
-          const os = this.opps(H), crossT = os.find(o => o.side === H.side) || os[0], J = dir === 'dtl' ? os.find(o => o !== crossT) : crossT;
+          // 판단하는 사람: 공이 지나가는 길에 가장 가까이 선 사람(사용자 2026-11-19: 우리 파트너가 칠 곳인데 반대쪽 사람이 가로질러 왔다.
+          // 예전에는 엔진의 크로스 상대 표시(side)로 골라 화면에서 반대쪽에 선 사람이 판단하러 오기도 했다)
+          const os = this.opps(H), od = o => segDist(at[this.P.indexOf(o)], from, to), J = od(os[0]) <= od(os[1]) ? os[0] : os[1];
           const j0 = this.P.indexOf(J);
           const wide = dir === 'dtl' || dir === 'angle' || (dir === 'cross' && rr < 0.35);
           const by = wide ? 0.21 + Math.abs(gg) * 0.6 : 0.41 + rr * 1.4;   // 얼마나 나갔나(m), missSpot과 같은 값
@@ -890,7 +893,7 @@ export class MatchSim {
           if (kind === 'both') clash = other;
         }
       }
-      if (lob && R.pos === 'net' && !air) R.pos = 'base';
+      if ((lob && !air) || st === 'smash') { if (R.pos === 'net') R.pos = 'base'; }   // 넘어간 로브·스매시는 물러나 받는다
       const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v), wing: inc.wing || undefined, ...(claim ? { claim } : {}) };
       shots.push(shot);
       // 이동
@@ -982,9 +985,12 @@ export class MatchSim {
   pickReceiver(H, st, dir) {
     const os = this.opps(H);
     const net = os.find(o => o.pos === 'net');
-    const crossT = os.find(o => o.side === H.side) || os[0];
+    // 크로스 상대: 화면에서 대각선에 선 사람(서는 쪽 vs가 같으면 대각선이다. 예전에는 엔진의 side로 골라 절반쯤은 화면에서 정면에 선 사람이었다)
+    const crossT = os.find(o => (o.vs ?? o.side) === (H.vs ?? H.side)) || os[0];
     const other = os.find(o => o !== crossT);
     if (st === 'topspin_lob' || st === 'def_lob' || st === 'moon_volley') return net || crossT;
+    // 스매시는 뒤에 선 사람이 바운드 뒤에 받는다(사용자 2026-11-19: 스매시를 백발리·문발리로 받는다. 전위가 받을 공은 거의 위너다)
+    if (st === 'smash' && net) { const back = os.find(o => o.pos === 'base'); if (back) return back; }
     if (dir === 'body') return net || crossT;
     if (dir === 'dtl') return other;
     if (dir === 'center') return this.rng() < 0.5 ? os[0] : os[1];
@@ -1002,16 +1008,20 @@ export class MatchSim {
     const add = (k, v) => { if (v > 0) w[k] = (w[k] || 0) + v; };
     const fhR = rng(), fh = inc.wing ? inc.wing === 'fh' : fhR < (inc.forceBh ? 0.25 : 0.58);   // 공이 오는 쪽(inc.wing)이 있으면 그것
     const isReturn = inc.type === 'serve' || inc.type === 'serve2';
-    if (inc.smashable) { add('smash', 0.85); add('moon_volley', 0.08); }   // 닿는 로브는 거의 스매시
+    if (inc.smashable) add('smash', 1);   // 닿는 로브는 스매시(사용자 2026-11-19: 탑스핀 로브를 문발리로 받는다. 예전 8%)
     else if (isReturn) {
       add('return', 0.5); add('chip_return', 0.26); if (oppNet) add('topspin_lob', 0.13); add('def_lob', inc.D > 60 ? 0.14 : 0.04);   // 개나리는 슬라이스·로브 리턴이 흔하다(2026-11-16)
+    } else if (inc.type === 'smash') {
+      // 스매시를 받았다: 바운드 뒤에 높이 띄워 버티거나(수비 로브) 막아 넘긴다. 발리·문발리로 받지 않는다(사용자 2026-11-19)
+      add('def_lob', 0.45); add(fh ? 'fh_slice' : 'bh_slice', 0.3); add(fh ? 'fh_drive' : 'bh_drive', 0.2); add('topspin_lob', oppNet ? 0.05 : 0);
     } else if (H.pos === 'net') {
       // 개나리는 드롭 발리를 거의 안 한다(2026-11-16): 예전 샷의 5.6%
-      if (inc.height === 'high') { add('smash', 0.75); add('moon_volley', 0.12); add('drop_volley', 0.03); }
-      else if (inc.height === 'low') { add('low_volley', 0.6); add('half_volley', 0.22); add('drop_volley', 0.05); add('moon_volley', 0.1); }
-      else { add(fh ? 'fh_volley' : 'bh_volley', 0.66); add('drop_volley', 0.03); add('moon_volley', 0.14); add('swing_volley', 0.06); }
+      // 문발리(높이 띄우는 발리)는 상대 전위 머리 위로 넘길 때만. 머리 위로 오는 공(로브)에는 하지 않는다(사용자 2026-11-19)
+      if (inc.height === 'high') { add('smash', 0.85); add('drop_volley', 0.03); }
+      else if (inc.height === 'low') { add('low_volley', 0.6); add('half_volley', 0.22); add('drop_volley', 0.05); add('moon_volley', oppNet ? 0.06 : 0); }
+      else { add(fh ? 'fh_volley' : 'bh_volley', 0.66); add('drop_volley', 0.03); add('moon_volley', oppNet ? 0.1 : 0); add('swing_volley', 0.06); }
     } else {
-      if (inc.height === 'high') { add('smash', 0.18); add('def_lob', 0.3); add(fh ? 'fh_drive' : 'bh_drive', 0.4); add('moon_volley', 0.06); }
+      if (inc.height === 'high') { add('smash', 0.18); add('def_lob', 0.36); add(fh ? 'fh_drive' : 'bh_drive', 0.4); }
       else if (inc.D > 65) { add('def_lob', 0.35); add(fh ? 'fh_slice' : 'bh_slice', 0.35); add(fh ? 'fh_drive' : 'bh_drive', 0.25); }
       else {
         // 개나리는 로브(전위 머리 위로, 깊게)와 슬라이스(백핸드는 더)가 흔하다(2026-11-16 개나리 경기·동호인 자료 비교)
