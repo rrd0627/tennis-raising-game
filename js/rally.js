@@ -83,15 +83,17 @@ export function reachOf(body, T, late = 0) { return body.reach + runDist(T - bod
 
 // 포핸드 쪽인지 백핸드 쪽인지. before = 공을 향해 뛰기 시작한 곳
 const RIGHT = team => (team === 0 ? 1 : -1);   // 앞쪽 팀은 +x가 오른손 쪽
-export function wingOf(type, team, contact, before) {
+// wing: 엔진이 정한 포·백(공이 몸 어느 쪽으로 오는지, 돌아서 포핸드). 있으면 그것을 쓴다
+export function wingOf(type, team, contact, before, wing) {
   if (type === 'serve' || type === 'serve2' || type === 'smash') return 'over';
+  if (wing === 'fh' || wing === 'bh') return wing;
   if (/^fh_/.test(type)) return 'fh';
   if (/^bh_/.test(type)) return 'bh';
   return (contact[0] - before[0]) * RIGHT(team) >= -0.3 ? 'fh' : 'bh';
 }
 // 공을 치는 순간 몸이 서는 곳. 공은 몸 옆(팔과 라켓 길이만큼)에 있다. far = 쭉 뻗어 받을 때의 거리
-export function standOf(contact, type, team, before, far = 0) {
-  const wing = wingOf(type, team, contact, before);
+export function standOf(contact, type, team, before, far = 0, wg) {
+  const wing = wingOf(type, team, contact, before, wg);
   const zs = team === 0 ? 1 : -1;
   if (wing === 'over') return [contact[0] - 0.15 * RIGHT(team), contact[1] + zs * 0.25];
   // 공은 몸 옆, 조금 앞에서 맞는다(3D 선수의 임팩트 자리: 포핸드는 옆 0.7m·앞 1.07m, 양손 백핸드는 앞 0.5m. 사용자 2026-11-11: 포핸드 때 몸이 뒤로 가는 느낌)

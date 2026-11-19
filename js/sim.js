@@ -28,14 +28,16 @@ export const TUNE = {
   planGames: 8,
   plan: {
     power: { early: { q: 1, err: 0.92 }, late: { q: -2, err: 1.08 }, tire: 1.15 },
-    twoup: { early: { q: 7, err: 1 }, late: { q: 6, err: 1.02 }, tire: 1.05 },
-    twoback: { early: { q: -3, err: 0.98 }, late: { q: 1, err: 0.95 }, tire: 0.95 },
+    twoup: { early: { q: 8, err: 1 }, late: { q: 7, err: 1.02 }, tire: 1.05 },
+    twoback: { early: { q: -1, err: 0.98 }, late: { q: 3, err: 0.95 }, tire: 0.95 },
     lob: { early: { q: 4, err: 1 }, late: { q: 10, err: 0.93 }, tire: 0.9 },   // 2026-11-11: 닿는 로브를 스매시하게 되어 로브 작전을 올리고 강타를 내림. 2026-11-13: 뒤로 밀리며 치기가 어려워져(TUNE.back) 강타·로브를 조금 내리고 후위를 올림. 같은 날 어려운 공·하프 발리·스매시·빗맞음 범실(TUNE.hard 등)로 전위·로브가 약해져 올리고 강타·후위를 내림
   },
   rallyErr: 0.004, // 강타가 받혀서 랠리가 길어질수록 느는 범실
   // 뒤로 물러나며 치기(사용자 2026-11-13: 뒤로 가면서 치는 건 굉장히 어렵다). back = 깊은 공에 밀린 정도(0~1), 전위가 머리 위로 넘어간 로브를 쫓아가면 1.
   // 그 사람의 다음 샷 품질이 q만큼 낮아지고 범실이 err만큼 는다
   back: { q: 10, err: 0.07 },
+  // 둘 다 받으러 가다 엉켰다(각자 판단, 사용자 2026-11-19): 치는 사람의 샷 품질과 범실
+  clash: { q: 8, err: 0.06 },
   // 어려운 공·움직이며 치기·기술 샷·빗맞음(사용자 2026-11-13: 어려운 공인데 수비 범위가 너무 넓고 실수가 없다, 개나리는 하프 발리를 잘 못하고
   // 스매시 실수가 잦다, 빗맞는 경우가 많다, 치기 직전까지 움직이면 실수가 는다). 예전에는 쭉 뻗어 받은 공 범실 16.5%, 쉬운 공 14.5%로 거의 같았다
   hard: 0.004,        // 받은 공의 부담 D가 30을 넘는 만큼 범실(D 42 → +4.8%p, 60 → +12%p)
@@ -257,7 +259,7 @@ export class MatchSim {
   }
   // 공이 갈 곳. 받는 사람이 지금 선 곳(P)에서 코스 쪽으로, 공이 오는 동안 닿을 수 있는 거리의 f배.
   // f가 1보다 크면 닿지 못한다(위너). 돌려주는 C는 받는 곳(위너면 공이 지나가는 곳), B는 바운드
-  spot(R, st, dir, f, v, from, P, body, late, n1, u2, air = false) {
+  spot(R, st, dir, f, v, from, P, body, late, n1, u2, air = false, toBh = false) {
     const rz = this.zSign(R.team), side = this.xSign(R);
     const lob = LOBS.has(st), short = st === 'dropshot' || st === 'drop_volley';
     if (lob && air) {
@@ -296,14 +298,14 @@ export class MatchSim {
       }
       return { C, B, T };
     }
-    const volley = R.pos === 'net';
+    const volley = R.pos === 'net', rgt = R.team === 0 ? 1 : -1;   // rgt: 받는 사람의 포핸드 쪽(+x면 1)
     let u;
     if (dir === 'dtl') u = [side, 0.15 * rz];
     else if (dir === 'angle') u = [side, -0.7 * rz];
     else if (dir === 'center') u = [-side, 0.15 * rz];
-    else if (dir === 'deep') u = [n1 * 0.4, rz];
+    else if (dir === 'deep') u = [toBh ? -rgt * Math.abs(n1) * 0.4 : n1 * 0.4, rz];
     else if (dir === 'body') u = [side * 0.4, 0.3 * rz];
-    else u = [n1 >= 0 ? 1 : -1, (u2 - 0.5) * 0.8 * rz];
+    else u = [toBh ? -rgt : n1 >= 0 ? 1 : -1, (u2 - 0.5) * 0.8 * rz];
     const n = Math.hypot(u[0], u[1]); u = [u[0] / n, u[1] / n];
     const [z0, z1] = volley ? [1.3, 5.6] : [6.5, 15.0];   // 떨어지는 공을 치려고 베이스라인 뒤까지 물러난다
     // 받는 곳. 바운드 없이 받는 공(발리)은 옆줄 안쪽에서 받는다(옆줄 밖에서 발리하면 나가는 공을 친 것처럼 보인다, 사용자 2026-11-09)
@@ -632,6 +634,18 @@ export class MatchSim {
     let lastShooter = server;
     for (let k = 0; k < 40; k++) {
       const T = this.teams[H.team];
+      // 포·백핸드: 공이 몸 어느 쪽으로 오는지로 정한다(사용자 2026-11-19: 저리로 오면 당연히 백핸드 치지 않겠어?). 예전에는 58% 확률로 포핸드를 골라
+      // 백핸드 쪽 공도 포핸드로 쳤다. 시간이 남고(0.25초 넘게 먼저 닿고) 포핸드가 백핸드보다 6 넘게 나으면 돌아서 포핸드로 치기도 한다(동호인은 백핸드를 피한다)
+      {
+        const hw = this.P.indexOf(H), pw = shots[shots.length - 1], rf = runFrom[hw];
+        inc.wing = null;
+        if (pw && pw.to && rf) {
+          const lat = (pw.to[0] - rf[0]) * (H.team === 0 ? 1 : -1), mg = pw.mv?.[hw]?.m ?? 0, gap = H.stats.fh_drive - H.stats.bh_drive;
+          inc.wing = lat >= -0.3 ? 'fh' : 'bh';
+          if (inc.wing === 'bh' && H.pos !== 'net' && !inc.smashable && lat > -1.6 && mg >= 0.25 && gap >= 6 && rng() < clamp(0.25 + gap / 40, 0.25, 0.7)) inc.wing = 'fh';
+        }
+      }
+      const bhNow = inc.wing ? inc.wing === 'bh' : inc.forceBh;
       const choice = this.chooseShot(H, inc);
       const { type: st, dir } = choice;
       const skillKey = SKILL_OF[st], skillLv = (skillKey && H.skills?.[skillKey]) || 0;
@@ -656,7 +670,8 @@ export class MatchSim {
       if (mishit && !misErr) Q -= TUNE.mis.q;
       err = clamp(err, 0.02, 0.75);
       if (misErr) err = 1;
-      const info = shotInfo(H, shotUse(st, dir, inc.forceBh, pressure), accOfQ(Q));
+      if (inc.clash) { Q -= TUNE.clash.q; if (!misErr) err = Math.min(0.75, err + TUNE.clash.err); }
+      const info = shotInfo(H, shotUse(st, dir, bhNow, pressure), accOfQ(Q));
       if (mishit) info.mishit = 1;
       { const stn = stanceOf(st, shots[shots.length - 1]?.mv?.[this.P.indexOf(H)], inc.D); if (stn) info.stance = inc.back > 0.5 ? 'run' : stn; }   // 뒤로 밀리며 치면 달리면서
       tire(H);
@@ -666,7 +681,7 @@ export class MatchSim {
       const from = prev && prev.to ? prev.to : posNow[hi];
       posNow[hi] = from;
       // 중계용: 친 사람은 공 옆에 서 있다
-      at[hi] = standOf(from, st, H.team, runFrom[hi], prev?.mv?.[hi]?.far || 0);
+      at[hi] = standOf(from, st, H.team, runFrom[hi], prev?.mv?.[hi]?.far || 0, inc.wing);
       // 받은 쪽 대처 결과 기록 (직전 샷이 대처 짝이 있는 샷이었다면)
       if (inc.counter) recCounter(H, inc.counter, rng() >= err);
       if (rng() < err) {
@@ -697,7 +712,7 @@ export class MatchSim {
             plan[j0] = runAt(j0, C, ft, body[j0].react, 'set');
             const [hx, hz] = this.homeOf(H, C[0], lvl[H.team]);
             plan[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' };
-            shots.push({ h: hi, type: st, dir, from, bounce: null, to: C, res: 'in', outBall: true, pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(plan, C[0]), ft) });
+            shots.push({ h: hi, type: st, dir, from, bounce: null, to: C, res: 'in', outBall: true, pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(plan, C[0]), ft), wing: inc.wing || undefined });
             lastByTeam[H.team] = H; lastShooter = H;
             inc = { D: clamp(48 + (Q - 40) * 0.35, 35, 75), height: 'mid', type: st, from: H, counter: null };
             H = J; continue;
@@ -713,7 +728,7 @@ export class MatchSim {
         // 아무도 멈춰 서지 않는다: 친 사람은 제자리로 돌아가고, 나머지도 공 쪽으로 옮긴다
         const lp = letGo(from, aim, flightTime(from, aim, null, ev, st) * (isNet ? 0.6 : 1), 1 - H.team, judged >= 0 ? judged : judged <= -2 ? -2 - judged : -1, ev, isNet ? 0 : 2.0 + ev * 0.06);
         { const [hx, hz] = this.homeOf(H, aim[0], lvl[H.team]); lp[hi] = { x: hx, z: hz, t0: 0.22, v: body[hi].recov, k: 'back' }; }
-        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(lp, aim[0]), 0), ...(judged >= 0 ? { judge: judged } : {}) });
+        shots.push({ h: hi, type: st, dir, from, to, bounce: isNet ? null : to, res: isNet ? 'net' : 'out', pos: posNow, v: r2(ev), info: { ...info, acc: Math.min(info.acc, 45) }, mv: move(follow(lp, aim[0]), 0), ...(judged >= 0 ? { judge: judged } : {}), wing: inc.wing || undefined });
         if (inc.D >= 45 && inc.from && inc.from.team !== H.team) addCall(this.P, shots[shots.length - 1], inc.from, shotStats(inc.type, prev?.dir), true);
         // 잘 보낸 공: 그 사람의 판단(샷 선택)이 C 이상이면 머리 위에 뜬다
         else if (judged >= 0 && lp.who === judged) addCall(this.P, shots[shots.length - 1], this.P[judged], ['shot_sel'], true);
@@ -728,22 +743,6 @@ export class MatchSim {
       // 받는 사람
       let R = this.pickReceiver(H, st, dir);
       const Rteam = this.teams[R.team];
-      // 센터 혼선
-      if (dir === 'center') {
-        const os = this.opps(H);
-        const conf = clamp((62 - avg(...os.map(o => o.stats.comm)) - (Rteam.combo || 0) * 0.1) / 260, 0, 0.18);
-        if (rng() < conf) {
-          const to = [0, -this.zSign(H.team) * 7];
-          H.rec.winners++; rec(H, st, 'win');
-          this.assist(H, lastByTeam);
-          // 둘 다 가다가 서로 미룬다
-          const v = this.ballV(H, st, Q), out = toFence(to, unit(from, to), 5.5), ft = flightTime(from, out, to, v, st);
-          const plan = [];
-          for (const o of os) { const j = this.P.indexOf(o); plan[j] = { ...missAt(j, [0, to[1] * 1.3], ft), k: 'confuse' }; }
-          shots.push({ h: hi, type: st, dir, from, bounce: to, to: out, res: 'center', pos: posNow, v: r2(v), mv: move(plan, ft), info });
-          return this.finish(shots, H.team, 'center', H, ctx);
-        }
-      }
       // 포치
       const isGround = !['topspin_lob', 'def_lob', 'moon_volley', 'smash', 'dropshot', 'drop_volley'].includes(st);
       const Rmate = this.mate(R);
@@ -751,29 +750,30 @@ export class MatchSim {
         const pa = clamp(0.06 + Rmate.stats.poach / 320 + (Rteam.choices.formation === 'up' ? 0.04 : 0) + (Rteam.choices.tempo === 'attack' ? 0.03 : 0) - H.stats.c_poach / 450, 0.02, 0.35);
         if (rng() < pa) {
           Rmate.rec.poachTry++;
-          const pw = clamp((Rmate.stats.fh_volley * 0.5 + Rmate.stats.poach * 0.5 - Q * 0.6) / 120 + 0.14 + this.gmod(Rmate), 0.05, 0.55);
-          recCounter(H, 'c_poach', true);
           const ni = this.P.indexOf(Rmate);
+          recCounter(H, 'c_poach', true);
           const pa2 = this.anchor(Rmate);
           const contact = [pa2[0] * 0.2, pa2[1]];
+          const pvt = (contact[0] - at[ni][0]) * (R.team === 0 ? 1 : -1) >= -0.3 ? 'fh_volley' : 'bh_volley';   // 가로질러 나가는 쪽이 백핸드면 백핸드 발리
           // 전위가 상대가 치는 순간 가로질러 나간다
           const v1 = this.ballV(H, st, Q), ft1 = flightTime(from, contact, null, v1, st);
           const plan1 = [];
           plan1[ni] = { x: contact[0], z: contact[1], t0: 0.05, v: Math.max(body[ni].top, Math.hypot(contact[0] - at[ni][0], contact[1] - at[ni][1]) / Math.max(0.2, ft1 - 0.12)), k: 'poach' };
           pushLvl(R.team, 1);
-          const poachShot = { h: hi, type: st, dir, from, to: contact, bounce: null, res: 'in', pos: posNow, v: r2(v1), info, mv: move(follow(plan1, contact[0]), ft1) };
+          const pw = clamp((Rmate.stats[pvt] * 0.5 + Rmate.stats.poach * 0.5 - Q * 0.6) / 120 + 0.14 + this.gmod(Rmate), 0.05, 0.55);
+          const poachShot = { h: hi, type: st, dir, from, to: contact, bounce: null, res: 'in', pos: posNow, v: r2(v1), info, mv: move(follow(plan1, contact[0]), ft1), wing: inc.wing || undefined };
           if (rng() < pw) {
-            Rmate.rec.poachWin++; Rmate.rec.winners++; rec(Rmate, 'fh_volley', 'n'); rec(Rmate, 'fh_volley', 'win');
+            Rmate.rec.poachWin++; Rmate.rec.winners++; rec(Rmate, pvt, 'n'); rec(Rmate, pvt, 'win');
             shots.push(poachShot);
             const p2 = this.snapshot(); p2[ni] = contact;
             const land = [-contact[0] * 2 + (rng() < 0.5 ? 2.5 : -2.5), this.zSign(H.team) * 6];
-            at[ni] = standOf(contact, 'fh_volley', R.team, runFrom[ni]);
-            const v2 = BALL_V.fh_volley * 1.2, out2 = toFence(land, unit(contact, land), 6), ft2 = flightTime(contact, out2, land, v2, 'fh_volley');
+            at[ni] = standOf(contact, pvt, R.team, runFrom[ni]);
+            const v2 = BALL_V[pvt] * 1.2, out2 = toFence(land, unit(contact, land), 6), ft2 = flightTime(contact, out2, land, v2, pvt);
             const hs = this.P.filter(q => q.team === H.team).map(q => this.P.indexOf(q));
             const vi = hs.reduce((a, b) => (Math.hypot(at[a][0] - land[0], at[a][1] - land[1]) <= Math.hypot(at[b][0] - land[0], at[b][1] - land[1]) ? a : b));
             const plan2 = []; plan2[vi] = missAt(vi, land, ft2);
-            shots.push({ h: ni, type: 'fh_volley', dir: 'body', from: contact, bounce: land, to: out2, res: 'poach', pos: p2, v: r2(v2), info: shotInfo(Rmate, ['fh_volley', 'poach', 'power'], 92), mv: move(plan2, ft2), victim: vi });
-            addCall(this.P, shots[shots.length - 1], Rmate, ['poach', 'fh_volley']);
+            shots.push({ h: ni, type: pvt, dir: 'body', from: contact, bounce: land, to: out2, res: 'poach', pos: p2, v: r2(v2), info: shotInfo(Rmate, [pvt, 'poach', 'power'], 92), mv: move(plan2, ft2), victim: vi, wing: pvt === 'fh_volley' ? 'fh' : 'bh' });
+            addCall(this.P, shots[shots.length - 1], Rmate, ['poach', pvt]);
             Rmate.gauge += 5;
             return this.finish(shots, R.team, 'poach', Rmate, ctx);
           }
@@ -797,7 +797,7 @@ export class MatchSim {
       if (lob && R.pos === 'net') { Def = Def * 0.75 + this.mate(R).stats.cover * 0.25; }
       let w = clamp((TUNE.winBase + (Q - Def) * TUNE.winSlope) * (WINNER_F[st] || 1), 0, 0.5) * tempoOf(T).win * TUNE.skill.win[skillLv];
       if (st === 'def_lob') w = Math.min(w, 0.04);
-      const Ri = this.P.indexOf(R);
+      let Ri = this.P.indexOf(R);
       const rz = this.zSign(R.team);
       let hit = rng() < w, saved = false;
       // 예측 수비: 위너가 될 공을 미리 움직여 받아 낸다
@@ -819,7 +819,7 @@ export class MatchSim {
         const ft = flightTime(from, out, land, v, st);
         const plan = []; plan[Ri] = missAt(Ri, sp.C, ft);
         pushLvl(H.team, 1);
-        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, info: { ...info, acc: Math.max(info.acc, 88) }, skill: skillLv ? skillKey : undefined, v: r2(v), mv: move(follow(plan, land[0]), ft) });
+        shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'win', pos: posNow, victim: Ri, info: { ...info, acc: Math.max(info.acc, 88) }, skill: skillLv ? skillKey : undefined, v: r2(v), mv: move(follow(plan, land[0]), ft), wing: inc.wing || undefined });
         addCall(this.P, shots[shots.length - 1], H, shotStats(st, dir));
         if (counter) recCounter(R, counter, false);
         return this.finish(shots, H.team, 'win', H, ctx);
@@ -830,16 +830,68 @@ export class MatchSim {
       const nextD = clamp(Q - Def * TUNE.dCarry + 10 - (saved ? 15 : 0), 0, 95);
       // 공은 받는 사람의 부담만큼 멀리 간다. 그 공의 대처가 낮으면 출발이 늦고, 예측 수비가 있으면 빠르다
       const v = this.ballV(H, st, Q), f = strain(nextD);
-      const late = clamp((55 - (counter ? R.stats[counter] : 55)) * 0.0015, -0.03, 0.08) - readLv * 0.05;
+      const lateOf = P => clamp((55 - (counter ? P.stats[counter] : 55)) * 0.0015, -0.03, 0.08) - (P.skills?.read || 0) * 0.05;
+      let late = lateOf(R);
       // 뒤로 오는 로브는 닿기만 하면 스매시로(사용자 2026-11-11). 덜 좋은 로브(부담이 작은 공)일수록, 스매시를 잘할수록 닿는다.
       // 뒤에 선 사람은 짧은 로브만. 닿지 않으면 예전처럼 뒤로 뛰어가 바운드된 공을 친다
       const air = lob && nextD <= smashReach(R) - (R.pos === 'net' ? 0 : 14);
       // 뒤로 밀리는 정도: 깊은 공에 밀린 후위, 머리 위로 넘어간 로브를 쫓는 전위(엔진 값으로만 정한다. 화면 위치는 승패에 쓰지 않는다)
-      const backFw = clamp(1.4 - (R.stats.first_step + R.stats.speed + R.stats.positioning) / 300, 0.5, 1.2);   // 발이 좋을수록 덜 밀린다(40 → 1배, 60 → 0.8배, 80 → 0.6배)
-      const backN = backFw * (lob ? (air ? 0 : R.pos === 'net' ? 1 : 0.4 * f) : dir === 'deep' && R.pos === 'base' ? f : 0);
-      const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2, air), v, st);
+      // 발이 좋을수록 덜 밀린다(40 → 1배, 60 → 0.8배, 80 → 0.6배)
+      const backOfP = (P, ff) => clamp(1.4 - (P.stats.first_step + P.stats.speed + P.stats.positioning) / 300, 0.5, 1.2) * (lob ? (air ? 0 : P.pos === 'net' ? 1 : 0.4 * ff) : dir === 'deep' && P.pos === 'base' ? ff : 0);
+      let backN = backOfP(R, f);
+      const fbN = T.choices.attack === 'back' && rng() < 0.6;   // 백핸드 공략: 받는 사람의 백핸드 쪽으로 보낸다
+      const { C: contact, B: bounce, T: ft } = clearOf(R, from, this.spot(R, st, dir, f, v, from, at[Ri], body[Ri], late, n1, u2, air, fbN), v, st);
+      // 누가 받나: 두 사람이 각자 판단한다(사용자 2026-11-19: 각자 주체성을 가지고. 불편하면 파트너에게 맡기고, 서로 칠 거라 생각해 둘 다 안 치거나 둘 다 치기도).
+      // 파트너도 닿는 공이면 각자 '얼마나 여유 있게 닿나 + 포핸드 쪽이면 더, 백핸드 쪽이면(백핸드가 약할수록) 덜 + 앞에 떨어지는 공은 전위가, 넘어간 로브는 뒤의 사람이'를 따지고,
+      // 상대의 판단을 짐작하는 데 각자 흔들림이 있다(파트너 소통·호흡이 좋을수록 작다). 둘 다 가거나 둘 다 미루면 '내 거!'로 정리되기도 하고(소통이 좋을수록),
+      // 안 되면 둘 다 가서 엉켜 약하게 치거나(TUNE.clash) 둘 다 미뤄 공이 지나간다(실점). 예전의 센터 혼선(가운데 공만, 확률로)은 이것으로 바꿨다
+      let claim = null, kindR = dir === 'body' ? 'jam' : f >= 0.72 ? 'reach' : 'set', clash = -1;
+      if (!air) {
+        const M = this.mate(R), Mi = this.P.indexOf(M);
+        const dist = j => Math.hypot(contact[0] - at[j][0], contact[1] - at[j][1]);
+        const can = (j, lt) => reachOf(bodyDir(body[j], backOf(at[j], contact)), ft, lt) + 0.6;
+        const lM = lateOf(M);
+        if (dist(Mi) < can(Mi, lM)) {
+          const cl = (P, j, lt) => {
+            const cj = can(j, lt), lat = (contact[0] - at[j][0]) * (P.team === 0 ? 1 : -1);
+            let c = (cj - dist(j)) / Math.max(1, cj);
+            c += lat >= -0.3 ? 0.22 : -0.22 * clamp(0.6 + (P.stats.fh_drive - P.stats.bh_drive) / 20, 0.2, 1.4);
+            if (P.pos === 'net' && !lob && contact[1] * rz < 6.5) c += 0.35;   // 앞에서 받을 공은 전위가
+            if (P.pos === 'base' && lob) c += 0.4;   // 머리 위로 넘어간 로브는 뒤의 사람이
+            return c;
+          };
+          const cR = cl(R, Ri, late), cM = cl(M, Mi, lM);
+          const sync = clamp((R.stats.comm + M.stats.comm) / 2 + (Rteam.combo || 0) * 0.2, 0, 100);
+          const sg = 0.06 + 0.5 * (1 - sync / 100);   // 소통 35 → 0.39, 65 → 0.24
+          const goR = cR - cM + gauss(rng) * sg > -0.05, goM = cM - cR + gauss(rng) * sg > -0.05;
+          const amb = Math.abs(cR - cM) < 0.3;
+          let who = goR && !goM ? 'R' : goM && !goR ? 'M' : null, kind = who === 'M' ? (amb ? 'call' : 'pass') : who === 'R' && amb ? 'call' : null;
+          if (!who) {
+            if (rng() < 0.2 + sync / 120) { who = cR >= cM ? 'R' : 'M'; kind = 'call'; }   // 한 사람이 '내 거!'
+            else if (goR && goM) { who = cR >= cM ? 'R' : 'M'; kind = 'both'; }
+            else kind = 'none';
+          }
+          if (kind === 'none') {
+            // 둘 다 미뤘다: 공이 둘 사이로 지나간다
+            H.rec.winners++; rec(H, st, 'win');
+            this.assist(H, lastByTeam);
+            const land = bounce || contact, w0 = unit(from, land), out = toFence(land, w0, 5.5), ft2 = flightTime(from, out, land, v, st);
+            const plan = [];
+            for (const j of [Ri, Mi]) plan[j] = { ...missAt(j, contact, ft2), k: 'confuse' };
+            shots.push({ h: hi, type: st, dir, from, bounce: land, to: out, res: 'center', pos: posNow, v: r2(v), mv: move(follow(plan, land[0]), ft2), info, wing: inc.wing || undefined, claim: { kind: 'none', a: Ri, b: Mi } });
+            return this.finish(shots, H.team, 'center', H, ctx);
+          }
+          const other = who === 'M' ? Ri : Mi;
+          if (who === 'M') {
+            const fM = clamp(dist(Mi) / can(Mi, lM), 0, 1.2);
+            R = M; Ri = Mi; late = lM; backN = backOfP(M, fM); kindR = fM >= 0.72 ? 'reach' : 'set';
+          }
+          if (kind) claim = { kind, by: Ri, other };
+          if (kind === 'both') clash = other;
+        }
+      }
       if (lob && R.pos === 'net' && !air) R.pos = 'base';
-      const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v) };
+      const shot = { h: hi, type: st, dir, from, bounce, to: contact, res: 'in', pos: posNow, info, skill: saved ? 'read' : undefined, skillBy: saved ? Ri : undefined, v: r2(v), wing: inc.wing || undefined, ...(claim ? { claim } : {}) };
       shots.push(shot);
       // 이동
       const wasNet = H.pos === 'net';
@@ -848,7 +900,13 @@ export class MatchSim {
       {
         pushLvl(H.team, nextD > 45 ? 1 : nextD < 15 ? -0.6 : 0);
         const plan = [];
-        plan[Ri] = runAt(Ri, contact, ft, Math.max(0.02, body[Ri].react + late), dir === 'body' ? 'jam' : f >= 0.72 ? 'reach' : 'set');
+        plan[Ri] = runAt(Ri, contact, ft, Math.max(0.02, body[Ri].react + late), kindR);
+        // 둘 다 가다 엉켰다: 다른 사람도 공 쪽으로 뛰다가 바로 앞에서 멈춘다
+        if (clash >= 0) {
+          const u = unit(contact, at[clash]), d = Math.hypot(contact[0] - at[clash][0], contact[1] - at[clash][1]), go = Math.max(0, d - 0.95);
+          const bd = bodyDir(body[clash], backOf(at[clash], contact));
+          plan[clash] = { x: contact[0] + u[0] * Math.min(d, 0.95), z: contact[1] + u[1] * Math.min(d, 0.95), t0: bd.react, v: Math.max(1.6, Math.min(bd.top, go / Math.max(0.2, ft - bd.react))), k: 'clash' };
+        }
         // 친 사람이 제자리로: 네트로 나가는 사람은 전속력, 그 밖에는 친 자리에서 제자리 쪽으로 60%만, 조금 늦고 느리게
         // (2026-11-16 개나리 경기·동호인 자료 비교: 동호인은 친 자리 근처에 머무는 일이 많고 "발이 늦어 자리가 비어 보인다")
         let [hx, hz] = this.homeOf(H, contact[0], lvl[H.team]);
@@ -860,7 +918,7 @@ export class MatchSim {
       lastByTeam[H.team] = H; lastShooter = H;
       inc = {
         D: nextD, height: HEIGHT[st] || 'mid', type: st, from: H, counter, smashable: air, back: backN,
-        forceBh: T.choices.attack === 'back' && rng() < 0.6,
+        forceBh: fbN, clash: clash >= 0,
       };
       H = R;
     }
@@ -916,7 +974,7 @@ export class MatchSim {
 
   statFor(H, st, inc) {
     const s = H.stats;
-    if (st === 'return') return 0.6 * s.return + 0.4 * (inc.forceBh ? s.bh_drive : s.fh_drive);
+    if (st === 'return') return 0.6 * s.return + 0.4 * ((inc.wing ? inc.wing === 'bh' : inc.forceBh) ? s.bh_drive : s.fh_drive);
     if (st === 'passing') return 0.6 * s.passing + 0.4 * s.fh_drive;
     return s[st] ?? 40;
   }
@@ -942,7 +1000,7 @@ export class MatchSim {
     const bothBase = os.every(o => o.pos === 'base');
     const w = {};
     const add = (k, v) => { if (v > 0) w[k] = (w[k] || 0) + v; };
-    const fh = rng() < (inc.forceBh ? 0.25 : 0.58);
+    const fhR = rng(), fh = inc.wing ? inc.wing === 'fh' : fhR < (inc.forceBh ? 0.25 : 0.58);   // 공이 오는 쪽(inc.wing)이 있으면 그것
     const isReturn = inc.type === 'serve' || inc.type === 'serve2';
     if (inc.smashable) { add('smash', 0.85); add('moon_volley', 0.08); }   // 닿는 로브는 거의 스매시
     else if (isReturn) {

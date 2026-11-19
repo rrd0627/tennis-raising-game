@@ -110,6 +110,9 @@ export function duringShot(s, i, pt, st) {
   if (s.info?.mishit) return [C(s.res === 'in' ? pick(['빗맞았는데 넘어갑니다!', '아, 빗맞았어요. 공에 힘이 없습니다.']) : pick(['아, 빗맞았어요!', '라켓 가운데에 안 맞았네요.']), 1)];
   // 나가는 공을 쳐 버렸다(판단 실수)
   if (pt.shots[i - 1]?.outBall) return [C(pick(['아, 나가는 공인데 칩니다!', '나가는 공을 쳐 버렸어요!', '어, 그건 나가는 공이었는데요!']), 2)];
+  // 누가 받나(각자 판단): 둘 다 가다 엉켰다, 가끔 맡기기
+  if (s.claim?.kind === 'both') return [C(pick(['어, 둘 다 갑니다!', '서로 부딪칠 뻔했어요!', '아, 콜이 겹쳤어요!']), 2)];
+  if (s.claim?.kind === 'pass' && Math.random() < 0.3) return [C(pick([`${who(st, s.claim.by)}가 받아 줍니다.`, '파트너에게 맡깁니다.']), 1)];
   const pj = (s.mv || []).findIndex(m => m && m.k === 'poach');
   if (pj >= 0) return [C(pick([`${who(st, pj)} 포치 나갑니다!`, `포치! ${who(st, pj)}가 가로질러 나옵니다!`]), 1)];
   if (/lob|moon/.test(s.type) && s.res === 'in' && i < pt.shots.length - 1 && st.lobPt !== pt && Math.random() < 0.35) { st.lobPt = pt; return [C(pick(['로브! 머리 위로 넘깁니다.', '높이 띄웁니다!']), 1)]; }
@@ -149,7 +152,7 @@ export function afterPoint(pt, st) {
     df: [`더블폴트. ${by}, 아쉬운 실점입니다.`, '아, 더블폴트가 나옵니다.'],
     win: [pt.text, `${by}의 ${shot}! 위너입니다!`, `받을 수 없는 공! ${by}의 ${shot}!`],
     poach: [`${by} 포치! 가로채서 끝냅니다!`, `포치 성공! ${by}가 네트에서 끊어 냅니다!`],
-    center: ['센터! 두 선수 사이로 빠집니다.', '가운데로! 서로 미루다 놓칩니다.'],
+    center: ['센터! 두 선수 사이로 빠집니다.', '가운데로! 서로 미루다 놓칩니다.', '아, 서로 상대가 칠 줄 알았네요!'],
     err: last.res === 'net' ? [`${by}의 ${shot}, 네트에 걸립니다.`, '아, 네트!'] : [fill('{shotI} 라인을 벗어납니다.', v), `아웃! ${by}, 아쉽습니다.`],
   };
   L.push(C(pick(R[pt.endType] || [pt.text]), 2));

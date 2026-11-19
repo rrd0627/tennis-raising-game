@@ -1068,7 +1068,7 @@ export class MatchView {
       if (next && next.h === j && j !== s.h) {
         // 받을 사람은 공 옆(팔과 라켓 길이만큼)에 선다. 여유(m)가 있으면 그만큼 먼저 도착해 멈춰서 힘을 싣고,
         // 여유가 없거나(포지셔닝이 낮으면) 멀리 뻗는 공이면 달리던 그대로 공과 같이 닿는다
-        [tx, tz] = standOf(next.from, next.type, j < 2 ? 0 : 1, [p.x, p.z], m.far || 0);
+        [tx, tz] = standOf(next.from, next.type, j < 2 ? 0 : 1, [p.x, p.z], m.far || 0, next.wing);
         const set = (m.m ?? 0.3) >= 0.08 && m.k !== 'reach' && m.k !== 'jam';
         let T = Math.max(0.12, dur - m.t0 - (set ? Math.min(m.m ?? 0.3, 0.45) : 0) - 0.02);
         const D = Math.hypot(tx - p.x, tz - p.z);
@@ -1080,7 +1080,7 @@ export class MatchView {
         const coil = (j < 2 ? 1 : -1) * (/^bh_/.test(next.type) ? 0.14 : -0.14) * (p.motion ? 0.35 : 1);
         // 치는 동작: 달려가며 유닛턴, 멈춰 서면 그 스탠스의 파워 포지션을 미리 잡아 둔다(사용자 2026-11-09).
         // 멈추지 못하는 사람은 공이 오기 직전에야 파워 포지션(아래 lead)
-        const sw = swingOf(next.type, next.info?.stance, wingOf(next.type, j < 2 ? 0 : 1, next.from, [p.x, p.z]));
+        const sw = swingOf(next.type, next.info?.stance, wingOf(next.type, j < 2 ? 0 : 1, next.from, [p.x, p.z], next.wing));
         p.swing = sw;
         // 스플릿 스텝으로 내려앉은 채 기다리다가(첫발만큼) 움직이기 시작하면 유닛턴. 사이에 준비 자세로 돌아가지 않게
         if (sw) { turnAt = Math.max(t0 + 0.02, 0.22); if (p.pose === 'split') { p.poseUntil = 0; p.seq = null; } }
@@ -1100,6 +1100,11 @@ export class MatchView {
       }
       this.later(t0, () => this.runTo(j, tx, tz, 0, sp, opt));
       if (turnAt >= 0) { const sw = p.swing; this.later(Math.max(turnAt, t0), () => { if (p.swing === sw && !p.crouch) this.setPose(j, sw.turn); }); }
+      if (m.k === 'clash') this.later(Math.max(m.t0 + 0.2, dur - 0.3), () => {
+        const bx = next?.from?.[0] ?? m.x, bz = next?.from?.[1] ?? m.z, ax = p.x - bx, az = p.z - bz, ad = Math.hypot(ax, az) || 1;
+        p.crouch = 0; p.onArrive = null; this.setPose(j, 'ready', 0);
+        this.runTo(j, p.x + ax / ad * 0.45, p.z + az / ad * 0.45, 0, 2.0, { brake: true });
+      });
       if (m.k === 'miss' || m.k === 'confuse') {
         const ball = s.bounce || s.to;
         const hitBody = touch && j === touch.j && touch.kind === 'body';
@@ -1120,9 +1125,17 @@ export class MatchView {
     }
     // 나가는 공을 쳐 버렸다(판단 실수)
     if (s.outBall) this.later(Math.max(0, dur - 0.06), () => this.popText(s.to[0], 2.0, s.to[1], '아웃 볼!', 'out'));
+    // 누가 받나(각자 판단, js/sim.js claim): 한 사람이 '내 거!', 파트너에게 맡김('너!'), 둘 다 가다 엉킴('어!'), 둘 다 미룸('어…?')
+    if (s.claim) {
+      const c = s.claim, P = this.players, say = (j, t, txt, cls) => this.later(t, () => this.popText(P[j].x, 2.3, P[j].z, txt, cls));
+      if (c.kind === 'call') say(c.by, 0.28, '내 거!', 'call');
+      else if (c.kind === 'pass') say(c.other, 0.25, '너!', 'call');
+      else if (c.kind === 'both') { say(c.by, 0.3, '내 거!', 'call'); say(c.other, Math.max(0.5, dur - 0.32), '어!', 'out'); }
+      else if (c.kind === 'none') say(c.a, Math.max(0.35, tPass * 0.62), '어…?', 'out');
+    }
     // 어깨 너머 시점: 주인공이 받을 공이면 포핸드는 오른쪽 어깨, 백핸드는 왼쪽 어깨로 넘어간다(머리 위로 치는 공은 그대로)
     if (next && next.h === 0 && next.from) {
-      const me = this.players[0], wing = wingOf(next.type, 0, next.from, [me.x, me.z]);
+      const me = this.players[0], wing = wingOf(next.type, 0, next.from, [me.x, me.z], next.wing);
       if (wing !== 'over') this.tpsSide = wing === 'bh' ? -1 : 1;
     }
     // 받을 선수는 공이 닿기 직전에 준비 자세를 잡는다
@@ -1133,10 +1146,10 @@ export class MatchView {
     }
     if (this.show3d) {
       const P = this.p3d, c = P.list[s.h];
-      if (!isServe && (!c.sw || Math.abs(c.sw.tImpact - P.bt) > 0.2)) P.schedule(s.h, s.type, wingOf(s.type, s.h < 2 ? 0 : 1, s.from, [hitter.x, hitter.z]), 0, new THREE.Vector3(s.from[0], fl.h0, s.from[1]), [s.to[0] - s.from[0], s.to[1] - s.from[1]], { from: -0.3 });
+      if (!isServe && (!c.sw || Math.abs(c.sw.tImpact - P.bt) > 0.2)) P.schedule(s.h, s.type, wingOf(s.type, s.h < 2 ? 0 : 1, s.from, [hitter.x, hitter.z], s.wing), 0, new THREE.Vector3(s.from[0], fl.h0, s.from[1]), [s.to[0] - s.from[0], s.to[1] - s.from[1]], { from: -0.3 });
       if (next && next.h !== undefined && next.h !== s.h && s.res === 'in') {
         const e = fl.at(dur), pv = this.players[next.h];
-        P.schedule(next.h, next.type, wingOf(next.type, next.h < 2 ? 0 : 1, next.from, [pv.x, pv.z]), dur, new THREE.Vector3(e[0], e[2], e[1]), [next.to[0] - next.from[0], next.to[1] - next.from[1]]);
+        P.schedule(next.h, next.type, wingOf(next.type, next.h < 2 ? 0 : 1, next.from, [pv.x, pv.z], next.wing), dur, new THREE.Vector3(e[0], e[2], e[1]), [next.to[0] - next.from[0], next.to[1] - next.from[1]]);
       }
     }
     if (s.res === 'net') {

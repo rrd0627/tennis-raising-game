@@ -532,6 +532,7 @@ img.pt, .pt { width: 72px; height: 72px; border-radius: 50%; background: var(--p
 .textpop.out { background: #fff; color: #c0392b; }
 .textpop.net { background: #fff; color: var(--ink); }
 .textpop.clap { background: var(--pink); }
+.textpop.call { background: #fff; color: #20324a; font-size: 19px; }
 .crowdpop { position: absolute; z-index: 1; pointer-events: none; font-family: var(--f-display); font-size: 15px; color: #3a6fb0; text-shadow: 0 0 3px #fff, 0 0 6px #fff; opacity: 0; animation: crowd 1.4s ease-out forwards; }
 .crowdpop.us { color: var(--pink); }
 .crowdpop.big { font-size: 21px; }
