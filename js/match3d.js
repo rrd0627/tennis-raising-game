@@ -95,7 +95,8 @@ function glowCanvas() {
 }
 const ease = t => t * t * (3 - 2 * t);
 
-const BALL_R0 = 0.11;   // 공 모양의 기준 반지름(그릴 때 drawBall이 크기를 바꾼다)
+const BALL_R = 0.0335;   // 공 반지름(실제 테니스공)
+const TRAIL_N = 48, TRAIL_T = 0.12;   // 꼬리: 점 수, 길이(초)
 export class MatchView {
   constructor(container, opts = {}) {
     this.el = container;
@@ -133,14 +134,21 @@ export class MatchView {
     this.buildWorld();
     // 공은 그리는 크기만 카메라 거리에 맞춘다(drawBall). 예전에는 늘 반지름 11cm(실제 3.35cm의 3.3배)라 공이 커서 느리고 둥둥 떠 보였고,
     // 어깨 너머 시점에서는 몸 옆의 공이 비치볼만 했다(사용자 2026-11-19: 공의 움직임이 부자연스럽다)
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R0, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8ff3a }));
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8ff3a }));
     this.ball.visible = false;
     this.scene.add(this.ball);
-    this.ballShadow = this.blob(0.13, 0.35);
+    this.ballShadow = this.blob(0.045, 0.4);   // 공 그림자(실제 크기 공에 맞게)
     this.ballShadow.visible = false;
-    this.trailPts = [];
-    this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 }));
-    this.scene.add(this.trail);
+    // 꼬리(사용자 2026-11-19: 공은 실제 크기로, 꼬리로 움직임이 자연스럽고 잘 보이게): 카메라를 보는 띠. 공 쪽은 굵고 진하며 0.12초 전 자리로 갈수록 가늘고 옅어진다.
+    // 굵기는 화면에서 너무 얇아지지 않게(공 쪽 약 4픽셀) 카메라 거리에 맞추고, 색은 회전(탑스핀 주황, 백스핀 하늘색, 적으면 흰색). 빠른 공일수록 길다(0.12초 동안 간 거리, 2.2m까지)
+    this.trailPts = []; this.ballT = 0; this.trailRGB = [1, 1, 1]; this.trailA = 0.8;
+    { const N = TRAIL_N, g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 2 * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 2 * 4), 4).setUsage(THREE.DynamicDrawUsage));
+      const idx = []; for (let i = 0; i + 1 < N; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      g.setIndex(idx); g.setDrawRange(0, 0);
+      this.trail = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      this.trail.frustumCulled = false; this.scene.add(this.trail); }
     this.clock = new THREE.Clock();
     this.onResize = () => this.resize();
     window.addEventListener('resize', this.onResize);
@@ -588,10 +596,8 @@ export class MatchView {
     this.trailPts = [];
     // 꼬리 색으로 회전을 보여 준다: 탑스핀 주황, 백스핀(슬라이스·드롭) 하늘색, 회전이 적으면 흰색
     const rpm = arc.rpm || 0;
-    this.trail.material.color.setHex(rpm > 600 ? 0xffb07a : rpm < -600 ? 0x9fd8ff : 0xffffff);
-    const v = arc.kmh / 4.6;
-    const tail = Math.round(clamp(2 + v * 0.45, 6, 15));   // 빠른 공은 꼬리가 길다
-    this.trail.material.opacity = clamp(0.3 + v * 0.016, 0.4, 0.75);
+    this.trailRGB = rpm > 600 ? [1, 0.69, 0.48] : rpm < -600 ? [0.62, 0.85, 1] : [1, 1, 1];
+    this.trailA = clamp(0.65 + (arc.kmh / 4.6) * 0.012, 0.7, 0.95);
     const end = opt.cutAt ? Math.min(arc.dur, opt.cutAt) : arc.dur;
     this.rollId = (this.rollId || 0) + 1;
     return new Promise(res => {
@@ -603,25 +609,48 @@ export class MatchView {
           if (opt.onBounce && !bounced && t >= arc.t1 - 1e-4) { bounced = true; opt.onBounce(); }
           if (opt.onNet && !netted && arc.tn > 0 && t > arc.tn) { netted = true; const [nx, nz, ny] = arc.at(arc.tn); opt.onNet([nx, ny, nz]); }
           const [x, z, y] = arc.at(t);
-          const yy = this.drawBall(x, y, z);
-          this.trailPts.push(new THREE.Vector3(x, yy, z));
-          if (this.trailPts.length > tail) this.trailPts.shift();
-          this.trail.geometry.setFromPoints(this.trailPts);
+          this.drawBall(x, y, z);
         },
         done: () => res({ arc, end }),
       });
     });
   }
 
-  // 공 그리기: 크기는 화면에서 너무 작아지지 않을 만큼만(먼 공은 화면 반지름 약 2.5픽셀, 가까운 공은 실제 크기의 1.2배까지 작게),
-  // 높이는 물리의 공 가운데 그대로이되 바닥 가까이에서만 그리는 반지름만큼 올려 바운드 때 공 아래가 바닥에 닿는다(예전에는 11cm 아래로 못 내려가 바운드 때 바닥을 미끄러졌다)
+  // 공 그리기: 실제 크기(반지름 3.35cm, 사용자 2026-11-19). 높이는 물리의 공 가운데 그대로이되 바닥 가까이에서만 반지름만큼 올려
+  // 바운드 때 공 아래가 바닥에 닿는다(예전에는 11cm 아래로 못 내려가 바운드 때 바닥을 미끄러졌다). 그린 자리를 꼬리에 쌓는다
   drawBall(x, y, z) {
-    const cam = this.camera, d = Math.hypot(cam.position.x - x, cam.position.y - y, cam.position.z - z);
-    const r = clamp(0.0072 * d * Math.tan((cam.fov * Math.PI / 180) / 2), 0.04, 0.12), yy = Math.max(0, y) + r * Math.exp(-Math.max(0, y) / 0.25);
-    this.ball.scale.setScalar(r / BALL_R0); this.ball.position.set(x, yy, z);
-    this.ballShadow.position.set(x, 0.013, z); this.ballShadow.scale.setScalar(clamp(r / BALL_R0, 0.35, 1.1));
+    const r = BALL_R, yy = Math.max(0, y) + r * Math.exp(-Math.max(0, y) / 0.25);
+    this.ball.position.set(x, yy, z);
+    this.ballShadow.position.set(x, 0.013, z);
     this.ballShadow.material.opacity = Math.max(0.12, 0.38 - y * 0.04);
+    const P = this.trailPts, last = P[P.length - 1];
+    if (!last || Math.abs(last.x - x) + Math.abs(last.y - yy) + Math.abs(last.z - z) > 1e-4) P.push({ x, y: yy, z, t: this.ballT });
+    while (P.length > TRAIL_N || (P.length > 2 && P[1].t < this.ballT - TRAIL_T)) P.shift();
     return yy;
+  }
+  // 꼬리 띠를 지금 카메라 쪽으로 다시 만든다(그리기 바로 전)
+  updateTrail() {
+    const g = this.trail.geometry, P = this.trailPts, n = P.length;
+    if (!this.ball.visible || n < 2) { g.setDrawRange(0, 0); return; }
+    const pos = g.attributes.position.array, col = g.attributes.color.array, cam = this.camera.position;
+    const pxK = 2 * Math.tan((this.camera.fov * Math.PI / 180) / 2) / Math.max(200, this.renderer.domElement.height / (this.renderer.getPixelRatio() || 1));
+    const tH = this.ballT, [cr, cg, cb] = this.trailRGB;
+    // 길이는 2.2m까지(아주 빠른 공도 너무 길지 않게)
+    let len = 0, i0 = 0;
+    for (let i = n - 1; i > 0; i--) { len += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y, P[i].z - P[i - 1].z); if (len > 2.2) { i0 = i - 1; break; } }
+    const m = n - i0;
+    for (let k = 0; k < m; k++) {
+      const a = P[i0 + k], pa = P[i0 + Math.max(0, k - 1)], pb = P[i0 + Math.min(m - 1, k + 1)];
+      let tx = pb.x - pa.x, ty = pb.y - pa.y, tz = pb.z - pa.z; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      let vx = cam.x - a.x, vy = cam.y - a.y, vz = cam.z - a.z; const d = Math.hypot(vx, vy, vz) || 1; vx /= d; vy /= d; vz /= d;
+      let sx = ty * vz - tz * vy, sy = tz * vx - tx * vz, sz = tx * vy - ty * vx; const sl = Math.hypot(sx, sy, sz);
+      if (sl < 1e-4) { sx = 1; sy = 0; sz = 0; } else { sx /= sl; sy /= sl; sz /= sl; }
+      const u = clamp((tH - a.t) / TRAIL_T, 0, 1), w = Math.max(BALL_R * 0.9, 2.1 * d * pxK) * Math.pow(1 - u, 0.8), al = this.trailA * Math.pow(1 - u, 1.4);
+      const o = 6 * k; pos[o] = a.x + sx * w; pos[o + 1] = a.y + sy * w; pos[o + 2] = a.z + sz * w; pos[o + 3] = a.x - sx * w; pos[o + 4] = a.y - sy * w; pos[o + 5] = a.z - sz * w;
+      const q = 8 * k; col[q] = col[q + 4] = cr; col[q + 1] = col[q + 5] = cg; col[q + 2] = col[q + 6] = cb; col[q + 3] = col[q + 7] = al;
+    }
+    g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
+    g.setDrawRange(0, (m - 1) * 6);
   }
 
   // 떨어진 공은 그 자리에 멈추지 않는다. 튀고 구르다 펜스에 막힌다(포인트가 끝나 공이 사라지거나 다음 공을 치면 멈춘다)
@@ -638,10 +667,7 @@ export class MatchView {
         let dt = t - last; last = t;
         while (dt > 1e-6) { const h = Math.min(dt, 1 / 120); dt -= h; stepFree(st, h, surf); }
         const [x, y, z] = st;
-        const yy = this.drawBall(x, y, z);
-        this.trailPts.push(new THREE.Vector3(x, yy, z));
-        if (this.trailPts.length > 6) this.trailPts.shift();
-        this.trail.geometry.setFromPoints(this.trailPts);
+        this.drawBall(x, y, z);
       },
     });
   }
@@ -765,7 +791,7 @@ export class MatchView {
       if (/^serve/.test(s0.type)) this.p3d.prepServe(s0.h, new THREE.Vector3(s0.from[0], flyOf(s0)?.h0 ?? 2.55, s0.from[1]), [s0.to[0] - s0.from[0], s0.to[1] - s0.from[1]]);
     }
     this.rollId = (this.rollId || 0) + 1;
-    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
+    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = [];
     // 서버를 당겨 찍으며 시작한다(중계처럼 끊어서). 치는 순간 중계 자리로 빠진다
     this.tension = 0;
     this.tpsSide = 1;   // 어깨 너머 시점은 오른쪽 어깨에서 시작
@@ -795,7 +821,7 @@ export class MatchView {
     this.setPose(s.h, 'serve');
     this.ball.visible = true; this.ballShadow.visible = true;
     this.rollId = (this.rollId || 0) + 1;
-    this.trailPts = []; this.trail.geometry.setFromPoints([]);
+    this.trailPts = [];
     if (this.show3d) {
       const P = this.p3d, contact = new THREE.Vector3(x, flyOf(s)?.h0 ?? 2.55, z), aim = [s.to[0] - x, s.to[1] - z], T = SV_TOSS;
       P.prepServe(s.h, contact, aim);
@@ -1088,7 +1114,7 @@ export class MatchView {
       await this.wait(0.6);
       // 폴트 난 공은 사라지고, 세컨 서브는 새 공으로 친다(공이 서버 손으로 순간 이동하지 않게)
       this.rollId = (this.rollId || 0) + 1;
-      this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.trail.geometry.setFromPoints([]);
+      this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = [];
       await this.wait(0.15);
     }
   }
@@ -1161,6 +1187,7 @@ export class MatchView {
   tick() {
     const dt = Math.min(0.05, this.clock.getDelta());
     const now = performance.now();
+    this.ballT += dt * this.speed;   // 공 시간(꼬리 길이를 잰다)
     for (const tw of [...this.tweens]) {
       tw.t += dt * this.speed;
       const k = Math.min(1, tw.t / tw.dur);
@@ -1290,6 +1317,7 @@ export class MatchView {
       if (this.show3d) this.p3d.list[i].vrm.scene.visible = op > 0.45;
     }
     this.sky.position.copy(this.camera.position);
+    this.updateTrail();
     this.renderer.render(this.scene, this.camera);
     if (off) this.camera.position.sub(off);
   }
