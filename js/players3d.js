@@ -308,6 +308,28 @@ export class Players3D {
         const ka = Math.min(1, pdt * 8); c.acc[0] += (ax - c.acc[0]) * ka; c.acc[1] += (az - c.acc[1]) * ka;
       }
     }
+    // 사람 가속도 안에서(사용자 2026-11-19: 뒤로 가는데 말도 안 되는 가속력, 일반적인 속도로). 어느 길(이동 엔진, 칠 때 몸 옮기기, 서브)로 정한 몸이든
+    // 마지막에 빠르기의 변화를 묶는다: 앞·옆으로 초속² 7.5m, 몸이 보는 쪽의 뒤로 5.5m, 가던 쪽을 거슬러 멈출 때 9m(칠 공 0.4초 전부터 공 쪽으로 내딛을 때만 11·6·12m), 빠르기는 초속 5.5m까지.
+    // (목표가 갑자기 멀어지면 이동 엔진이 몸을 그 거리 안으로 끌어당겨 초속² 35m까지, 칠 공 앞 마지막 한 발은 18m까지 냈다.) 순간이동(포인트 사이)은 빼고
+    if (tele || !c.lim || (id === 'sv' && inSw)) c.lim = { x: B.x, z: B.z, vx: id === 'sv' ? B.vx : 0, vz: id === 'sv' ? B.vz : 0 };   // 서브 토스부터는 그 자리 그대로(묶으면 토스 중에 미끄러진다)
+    else if (pdt > 0) {
+      const L = c.lim; let vx = (B.x - L.x) / pdt, vz = (B.z - L.z) / pdt, dx = vx - L.vx, dz = vz - L.vz; const dl = Math.hypot(dx, dz);
+      if (dl > 1e-6) {
+        const ux = dx / dl, uz = dz / dl, fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), sp = Math.hypot(L.vx, L.vz);
+        const brake = sp > 0.3 ? -(ux * L.vx + uz * L.vz) / sp : 0, back = -(ux * fx + uz * fz);
+        // 칠 공 0.4초 전부터는 공 쪽으로 한 발 크게 내딛는다(사람도 마지막에는 몸을 던진다): 앞·옆 11, 멈출 때 12, 뒤로는 6까지(뒤로 몸을 던지지는 못한다)
+        const tg = sw && sw.id !== 'sv' ? sw.tImpact - this.bt : 9, lunge = tg > -0.1 && tg < 0.4;
+        const aF = lunge ? 11 : 7.5, aB = lunge ? 12 : 9, aK = lunge ? 6 : 5.5;
+        let am = aF;
+        if (brake > 0.5) am = aF + (aB - aF) * (brake - 0.5) / 0.5;   // 멈출 때(가던 쪽을 거스를 때)
+        else if (back > 0.5) am = aF + (aK - aF) * (back - 0.5) / 0.5;   // 몸이 보는 쪽의 뒤로 빨라질 때
+        const m = am * pdt; if (dl > m) { dx = ux * m; dz = uz * m; }
+      }
+      vx = L.vx + dx; vz = L.vz + dz; const vl = Math.hypot(vx, vz); if (vl > 5.5) { vx *= 5.5 / vl; vz *= 5.5 / vl; }
+      L.x += vx * pdt; L.z += vz * pdt; L.vx = vx; L.vz = vz;
+      B.x = L.x; B.z = L.z; B.vx = vx; B.vz = vz;
+      if (c.lc) { c.lc.x = L.x; c.lc.z = L.z; c.lc.vx = vx; c.lc.vz = vz; }   // 이동 엔진의 뿌리도 같은 자리로
+    }
     c.tp = [tgx, tgz];
     c.res = [tgx - B.x, tgz - B.z];   // 몸이 아직 못 간 만큼(임팩트 둘레에는 팔을 뻗어 채운다)
     const rx0 = B.x, rz0 = B.z;
@@ -378,8 +400,11 @@ export class Players3D {
       }
     }
     // 몸이 공에 맞출 자리까지 다 못 갔으면 그만큼 팔을 뻗는다(손 자리만, 30cm까지. 리그가 임팩트 둘레에서만 쓴다)
+    // 팔을 뻗어도 못 채운 만큼(세계): 중계가 마지막 순간 공을 그만큼 라켓 쪽으로 당겨 그린다(match3d flyArc의 snap)
+    c.miss = [0, 0];
+    if (inSw && sw.id !== 'sv' && c.res) { const rl = Math.hypot(c.res[0], c.res[1]), k = rl > 0.4 ? Math.min(rl - 0.4, 0.6) / rl : 0; c.miss = [c.res[0] * k, c.res[1] * k]; }
     let reach = null;
-    if (inSw && sw.id !== 'sv' && c.res) { const dx = c.res[0] / K, dz = c.res[1] / K; reach = V3(dx * cy - dz * sy, 0, dx * sy + dz * cy); if (reach.length() > 0.3) reach.setLength(0.3); }
+    if (inSw && sw.id !== 'sv' && c.res) { const dx = c.res[0] / K, dz = c.res[1] / K; reach = V3(dx * cy - dz * sy, 0, dx * sy + dz * cy); if (reach.length() > 0.4) reach.setLength(0.4); }   // 사람 가속도로 다 못 간 만큼 팔을 40cm까지
     // 스윙 동작 중 무릎 굽히기(CROUCH): 땅·발리는 임팩트 둘레를 빼고, 발리는 늘
     let crouch = 0;
     if (inSw && CROUCH[id]) { const core = /^[fb]v$/.test(id) ? 0 : sstep(-0.42, -0.15, tc) * (1 - sstep(0.2, 0.55, tc)); crouch = CROUCH[id] * (1 - core); }
@@ -439,15 +464,20 @@ export class Players3D {
     if (contact) {
       if (inSw && sw.id === 'sv') w = 1 - sstep(0.3, 0.9, tc);   // 서브: 처음부터 맞춰 서 있다가 착지 뒤 풀린다
       else if (sw && sw.id !== 'sv') {
-        // 임팩트 0.75~0.15초 전에 걸쳐 고르게(마지막 0.4초에 몰아서 하면 몸이 뒤로 미끄러진다), 친 뒤에는 풀린다
-        const tr = this.bt - sw.tImpact;
-        w = sw.full ? 1 : sstep(-0.8, -0.22, tr) * (1 - sstep(0.12, 0.55, tr));
+        // 칠 공이 정해진 때(상대가 친 때)부터 임팩트 0.22초 전까지 고르게(마지막 0.6초에 몰아서 하면 몸이 사람 가속도를 넘었다, 2026-11-19), 친 뒤에는 풀린다
+        const tr = this.bt - sw.tImpact, ts = Math.min(-0.4, sw.t0 - sw.tImpact);
+        w = sw.full ? 1 : sstep(ts, -0.22, tr) * (1 - sstep(0.12, 0.55, tr));
       } else w = 1;   // 서브 준비
-      const lc = Sc.C0.clone().add(dl).multiplyScalar(K), wx = lc.x * Math.cos(c.yaw) + lc.z * Math.sin(c.yaw), wz = -lc.x * Math.sin(c.yaw) + lc.z * Math.cos(c.yaw);
+      // 임팩트 때 바라볼 쪽(네트 쪽 + 보내는 쪽으로 15도까지)으로 잰다. 지금 몸 방향으로 재면 달려가느라 돌아 있는 동안(80도까지) 맞출 자리가 1m 가까이 엉뚱한 쪽으로 커졌다가
+      // 몸이 다시 서며 되돌아와, 몸이 사람 가속도를 넘어 쫓아가야 했다(2026-11-19)
+      let yI = id === 'sv' ? c.yaw : base; const aI = sw?.aim || c.serve?.aim;
+      if (id !== 'sv' && aI && Math.hypot(aI[0], aI[1]) > 0.1) { let a = Math.atan2(aI[0], aI[1]) - base; a = Math.atan2(Math.sin(a), Math.cos(a)); yI = base + clamp(a * 0.4, -15 * D, 15 * D); }
+      const lc = Sc.C0.clone().add(dl).multiplyScalar(K), wx = lc.x * Math.cos(yI) + lc.z * Math.sin(yI), wz = -lc.x * Math.sin(yI) + lc.z * Math.cos(yI);
       // 그림 선수가 임팩트 때 있을 자리 기준으로 모자란 만큼만(지금 자리 기준이면 아직 달려갈 거리까지 미리 옮겨 몸이 앞질러 갔다가 뒤처졌다)
       const Tgo = sw && sw.id !== 'sv' ? Math.max(0, sw.tImpact - this.bt) : 0, [qx, qz] = Tgo > 0 ? spriteAt(p, Math.min(Tgo, 1.5)) : [p.x, p.z];
       const need = V3(contact.x - wx - qx, 0, contact.z - wz - qz);
       if (sw?.dive) need.clampLength(0, 0.9); else need.clampLength(0, 1.6);
+      c.offT = sw && sw.id !== 'sv' ? need.clone() : null;   // 임팩트 때 옮겨 있어야 할 만큼(이동 엔진이 갈 길에 미리 넣는다)
       if (id === 'sv') c.off.lerp(need.multiplyScalar(w), inSw || v.cutting ? 1 : Math.min(1, pdt * 5));   // 화면을 끊는 동안 서버는 칠 자리에 바로 선다(토스할 때 미끄러지지 않게)
       else {
         // 몸 옮기는 빠르기는 초속 3m까지(튀지 않게). 공이 곧 오는데(발리) 못 닿을 만큼 남았으면 임팩트 0.05초 전까지 닿게 그만큼만 빠르게
@@ -455,7 +485,7 @@ export class Players3D {
         const mx = clamp(left > 0.08 && w > 0.5 ? d.length() / left : 0, 3, 6) * pdt;
         if (d.length() > mx) d.setLength(mx); c.off.add(d);
       }   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
-    } else { const L = c.off.length(), mx = 1.3 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때는 초속 1.3m까지(그림 선수가 뛰는 빠르기에 더해져 휙 움직였다)
+    } else { c.offT = null; const L = c.off.length(), mx = 1.3 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때는 초속 1.3m까지(그림 선수가 뛰는 빠르기에 더해져 휙 움직였다)
     // 친 뒤 팔로스로(동작의 발을 따르는 동안)에는 임팩트 자리에서 천천히 풀린다(위 hu). 디딘 발과 몸이 벌어지지 않게(사용자 2026-11-12: 발이 미끄러진다)
     if (inSw && sw.id !== 'sv' && this.bt >= sw.tImpact && pw < 0.5) { if (!c.hold || c.hold[2] !== sw.tImpact) c.hold = [p.x + c.off.x, p.z + c.off.z, sw.tImpact]; }
     else if (c.hold && this.bt - c.hold[2] > 0.5) c.hold = null;
@@ -511,8 +541,10 @@ export class Players3D {
       const off = Math.abs(rel) > 150 * D ? -80 * D : clamp(rel, -80 * D, 80 * D) * sstep(35 * D, 60 * D, Math.abs(rel));
       face += off * sstep(0.8, 1.8, dd) * sstep(1.6, 2.4, p.speed) * sstep(0.4, 0.75, toIn);
     }
-    const ox = tgx - p.x, oz = tgz - p.z;
-    const Q = { fut: t => { const q = spriteAt(p, t); return [q[0] + ox, q[1] + oz]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh };
+    // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
+    // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
+    const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
+    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh };
     c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
     B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
   }

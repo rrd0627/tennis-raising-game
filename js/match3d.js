@@ -33,6 +33,7 @@ function runTime(D, v, brake, acc = ACC, dec = DEC) {
   return D >= v * v * c ? D / v + v * c : 2 * Math.sqrt(D / c) * c;
 }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 // 공(arc)이 점 X 곁을 가장 가까이 지나는 때 { t, d, p:[x,z,y] }. 높이 ymax 아래로 지날 때만 본다
 function nearest(arc, X, ymax = 2.3, t0 = 0.12) {
   let best = null;
@@ -137,6 +138,8 @@ export class MatchView {
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8ff3a }));
     this.ball.visible = false;
     this.scene.add(this.ball);
+    // 폴트 때 받는 사람이 네트 쪽으로 쳐 보내 둔 공(세컨 서브는 새 공으로 친다. 포인트가 끝날 때까지 네트 밑에 남는다)
+    this.ball2 = new THREE.Mesh(this.ball.geometry, this.ball.material); this.ball2.visible = false; this.scene.add(this.ball2);
     this.ballShadow = this.blob(0.045, 0.4);   // 공 그림자(실제 크기 공에 맞게)
     this.ballShadow.visible = false;
     // 꼬리(사용자 2026-11-19: 공은 실제 크기로, 꼬리로 움직임이 자연스럽고 잘 보이게): 카메라를 보는 띠. 공 쪽은 굵고 진하며 0.12초 전 자리로 갈수록 가늘고 옅어진다.
@@ -589,7 +592,9 @@ export class MatchView {
   later(sec, fn) { if (sec <= 0.001) { fn(); return; } this.tweens.push({ t: 0, dur: sec, step: () => { }, done: () => { if (this.alive) fn(); } }); }
 
   // 공 비행: 실제 물리로 푼 궤적(js/ball.js)을 그대로 그린다. 시간은 엔진과 같다
-  // opt: { onBounce(), onNet([x,y,z]), cutAt: 이 시각에 멈춘다 }
+  // opt: { onBounce(), onNet([x,y,z]), cutAt: 이 시각에 멈춘다, snap: 끝에서 칠 3D 선수 }
+  // 3D 선수가 사람 가속도로 칠 자리까지 다 못 가 팔을 뻗어도 모자라면(players3d의 miss), 마지막 0.18초에 공을 그만큼(0.6m까지) 라켓 쪽으로 당겨 그리고,
+  // 다음 공은 그 자리에서 0.15초에 걸쳐 원래 길로 이어진다(스포츠 게임이 흔히 쓰는 방법. 연출만, 2026-11-19)
   flyArc(arc, opt = {}) {
     this.ball.visible = true; this.ballShadow.visible = true;
     { const [x0, z0, y0] = arc.at(0); this.drawBall(x0, y0, z0); }   // 보이기 시작하는 프레임부터 그 자리에
@@ -600,6 +605,8 @@ export class MatchView {
     this.trailA = clamp(0.65 + (arc.kmh / 4.6) * 0.012, 0.7, 0.95);
     const end = opt.cutAt ? Math.min(arc.dur, opt.cutAt) : arc.dur;
     this.rollId = (this.rollId || 0) + 1;
+    const startOff = this.snapOff; this.snapOff = null;
+    const snapC = opt.snap >= 0 && this.show3d ? this.p3d?.list?.[opt.snap] : null;
     return new Promise(res => {
       let bounced = false, netted = false;
       this.tweens.push({
@@ -608,7 +615,9 @@ export class MatchView {
           const t = k * end;
           if (opt.onBounce && !bounced && t >= arc.t1 - 1e-4) { bounced = true; opt.onBounce(); }
           if (opt.onNet && !netted && arc.tn > 0 && t > arc.tn) { netted = true; const [nx, nz, ny] = arc.at(arc.tn); opt.onNet([nx, ny, nz]); }
-          const [x, z, y] = arc.at(t);
+          let [x, z, y] = arc.at(t);
+          if (startOff) { const w = 1 - sstep(0, 0.15, t); x += startOff[0] * w; z += startOff[1] * w; }
+          if (snapC?.miss) { const w = sstep(end - 0.18, end, t); x -= snapC.miss[0] * w; z -= snapC.miss[1] * w; this.snapOff = w > 0 ? [-snapC.miss[0] * w, -snapC.miss[1] * w] : null; }
           this.drawBall(x, y, z);
         },
         done: () => res({ arc, end }),
@@ -651,6 +660,61 @@ export class MatchView {
     }
     g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
     g.setDrawRange(0, (m - 1) * 6);
+  }
+
+  // 폴트(사용자 2026-11-19: 보통 서브가 멀리 오니 폴트가 되면 공을 라켓으로 툭 쳐서 네트 쪽에 박아 둔다).
+  // 바운드 뒤 실제 공 길(1.4초까지)에서 받는 사람이 닿을 만한 곳(지금 자리에서 3m 안, 높이 0.25~1.3m, 바운드 0.3초 뒤부터, 초속 2.6m 안으로 걸어가 닿는 곳)이 있으면
+  // 공 옆(포·백핸드 쪽, 0.65m)으로 가서 발리처럼 짧게 쳐서 네트 쪽으로 낮게 보낸다. 그 공은 예비 공(ball2)이 되어 네트에 걸려 멈추고 포인트가 끝날 때까지 남는다.
+  // 닿을 곳이 없으면 false(굴러가게 둔다)
+  async faultTap(f, j) {
+    if (!f?.arc?.end || j < 0) return false;
+    const p = this.players[j], surf = this.surface, st = Float64Array.from(f.arc.end), sim = Float64Array.from(st), path = [];
+    for (let t = 1 / 30; t < 1.4; t += 1 / 30) { for (let k = 0; k < 4; k++) stepFree(sim, 1 / 120, surf); path.push([t, sim[0], sim[1], sim[2], sim[3], sim[5]]); }
+    let q = null;
+    for (const r of path) {
+      if (r[0] < 0.3 || r[2] < 0.25 || r[2] > 1.3) continue;
+      const need = Math.max(0, Math.hypot(r[1] - p.x, r[3] - p.z) - 0.65);
+      if (need < 3 && need / Math.max(0.15, r[0] - 0.12) < 2.6) { q = r; break; }
+    }
+    if (!q) return false;
+    const [tc, cx, cy, cz, bvx, bvz] = q, bl = Math.hypot(bvx, bvz) || 1, ux = bvx / bl, uz = bvz / bl;
+    // 공을 마주 보고 오른쪽이 포핸드
+    const fx = -ux, fz = -uz, rx = -fz, rz = fx;
+    const A = [cx - rx * 0.65, cz - rz * 0.65], Bp = [cx + rx * 0.65, cz + rz * 0.65];
+    const [sx, sz] = Math.hypot(A[0] - p.x, A[1] - p.z) <= Math.hypot(Bp[0] - p.x, Bp[1] - p.z) ? A : Bp;
+    const wing = (cx - sx) * rx + (cz - sz) * rz > 0 ? 'fh' : 'bh';
+    this.tapper = j;
+    this.runTo(j, sx, sz, 0, clamp(Math.hypot(sx - p.x, sz - p.z) / Math.max(0.2, tc - 0.15), 1.0, 3.2), { brake: true });
+    const side = Math.sign(cz) || 1, aim = [cx * 0.85 - cx, side * 0.05 - cz];
+    if (this.show3d) this.p3d.schedule(j, wing === 'fh' ? 'fh_volley' : 'bh_volley', wing, tc, new THREE.Vector3(cx, cy, cz), aim);
+    this.later(Math.max(0, tc - 0.12), () => this.setPose(j, 'volley', 360));
+    // 맞을 때까지는 바운드 뒤 공 길 그대로
+    const id = this.rollId = (this.rollId || 0) + 1;
+    await new Promise(res => {
+      let last = 0;
+      this.tweens.push({
+        t: 0, dur: tc, done: res,
+        step: k => { if (id !== this.rollId) return; const t = k * tc; let dt = t - last; last = t; while (dt > 1e-6) { const h = Math.min(dt, 1 / 120); dt -= h; stepFree(st, h, surf); } this.drawBall(st[0], st[1], st[2]); },
+      });
+    });
+    if (id !== this.rollId) return true;
+    // 툭: 네트 쪽으로 낮게(가로 초속 5~8m, 조금 띄워). 공은 예비 공으로 바꿔 날리고, 경기 공은 세컨 서브용으로 거둔다
+    const tx = cx * 0.85, tz = side * 0.05, hl = Math.hypot(tx - cx, tz - cz) || 1, hs = clamp(hl * 0.55, 5, 8);
+    const b2 = Float64Array.from([cx, cy, cz, (tx - cx) / hl * hs, 1.6, (tz - cz) / hl * hs, 0, 0, 0]);
+    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = [];
+    this.ball2.visible = true; this.ball2.position.set(cx, cy, cz);
+    const id2 = this.ball2Id = (this.ball2Id || 0) + 1;
+    let last2 = 0;
+    this.tweens.push({
+      t: 0, dur: 3.5, done: () => { },
+      step: k => {
+        if (id2 !== this.ball2Id) return;
+        const t = k * 3.5; let dt = t - last2; last2 = t;
+        while (dt > 1e-6) { const h = Math.min(dt, 1 / 120); dt -= h; stepFree(b2, h, surf); }
+        this.ball2.position.set(b2[0], Math.max(0, b2[1]) + BALL_R * Math.exp(-Math.max(0, b2[1]) / 0.25), b2[2]);
+      },
+    });
+    return true;
   }
 
   // 떨어진 공은 그 자리에 멈추지 않는다. 튀고 구르다 펜스에 막힌다(포인트가 끝나 공이 사라지거나 다음 공을 치면 멈춘다)
@@ -791,7 +855,7 @@ export class MatchView {
       if (/^serve/.test(s0.type)) this.p3d.prepServe(s0.h, new THREE.Vector3(s0.from[0], flyOf(s0)?.h0 ?? 2.55, s0.from[1]), [s0.to[0] - s0.from[0], s0.to[1] - s0.from[1]]);
     }
     this.rollId = (this.rollId || 0) + 1;
-    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = [];
+    this.ball.visible = false; this.ballShadow.visible = false; this.trailPts = []; this.ball2.visible = false; this.ball2Id = (this.ball2Id || 0) + 1; this.snapOff = null;
     // 서버를 당겨 찍으며 시작한다(중계처럼 끊어서). 치는 순간 중계 자리로 빠진다
     this.tension = 0;
     this.tpsSide = 1;   // 어깨 너머 시점은 오른쪽 어깨에서 시작
@@ -1093,7 +1157,20 @@ export class MatchView {
       if (this.skims?.has(s)) {
         opt.onNet = ([x, y, z]) => { this.flash(x, y, z, 12); this.popText(x, y + 0.4, z, '넷!', 'net'); this.shake = Math.max(this.shake, 0.05); this.hooks?.onNetCord?.(s); };
       }
-      if (!touch) { const f = await this.flyArc(fl, opt); if (!next || s.res === 'fault') this.rollOn(f, s.res === 'fault' ? 0.55 : 1.6); }
+      let rj = -1;
+      if (s.res === 'fault') {
+        // 받는 사람(엔진이 판단을 맡긴 사람)이 공이 떨어지는 순간 '폴트!'라고 외친다(사용자 2026-11-19)
+        for (const k of s.h < 2 ? [2, 3] : [0, 1]) if (s.mv?.[k]?.k === 'let') rj = k;
+        if (rj < 0) rj = s.h < 2 ? (s.h === 0 ? 2 : 3) : (s.h === 2 ? 0 : 1);
+        const pr = this.players[rj];
+        opt.onBounce = () => this.popText(pr.x, 2.25, pr.z, '폴트!', 'out');
+      }
+      if (!touch) {
+        if (next && next.h !== s.h) opt.snap = next.h;
+        const f = await this.flyArc(fl, opt);
+        if (s.res === 'fault') { if (!(await this.faultTap(f, rj))) this.rollOn(f, 0.55); }
+        else if (!next) this.rollOn(f, 1.6);
+      }
       else {
         // 라켓(틱)이나 몸(퍽)에 맞고 튕겨 나간다
         await this.flyArc(fl, { ...opt, cutAt: touch.t });
@@ -1110,7 +1187,8 @@ export class MatchView {
       }
     }
     if (s.res === 'fault') {
-      for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, 2.4);
+      for (let j = 0; j < 4; j++) if (j !== s.h && s.pos?.[j]) this.runTo(j, s.pos[j][0], s.pos[j][1], 0, j === this.tapper ? 1.6 : 2.4);
+      this.tapper = -1;
       await this.wait(0.6);
       // 폴트 난 공은 사라지고, 세컨 서브는 새 공으로 친다(공이 서버 손으로 순간 이동하지 않게)
       this.rollId = (this.rollId || 0) + 1;
