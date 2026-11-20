@@ -20,9 +20,9 @@ try {
   await send('Page.navigate', { url: URL_ });
   for (let i = 0; i < 150 && !(await ev('!!window.__ready')); i++) await sleep(200);
   await ev('window.__seq = null; window.__rec.start(); 1');
-  const shots = await ev('__dbg.SHOTS.map(s => s.id + ":" + s.name)');
+  const shots = await ev('[...__dbg.SHOTS, ...Object.values(__dbg.VARIANTS || {})].map(s => s.id + ":" + s.name)');   // 사람마다 다른 폼(fh@A 등)도
   for (const sn of shots) {
-  const [sid, sname] = sn.split(':');
+  const [sid, sname] = sn.split(/:(.*)/);
   if (WANT.length && !WANT.includes(sid)) continue;
   await ev(`__dbg.setShot('${sid}'); 1`);
   console.log(`
@@ -39,7 +39,10 @@ try {
   for (const [k, v] of viol) console.log(`  ${k} 한계 ${v.lim.join('~')}도, 가장 많이 ${v.worst > 0 ? '+' : ''}${v.worst.toFixed(1)}도 넘음 (${v.at[0]} 공, ${v.at[1]}초, ${v.n}프레임)`);
   const pk = Object.entries(o.peaksW).filter(([, v]) => v[0]).sort((a, b) => b[1][0] - a[1][0]).slice(0, 5);
   console.log('가장 빨리 도는 마디(도/초):', pk.map(([k, v]) => `${k} ${v[0]}`).join(', '));
-  const jw = o.jumpsW.filter(e => e[3] > 1500), jp = o.jumpsP.filter(e => e[3] > 6);
+  // 한 바퀴 이음새(첫 프레임: 끝 자세 → 처음 자세)는 경기에서는 쓰지 않는다(동작이 바뀔 때 0.16초에 걸쳐 앞 자세에서 넘어간다). 그것은 따로 센다
+  const T0c = Math.min(...o.jumpsW.concat(o.jumpsP).map(e => e[2]), 9), seam = e => Math.abs(e[2] - T0c) < 0.0055;
+  const jw = o.jumpsW.filter(e => e[3] > 1500 && !seam(e)), jp = o.jumpsP.filter(e => e[3] > 6 && !seam(e));
+  if (o.jumpsW.some(e => e[3] > 1500 && seam(e)) || o.jumpsP.some(e => e[3] > 6 && seam(e))) console.log('(한 바퀴 이음새에서 튀는 것은 뺐다)');
   console.log(`갑자기 튀는 곳: 회전 ${jw.length}곳, 이동 ${jp.length}곳` + (jw.length + jp.length ? '' : ' (한 프레임에 빠르기가 1500도/초·6m/초 넘게 바뀌는 곳)'));
   for (const e of [...jw.sort((a, b) => b[3] - a[3]).slice(0, 5), ...jp.sort((a, b) => b[3] - a[3]).slice(0, 3)]) console.log('  ', JSON.stringify(e));
   // 팔이 갑자기 꺾이는 곳(임팩트 앞뒤 말고): 같은 곳은 공 종류를 묶어 보여 준다

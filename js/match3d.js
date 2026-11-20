@@ -407,7 +407,7 @@ export class MatchView {
       const zs = i < 2 ? 1 : -1, xs = zs * (i % 2 === 0 ? 1 : -1);
       const x0 = xs * (i % 2 === 0 ? 2.8 : 2.3), z0 = zs * (i % 2 === 0 ? 11.2 : 3.6);
       const acc = info.acc || ACC;
-      list.push({ acc, dec: acc * 1.5, sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
+      list.push({ form: info.form, acc, dec: acc * 1.5, sp, tex, shadow, emote, base: k, x: x0, z: z0, tx: x0, tz: z0, speed: RUN_SPEED, vel: 0, brake: true, onArrive: null, sq: 0, crouch: 0, stride: 0, hop: 0, lean: 0, kick: 0, pose: 'ready', poseUntil: 0, emoteUntil: 0 });
     }
     this.players = list;
     for (let i = 0; i < 4; i++) this.setPose(i, 'ready');

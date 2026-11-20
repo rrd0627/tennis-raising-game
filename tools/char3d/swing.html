@@ -36,7 +36,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js';
 import { createRig } from '../../js/rig3d.js';
-import { SHOTS } from '../../js/swings.js';
+import { SHOTS, shotDef, VARIANTS } from '../../js/swings.js';
 
 const q = new URLSearchParams(location.search);
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -109,7 +109,7 @@ function withEdits(keys, id) {
 // 동작 출처: 모션캡처(기본) 또는 손으로 짠 것(?src=hand, '동작' 버튼). 손으로 짠 것은 샷 이름 뒤에 ':hand'를 붙여 고친 것도 따로 둔다
 let useHand = q.get('src') === 'hand';
 function setShot(id) {
-  const base = String(id).replace(/:hand$/, ''), d = SHOTS.find(s => s.id === base) || SHOTS[0];
+  const base = String(id).replace(/:hand$/, ''), d = shotDef(base) || SHOTS[0];   // 사람 폼(fh@A 등)도 고를 수 있다(?shot=fh@A)
   const def = useHand ? { ...d, id: d.id + ':hand', toss: d.handToss ?? d.toss, bevel: d.handBevel ?? d.bevel, rollK: 0, lroll: d.handLroll, chestPoles: false, grip2Free: false, cor: null, noCor: false, corMove: false, step: d.handStep ?? d.step } : d;
   R.setShot(def, withEdits(useHand ? d.handKeys : d.keys, def.id)); S = R.S;
 }
@@ -182,7 +182,7 @@ function tick(dt) {
   hitMark.material.color.set(hit ? 0x33dd77 : 0xff3366);
   applyCam(camK);
   if (ED.on) { edUpdate(t); renderer.render(scene, cam); return; }
-  note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작: ${useHand ? '손으로 짠 임시 동작' : '모션캡처 ' + (SHOTS.find(s => s.id === S.id)?.src || '') + ' · 출처 Tennis-MoCap(CC BY-SA 3.0)'}`;
+  note.innerHTML = `${S.name} · ${S.balls[key][0]} · 임팩트 높이 ${C.y.toFixed(2)}m · 라켓 가운데와 공 ${Math.round(err * 100)}cm ${hit ? '맞음' : '빗나감'} · IK ${useIK ? '켬' : '끔'}<br>동작: ${useHand ? '손으로 짠 임시 동작' : '모션캡처 ' + (shotDef(S.id)?.src || '') + ' · 출처 Tennis-MoCap(CC BY-SA 3.0)'}`;
   renderer.render(scene, cam);
 }
 requestAnimationFrame(frame);
@@ -354,6 +354,7 @@ const edBtn = btn(bar3, '관절 잡기', () => edToggle(!ED.on));
 if (q.get('edit') === '1') edToggle(true);
 // 관절 검사(개발용): 자세를 시간마다 만들어 관절 각도와 튀는 곳을 잰다. 샷마다 값이 바뀌므로 읽을 때마다 지금 샷 것을 준다
 window.__dbg = {
+  VARIANTS,
   wrist, LIMB, ik, sample, sampleQ, handQuatFor, gripQL, GRIP_POS, HOLD, THREE, pose, lookAt, lookTarget, sweetFrom, B, BONES, ALLB, racket, vrm, SWEET, ANKLE, SHOTS, shoulderRot, elbowIn, handBall,
   R, setIK: v => { R.setIK(useIK = v); }, setShot: id => chooseShot(id), ED, HANDLES, applyDrag, commitEdits, edToggle, cam, get EDITS() { return EDITS; },
   get S() { return S; }, get K() { return S.K; }, get T0() { return S.T0; }, get T1() { return S.T1; }, get LOOP() { return S.LOOP; }, get C0() { return S.C0; },

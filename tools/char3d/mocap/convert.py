@@ -18,7 +18,16 @@ CLIPS = {
   'fs': ('mrios_VDerecha', -1.0, 0.8, 'throat'),
   'bs': ('astrejos_VReves', -1.0, 0.8, 'throat'),
 }
-SRC_LABEL = {'mrios': '여자 선수 C(일반)', 'astrejos': '여자 선수 A(일반)'}
+SRC_LABEL = {'mrios': '여자 선수 C(일반)', 'astrejos': '여자 선수 A(일반)', 'jangel': '여자 선수 B(일반)'}
+# 사람마다 다른 폼(사용자 2026-11-20: 테니스는 사람마다 폼이 다양하다). 이 자료의 일반 수준 여자 선수 세 명(A, B, C)의 실제 동작을 선수마다 나눠 준다.
+# 기본(위 CLIPS)은 C, 여기는 A와 B의 것. 땅볼 백핸드는 양손인 사람만(사용자 확정: 백핸드는 모두 양손. A는 한 손이라 B의 것을 쓴다, js/swings.js FORMS),
+# 백핸드 발리·백핸드 슬라이스는 한 손이라 지금처럼 A 하나
+VARIANTS = {
+  'A': {'fh': ('astrejos_Derecha', -1.0, 0.9, None), 'fv': ('astrejos_VDerecha', -0.8, 0.75, 'throat'), 'sv': ('astrejos_Servicio', -1.6, 1.0, None),
+        'sm': ('astrejos_Remate', -1.2, 0.8, 'throat'), 'fs': ('astrejos_VDerecha', -1.0, 0.8, 'throat')},
+  'B': {'fh': ('jangel_Derecha', -1.0, 0.9, None), 'bh': ('jangel_Reves', -1.0, 0.9, 'grip2'), 'fv': ('jangel_VDerecha', -0.8, 0.75, 'throat'),
+        'sv': ('jangel_Servicio', -1.6, 1.0, None), 'sm': ('jangel_Remate', -1.2, 0.8, 'throat'), 'fs': ('jangel_VDerecha', -1.0, 0.8, 'throat')},
+}
 
 def peaks(sp, thr, gap):
     pk = []
@@ -51,7 +60,9 @@ for name in ['mrios_Reves', 'mrios_VReves', 'jangel_Reves']:
             if g <= 30: ax.append(R['RightWrist'][i].T @ (d / g))
 SHAFT = unit(np.mean(ax, 0)); print('shaft axis in wrist frame', np.round(SHAFT, 3), 'n', len(ax))
 
-for sid, (name, w0, w1, hold) in CLIPS.items():
+JOBS = [(sid, sid, *v) for sid, v in CLIPS.items()] + [(f'{sid}@{who}', sid, *v) for who, vs in VARIANTS.items() for sid, v in vs.items()]
+MAPMS = {}
+for oid, sid, name, w0, w1, hold in JOBS:
     pos, R, dt, J = get(name)
     F = len(pos['Hips'])
     rw, lw = pos['RightWrist'], pos['LeftWrist']
@@ -134,14 +145,17 @@ for sid, (name, w0, w1, hold) in CLIPS.items():
     GS = unit(np.array([-0.45, 0, 0.89])); GF = np.array([0, -1, 0.]); GX = np.cross(GS, GF)
     # 포핸드는 세미웨스턴(-40도)으로 본다. 그러면 서브가 컨티넨탈(+45도) 쯤에 온다(동호인 여자 선수에게 흔한 쥐는 법)
     b0 = np.radians(-40); F0 = np.cos(b0) * GF + np.sin(b0) * GX
-    if sid == 'fh': globals()['MAPM'] = np.column_stack([GS, F0, np.cross(GS, F0)]) @ np.column_stack([SHAFT, FACE, np.cross(SHAFT, FACE)]).T
-    fv_ = MAPM @ FACE; bevel = float(np.degrees(np.arctan2(fv_ @ GX, fv_ @ GF)))
+    # 쥐는 법의 기준은 사람마다 그 사람의 포핸드로(자료의 손목 축 맞추기가 사람마다 조금 다르다). 기본(C)과 A의 백핸드 발리·슬라이스는 예전처럼 C의 포핸드로
     who = name.split('_')[0]
-    data[sid] = dict(bevel=round(bevel, 1), src=SRC_LABEL[who], impact=float(i0 * dt), reps=len(pk), faceSpread=float(np.median(spread)), toss=toss, rows=rows,
+    key = who if '@' in oid else 'base'
+    if sid == 'fh': MAPMS[key] = np.column_stack([GS, F0, np.cross(GS, F0)]) @ np.column_stack([SHAFT, FACE, np.cross(SHAFT, FACE)]).T
+    MAPM = MAPMS.get(key, MAPMS['base'])
+    fv_ = MAPM @ FACE; bevel = float(np.degrees(np.arctan2(fv_ @ GX, fv_ @ GF)))
+    data[oid] = dict(bevel=round(bevel, 1), src=SRC_LABEL[who], impact=float(i0 * dt), reps=len(pk), faceSpread=float(np.median(spread)), toss=toss, rows=rows,
                      armLen=float(np.linalg.norm(pos['RightElbow'][0] - pos['RightShoulder'][0]) + np.linalg.norm(pos['RightWrist'][0] - pos['RightElbow'][0])) / 100, hipH=0.8233)
     holds = ''.join('T' if r['hold'] == 'throat' else 'G' if r['hold'] == 'grip2' else '.' for r in rows)
     move = np.linalg.norm(np.array(rows[-1]['hip'][:2]) - np.array(rows[0]['hip'][:2]))
-    print(f"{sid}: bevel {bevel:.0f}", end=' ')
-    print(f"{sid}: {SRC_LABEL[who]} reps {len(pk)} pick {i0*dt:.2f}s faceSpread {np.median(spread):.0f}deg toss {toss} hipsMove {move:.2f}m hold {holds}")
+    print(f"{oid}: bevel {bevel:.0f}", end=' ')
+    print(f"{oid}: {SRC_LABEL[who]} reps {len(pk)} pick {i0*dt:.2f}s faceSpread {np.median(spread):.0f}deg toss {toss} hipsMove {move:.2f}m hold {holds}")
 json.dump(data, open(os.path.join(HERE, 'clips.json'), 'w', encoding='utf-8'), ensure_ascii=True)
 print('ok')

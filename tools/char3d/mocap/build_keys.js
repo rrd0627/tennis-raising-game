@@ -5,8 +5,10 @@
   const rigHipH = R.REST.hips.y, k = rigHipH / 0.8233;
   const r3 = a => a.map(v => +(+v).toFixed(3)), r1 = a => a.map(v => +(+v).toFixed(1));
   const eulYXZ = q => { const e = new THREE.Euler().setFromQuaternion(q, 'YXZ'); return [e.y / D, e.x / D, e.z / D]; };
-  for (const [id, c] of Object.entries(CL)) {
-    const old = SHOTS.find(s => s.id === id), armK = R.ARM / c.armLen;
+  for (const [cid, c] of Object.entries(CL)) {
+    if (window.__ONLY && !window.__ONLY.includes(cid)) continue;
+    // 사람마다 다른 폼(fh@A 등): 샷 정의와 손질은 그 샷(fh)의 것을 쓴다
+    const id = cid.split('@')[0], old = SHOTS.find(s => s.id === id), armK = R.ARM / c.armLen;
     const rows = c.rows, w0 = rows[0].t, w1 = rows[rows.length - 1].t;
     const keys = [];
     for (const r of rows) {
@@ -38,7 +40,7 @@
         // 손목: 리그 어깨 + 리그 가슴 방향 × (모션캡처 손목 - 어깨, 가슴 기준) × 팔 길이 비
         kk.rh = r3(V(...r.rhOff).multiplyScalar(armK).applyQuaternion(qc).add(R.wp('rightUpperArm')).toArray());
         if (!r.hold && kk.lh !== undefined) kk.lh = r3(V(...r.lhOff).multiplyScalar(armK).applyQuaternion(qc).add(R.wp('leftUpperArm')).toArray());
-        if (it === 3 && j % 6 === 0) { const d = 2 * Math.acos(Math.min(1, Math.abs(qc.dot(want)))) / D; log.push(`${id} t${kk.t} chest err ${d.toFixed(1)}deg`); }
+        if (it === 3 && j % 6 === 0) { const d = 2 * Math.acos(Math.min(1, Math.abs(qc.dot(want)))) / D; log.push(`${cid} t${kk.t} chest err ${d.toFixed(1)}deg`); }
       }
     }
     // 양손 백핸드: 왼손을 손잡이 축 둘레로 얼마나 돌려 쥘지(lroll)는 왼손목이 가장 편한 쪽으로
@@ -62,7 +64,7 @@
       const ah = t => { R.pose(t, 'mid'); const hp = R.B('hips').getWorldPosition(V()); return R.racket.localToWorld(V(0, 0.45, 0)).z - hp.z; };
       let ts = 0; for (let t = 0; t <= 0.15; t += 0.005) if (ah(t) >= AHEAD[id]) { ts = t; break; }
       for (const kk of keys) kk.t = +(kk.t - ts).toFixed(3);
-      log.push(`${id} impact +${ts.toFixed(3)}s`);
+      log.push(`${cid} impact +${ts.toFixed(3)}s`);
     }
     // 발리는 짧고 빠르게(사용자 2026-11-11: 발리는 이렇게 천천히 하지 않는다). 모션캡처 발리는 크게 휘두르는 연습 동작이라
     // 임팩트 둘레로 시간을 줄이고(앞 1/1.7, 뒤 1/1.5) 백스윙·팔로스로 폭(손 자리, 몸 돌기, 라켓 방향)을 줄인다
@@ -101,7 +103,7 @@
         if (Array.isArray(kk.lh)) kk.lh = r3([kk.lh[0], kk.lh[1] + 0.5 * d * b, kk.lh[2]]);
       }
       def.keys = keys; R.setShot(def);
-      log.push(`${id} contact height ${(c0 * 1.12).toFixed(2)} -> ${(R.S.C0.y * 1.12).toFixed(2)} m`);
+      log.push(`${cid} contact height ${(c0 * 1.12).toFixed(2)} -> ${(R.S.C0.y * 1.12).toFixed(2)} m`);
       // 기준점(뿌리)을 임팩트 때 골반 자리로 옮긴다(동작은 그대로). 모션캡처는 출발 자리 기준이라 공이 1m 앞에 있어
       // 게임이 3D 몸을 그림 선수 자리에서 크게 옮겨야 했다(사용자 2026-11-11: 포핸드 때 몸이 뒤로 가는 느낌)
       const j = keys.findIndex(k => k.t > 0), a = keys[j - 1], b = keys[j], u = (0 - a.t) / (b.t - a.t);
@@ -113,9 +115,9 @@
         if (Array.isArray(kk.lh)) kk.lh = r3([kk.lh[0] - hx, kk.lh[1], kk.lh[2] - hz]);
       }
       def.keys = keys; R.setShot(def);
-      log.push(`${id} root moved by ${hx.toFixed(2)}, ${hz.toFixed(2)}: contact from root x ${R.S.C0.x.toFixed(2)} z ${R.S.C0.z.toFixed(2)}`);
+      log.push(`${cid} root moved by ${hx.toFixed(2)}, ${hz.toFixed(2)}: contact from root x ${R.S.C0.x.toFixed(2)} z ${R.S.C0.z.toFixed(2)}`);
     }
-    out[id] = { toss: def.toss, bevel: c.bevel, lroll: def.lroll, keys, tk };
+    out[cid] = { toss: def.toss, bevel: c.bevel, lroll: def.lroll, keys, tk, src: c.src };
   }
   window.__OUT = out;
   return JSON.stringify({ log: log.join(String.fromCharCode(10)), out });

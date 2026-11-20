@@ -261,13 +261,35 @@ SHOTS.push({
 });
 
 // 모션캡처 키(js/swings_mocap.js, CC BY-SA 3.0)가 있으면 그것을 쓴다. 손으로 짠 키는 handKeys로 남겨 시험 화면에서 견줘 본다
+// 모션캡처 키를 샷 정의에 얹는다
+function applyMocap(s, m) {
+  // 공 쪽으로 옮겨 디디는 때(step)가 모션캡처 동작보다 먼저 시작하지 않게(한 바퀴 이음새에서 발이 튀지 않게)
+  // 시간을 줄인 동작(발리, tk = [임팩트 앞, 뒤] 배율)은 디디는 때도 같이 줄인다
+  const T0 = m.keys[0].t, K = m.tk || [1, 1], sc = x => (x < 0 ? x / K[0] : x / K[1]); s.handStep = s.step;
+  s.step = Object.fromEntries(Object.entries(s.step).map(([w, st]) => { const [a, b, c, d] = st.map(sc); const a2 = Math.max(a, T0 + 0.05), b2 = Math.max(b, a2 + 0.12); return [w, [a2, b2, Math.max(c, b2 + 0.05), Math.max(d, b2 + 0.2)]]; }));
+  s.keys = m.keys; s.src = m.src; if (m.bevel != null) s.bevel = m.bevel; s.rollK = m.rollK || 0; s.chestPoles = !!m.chestPoles; s.grip2Free = !!m.grip2Free; s.cor = m.cor || null; s.noCor = !!m.noCor; s.corMove = !!m.corMove; s.handLroll = s.lroll; if (m.lroll != null) s.lroll = m.lroll; if (m.toss != null) s.toss = m.toss;
+}
 for (const s of SHOTS) {
   s.handKeys = s.keys; s.handToss = s.toss; s.handBevel = s.bevel;
   const m = MOCAP[s.id];
-  if (m) {
-    // 공 쪽으로 옮겨 디디는 때(step)가 모션캡처 동작보다 먼저 시작하지 않게(한 바퀴 이음새에서 발이 튀지 않게)
-    // 시간을 줄인 동작(발리, tk = [임팩트 앞, 뒤] 배율)은 디디는 때도 같이 줄인다
-    const T0 = m.keys[0].t, K = m.tk || [1, 1], sc = x => (x < 0 ? x / K[0] : x / K[1]); s.handStep = s.step;
-    s.step = Object.fromEntries(Object.entries(s.step).map(([w, st]) => { const [a, b, c, d] = st.map(sc); const a2 = Math.max(a, T0 + 0.05), b2 = Math.max(b, a2 + 0.12); return [w, [a2, b2, Math.max(c, b2 + 0.05), Math.max(d, b2 + 0.2)]]; }));
-    s.keys = m.keys; s.src = m.src; if (m.bevel != null) s.bevel = m.bevel; s.rollK = m.rollK || 0; s.chestPoles = !!m.chestPoles; s.grip2Free = !!m.grip2Free; s.cor = m.cor || null; s.noCor = !!m.noCor; s.corMove = !!m.corMove; s.handLroll = s.lroll; if (m.lroll != null) s.lroll = m.lroll; if (m.toss != null) s.toss = m.toss; }
+  if (m) applyMocap(s, m);
 }
+// 사람마다 다른 폼(사용자 2026-11-20: 테니스는 사람마다 폼이 다양하다). 모션캡처 자료의 일반 수준 여자 선수 세 명(A, B, C)의 실제 동작을
+// 선수마다 나눠 준다(지어낸 폼이 아니다). 기본 키는 C(백핸드 발리·백핸드 슬라이스는 A), MOCAP의 'fh@A' 같은 것은 그 사람의 키다.
+// 땅볼 백핸드는 양손인 사람만(사용자 확정: 백핸드는 모두 양손. A는 한 손이라 B의 양손 백핸드를 쓴다)
+export const VARIANTS = {};
+for (const [vid, m] of Object.entries(MOCAP)) {
+  if (!vid.includes('@')) continue;
+  const b = SHOTS.find(s => s.id === vid.split('@')[0]); if (!b) continue;
+  const v = { ...b, id: vid, keys: b.handKeys, step: b.handStep ?? b.step, lroll: b.handLroll ?? b.lroll, toss: b.handToss ?? b.toss, bevel: b.handBevel ?? b.bevel };
+  applyMocap(v, m); VARIANTS[vid] = v;
+}
+// 관절 검사(tools/char3d/jointcheck.mjs)에서 라켓이 공에 못 미치거나 관절이 튄 것은 넣지 않았다(A의 포핸드 발리·슬라이스·서브, B의 포핸드·서브). 없는 샷은 C의 것
+export const FORMS = {
+  A: { fh: 'fh@A', bh: 'bh@B', sm: 'sm@A' },
+  B: { bh: 'bh@B', fv: 'fv@B', fs: 'fs@B', sm: 'sm@B' },
+  C: {},
+};
+export const FORM_IDS = Object.keys(FORMS);
+// 샷 정의(기본 샷 id 또는 사람 폼 id)
+export const shotDef = id => SHOTS.find(s => s.id === id) || VARIANTS[id];

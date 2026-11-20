@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { VRMLoaderPlugin } from '../vendor/three-vrm.module.min.js';
 import { createRig } from './rig3d.js';
-import { SHOTS } from './swings.js';
+import { SHOTS, VARIANTS, FORMS, FORM_IDS } from './swings.js';
 import { loadLoco, locoState, locoUpdate } from './loco3d.js';
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -168,9 +168,15 @@ export class Players3D {
     // 스윙 준비(몸 크기에만 달려 있으니 한 번 해서 넷이 같이 쓴다). 한 샷씩 쉬어 가며(화면이 멈추지 않게)
     for (const d of SHOTS) { rigs[0].setShot(d); this.shots[d.id] = rigs[0].S; await yieldFrame(); if (!this.view.alive) return false; }
     // 서브 토스: 공은 왼손이 가장 빨리 올라가는 때 손을 떠난다(손이 멈춘 때 놓으면 공이 갑자기 튀어 나간다, 사용자 2026-11-11: 토스가 흔들린다)
-    { const Sv = this.shots.sv, R = rigs[0]; R.useShot(Sv); let best = Sv.toss, bv = -1;
+    const tossOf = Sv => { const R = rigs[0]; R.useShot(Sv); let best = Sv.toss, bv = -1;
       for (let t = -SV_TOSS + 0.05; t <= Sv.toss; t += 0.01) { const a = R.sample(t, 'lh'), b = R.sample(t + 0.01, 'lh'); if (Array.isArray(a) && Array.isArray(b) && (b[1] - a[1]) > bv) { bv = b[1] - a[1]; best = t; } }
-      Sv.tossR = best; }
+      Sv.tossR = best; };
+    tossOf(this.shots.sv);
+    // 사람마다 다른 폼(사용자 2026-11-20): 모션캡처의 다른 두 사람(A, B)의 스윙도 준비한다(js/swings.js VARIANTS, FORMS)
+    for (const d of Object.values(VARIANTS)) {
+      rigs[0].setShot(d); this.shots[d.id] = rigs[0].S; if (/^sv@/.test(d.id)) tossOf(this.shots[d.id]);
+      await yieldFrame(); if (!this.view.alive) return false;
+    }
     // 기다리는 자세는 손으로 짠 준비 자세(모션캡처 스윙의 첫 자세는 이미 준비 동작 중이라): 뒤에서는 포핸드, 네트 앞에서는 발리 준비
     const POSES = { ...READY, ...GESTURE };
     for (const [rid, sid] of [['readyB', 'fh'], ['readyN', 'fv'], ['cheerP', 'fh'], ['sadP', 'fh']]) {
@@ -180,10 +186,17 @@ export class Players3D {
     }
     // 세컨 서브 동작(라켓이 몸을 뚫지 않게 하는 고침은 새로 구한다)
     { const d = SHOTS.find(x => x.id === 'sv'); rigs[0].setShot({ ...d, id: 'sv2', keys: softServe(d.keys), cor: null }); this.shots.sv2 = rigs[0].S; this.shots.sv2.tossR = this.shots.sv.tossR; await yieldFrame(); if (!this.view.alive) return false; }
+    for (const [fm, f] of Object.entries(FORMS)) {
+      const d = f.sv && VARIANTS[f.sv]; if (!d) continue;
+      rigs[0].setShot({ ...d, id: 'sv2@' + fm, keys: softServe(d.keys), cor: null }); this.shots['sv2@' + fm] = rigs[0].S; this.shots['sv2@' + fm].tossR = this.shots[f.sv].tossR;
+      await yieldFrame(); if (!this.view.alive) return false;
+    }
     for (let i = 0; i < 4; i++) {
       const vrm = vrms[i], p = this.view.players[i];
       this.view.scene.add(vrm.scene);
-      this.list.push({ vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0], gait: { on: false, t: 0 }, hipP: null, chestP: null, sep: [0, 0], body: { init: false, x: 0, z: 0, vx: 0, vz: 0 }, tp: [p.x, p.z], tv: [0, 0], acc: [0, 0], ps: [0, 0] });
+      // 폼: 그 선수가 정해 둔 사람(중계가 이름으로 정해 넘긴다, 없으면 자리마다)
+      const form = FORMS[p.form] ? p.form : FORM_IDS[i % FORM_IDS.length];
+      this.list.push({ form, vrm, rig: rigs[i], team: i < 2 ? 0 : 1, sw: null, key: '', yaw: i < 2 ? Math.PI : 0, ph: 0, wg: 0, off: V3(), last: null, fade: 0, snap: null, px: p.x, pz: p.z, dir: [0, i < 2 ? -1 : 1], hop0: p.hop, jmp: null, sq: 0, v: [0, 0], rp: null, ft: { right: {}, left: {} }, lastStep: -9, lastSide: null, pv: [0, 0], gait: { on: false, t: 0 }, hipP: null, chestP: null, sep: [0, 0], body: { init: false, x: 0, z: 0, vx: 0, vz: 0 }, tp: [p.x, p.z], tv: [0, 0], acc: [0, 0], ps: [0, 0] });
     }
     this.bones = rigs[0].ALLB;
     // 이동 자료(m) → 리그 단위(골반 높이 비), 경기 세계(m)
@@ -192,10 +205,16 @@ export class Players3D {
     return true;
   }
 
+  // 그 선수의 폼으로 친 샷(없으면 기본). sv2는 그 사람 서브의 작은 동작
+  shotOf(c, id) {
+    const f = FORMS[c?.form] || {};
+    if (id === 'sv2') return (f.sv && this.shots['sv2@' + c.form]) || this.shots.sv2;
+    return (f[id] && this.shots[f[id]]) || this.shots[id];
+  }
   // i가 지금부터 dt초 뒤(공 시간)에 type 샷을 친다. contact: 공이 맞는 자리(세계, 없으면 맞추지 않는다), aim: 보내는 쪽 [dx, dz]
   schedule(i, type, wing, dt, contact, aim, opt = {}) {
     const c = this.list[i]; if (!c) return;
-    const id = clipOf(type, wing), S = this.shots[id];
+    const id = clipOf(type, wing), S = this.shotOf(c, id);
     const lead = opt.from != null ? -opt.from : Math.min(Math.max(dt, 0.25), id === 'sv' ? 1.3 : 0.95);
     if (id !== 'sv') c.serve = null;
     c.sw = { id, t0: this.bt, tImpact: this.bt + dt, tStart: this.bt + dt - lead, contact: contact ? contact.clone() : null, aim, full: !!opt.full, tail: Math.min(S.T1, TAIL[id] ?? 1.0), dive: !!opt.dive, second: type === 'serve2' };
@@ -208,7 +227,7 @@ export class Players3D {
   // 서브 토스 동안 공 자리(왼손에 있다가 놓으면 맞을 자리로 올라갔다 떨어진다). 없으면 null
   tossBall(i) {
     const c = this.list[i]; if (!c?.sw || c.sw.id !== 'sv' || !c.handW) return null;
-    const S = this.shots.sv, tc = this.bt - c.sw.tImpact;
+    const S = this.shotOf(c, 'sv'), tc = this.bt - c.sw.tImpact;
     const TR = S.tossR ?? S.toss;
     if (tc < TR || !c.handV) return c.handW.clone();
     // 손을 떠날 때는 손 빠르기 그대로, 0.16초에 걸쳐 맞을 자리로 가는 포물선으로 넘어간다(꺾이지 않게)
@@ -257,7 +276,7 @@ export class Players3D {
     // 포인트가 끝난 몸짓(그림 선수의 cheer·sad 자세를 따른다)
     const gest = !inSw && !c.serve && !v.cutting && (p.pose === 'cheer' || p.pose === 'sad') ? (p.pose === 'cheer' ? 'cheerP' : 'sadP') : null;
     const id = inSw ? sw.id : c.serve ? 'sv' : gest || (Math.abs(p.z) < 6.5 ? 'readyN' : 'readyB');
-    const S = id === 'sv' && inSw && sw.second && this.shots.sv2 ? this.shots.sv2 : this.shots[id];   // 세컨 서브는 작고 느긋한 동작
+    const S = this.shotOf(c, id === 'sv' && inSw && sw.second ? 'sv2' : id);   // 세컨 서브는 작고 느긋한 동작. 선수마다 그 사람의 폼
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
     // 이동 엔진(사용자 2026-11-16: 트리플A처럼 갈 곳을 정하고 → 자연스럽게 가고 → 도착하면 다음 동작). 기다리기·움직이기는 모션캡처 걷기·달리기(loco3d.js)로,
     // 칠 때(임팩트 0.3초 전~0.7초 뒤)·서브·포인트가 끝난 몸짓은 예전처럼 그 동작으로. 스윙 앞부분(백스윙)은 위는 스윙, 아래는 이동 엔진으로 겹친다
@@ -461,7 +480,7 @@ export class Players3D {
       over.foot = (side, f) => { const o = f0(side, f); c.fo[side] = o; return o; };
       over.hip = h => { h = h0(h); if (c.bal && wb > 0) { h = [h[0] + c.bal[0] * wb, h[1], h[2] + c.bal[1] * wb, h[3]]; c.hipP = h; } return h; }; }
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
-    const contact = sw && (inSw || sw.id !== 'sv') ? sw.contact : c.serve?.contact, Sc = sw ? this.shots[sw.id] : S;
+    const contact = sw && (inSw || sw.id !== 'sv') ? sw.contact : c.serve?.contact, Sc = sw ? this.shotOf(c, sw.id) : S;
     let dl = V3();
     if (contact) dl.y = clamp(contact.y / K - Sc.C0.y, -0.62, 0.38);
     // 뿌리 맞추기: 임팩트 때 라켓 가운데(C0 + dl)가 공에 오는 자리 - 지금 자리. 임팩트 앞뒤로만(서브는 처음부터 끝까지)

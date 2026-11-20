@@ -1095,6 +1095,10 @@ async function runMatch() {
   ];
   // 선수마다 가속도(첫발): 중계의 그림 선수·3D 선수가 엔진과 같은 빠르기로 속도를 낸다
   players.forEach((p, i) => { const q = sim.P[i]; if (q) p.acc = bodyOf(q.stats, q.F).acc; });
+  // 3D 선수의 폼(사용자 2026-11-20: 테니스는 사람마다 폼이 다양하다): 모션캡처의 여자 선수 세 명(A, B, C) 가운데 하나를 사람마다 정해 둔다.
+  // 주인공은 C, 파트너·상대는 이름으로 정해서 같은 사람은 늘 같은 폼으로 친다(js/swings.js FORMS)
+  const formOf = key => { let h = 7; for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return ['A', 'B', 'C'][h % 3]; };
+  players.forEach((p, i) => { p.form = i === 0 ? 'C' : formOf(i === 1 ? tr.partner : sim.P[i]?.name || p.charId + i); });
   if (webglOK()) {
     try {
       // 확인 링크에서는 늘 3D 선수로 시작한다(확인하려고). 버튼으로 바꿀 수 있다

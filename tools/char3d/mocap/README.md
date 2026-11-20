@@ -7,7 +7,8 @@
 - Tennis-MoCap: https://github.com/jdpulgarin/Tennis-MoCap
 - 콜롬비아 칼다스 지역 테니스 리그 선수 17명을 광학 모션캡처(초당 100프레임, BVH)로 찍었다. 서브, 스매시, 포핸드, 포핸드 발리, 백핸드, 백핸드 발리를 30초씩 여러 번 친다.
 - 라이선스: CC BY-SA 3.0(크리에이티브 커먼즈 저작자표시-동일조건변경허락). 바꾼 키(`js/swings_mocap.js`)도 같은 라이선스로 공개하고, 게임의 ⚙️ 설정에 출처를 적는다.
-- 쓰는 것: 일반 수준 여자 선수 두 명. C는 포핸드·양손 백핸드·포핸드 발리·서브·스매시, A는 한 손 백핸드 발리. 원본 파일 이름에 선수 이름이 있어 저장소에는 A·C로만 적는다.
+- 쓰는 것: 일반 수준(RP) 여자 선수 세 명(자료의 labels.csv에 여자 일반 수준은 이 셋뿐). C는 포핸드·양손 백핸드·포핸드 발리·서브·스매시, A는 한 손 백핸드 발리. 원본 파일 이름에 선수 이름이 있어 저장소에는 A·B·C로만 적는다.
+- 사람마다 다른 폼(2026-11-20): `convert.py`의 `VARIANTS`가 A·B의 샷을 `fh@A` 같은 이름으로 뽑고, `run.mjs --only=fh@A,...`로 키와 고침을 굽는다. 게임은 `js/swings.js`의 `FORMS`로 선수마다 한 사람의 폼을 쓴다. 관절 검사(`node tools/char3d/jointcheck.mjs fh@A ...`)에서 라켓이 공에 못 미치거나 관절이 튄 것은 `js/swings_mocap.js`에서 뺐다(A의 fv·fs·sv, B의 fh·sv).
 
 ## 하는 일
 
@@ -27,7 +28,7 @@
 ## 다시 만들기
 
 ```
-# 1) BVH 18개를 tools/char3d/mocap/raw/에 받는다(커밋하지 않음): C와 A의 Derecha, Reves, VDerecha, VReves, Servicio, Remate
+# 1) BVH 18개를 tools/char3d/mocap/raw/에 받는다(커밋하지 않음): A·B·C의 Derecha, Reves, VDerecha, VReves, Servicio, Remate
 python -I tools/char3d/mocap/convert.py      # clips.json
 npm run serve                                 # 다른 창에서
 node tools/char3d/mocap/run.mjs               # js/swings_mocap.js
