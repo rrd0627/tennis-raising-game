@@ -151,9 +151,14 @@ export function locoUpdate(db, s, dt, Q) {
       s.offT = 0; s.f = b.i;
     }
     // 빠르기 맞추기: 자료가 가는 빠르기와 가려는 빠르기의 비. 더 빨리 틀고(걸음이 잦아짐) 보폭을 늘린다
-    const vd = Math.hypot(...sub(Q.fut(0.3), Q.fut(0))) / 0.3, vf = db.speedAt(Math.floor(s.f)) * s.sc;
+    const fv = sub(Q.fut(0.3), Q.fut(0)), vd = Math.hypot(...fv) / 0.3, vf = db.speedAt(Math.floor(s.f)) * s.sc;
     const ratio = vf > 0.35 ? clamp(vd / vf, 0.8, 2.8) : 1;
-    s.rT = clamp(Math.pow(ratio, 0.68), 0.85, 1.95); s.wT = clamp(Math.pow(ratio, 0.32), 0.92, 1.32);   // 보폭은 1.3배까지(더 늘리면 다리를 찢듯 벌렸다)
+    // 옆으로 가는 몫(몸이 보는 쪽 기준, 1이면 곧장 옆): 옆걸음(사이드 스텝)은 보폭을 늘리지 않고 걸음을 잦게 한다
+    // (사용자 2026-11-20: 옆으로 갈 때 다리가 옆으로 크게 벌어진다. 보폭을 1.3배 늘리면 두 발이 1m 넘게 벌어졌다. 실제 사이드 스텝은 폭은 그대로, 빨리 딛는다)
+    const cyq = Math.cos(s.yaw), syq = Math.sin(s.yaw), lxq = cyq * fv[0] - syq * fv[1], lzq = syq * fv[0] + cyq * fv[1];
+    const side = vd > 0.2 ? Math.abs(lxq) / Math.max(1e-6, Math.hypot(lxq, lzq)) : 0, sk = clamp((side - 0.5) / 0.4, 0, 1);
+    const we = 0.32 * (1 - 0.85 * sk);
+    s.rT = clamp(Math.pow(ratio, 1 - we), 0.85, 1.95 + 0.4 * sk); s.wT = clamp(Math.pow(ratio, we), 0.92, 1.32 - 0.27 * sk);   // 보폭은 1.3배까지(더 늘리면 다리를 찢듯 벌렸다), 옆걸음은 1.05배까지
   }
   const kr = 1 - Math.exp(-dt / 0.12);
   s.r += ((s.rT ?? 1) - s.r) * kr; s.w += ((s.wT ?? 1) - s.w) * kr;
@@ -169,7 +174,7 @@ export function locoUpdate(db, s, dt, Q) {
   // 바라볼 쪽도 조금씩(반감기 0.15초, 초당 (자료가 도는 빠르기의 80% + 움직이는 빠르기에 따라 60~200도)까지. 서서 제자리에서 휙 돌지 않게, 달리면서는 빨리)
   const fy = Q.face(0), dy = wrapR(fy - s.yaw);
   if (Math.abs(dy) > 1e-4) {
-    const om = Math.abs(ry1 - ry0) / dt, sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(Math.abs(dy) * (1 - Math.exp(-dt * Math.LN2 / 0.15)), (0.8 * om + (60 + 140 * clamp(sp / 2, 0, 1)) * Math.PI / 180) * dt);
+    const om = Math.abs(ry1 - ry0) / dt, sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(Math.abs(dy) * (1 - Math.exp(-dt * Math.LN2 / 0.15)), (0.8 * om + (Q.pivot ? 360 : 60 + 140 * clamp(sp / 2, 0, 1)) * Math.PI / 180) * dt);   // pivot: 크로스 스텝 첫발은 골반을 빨리 돌린다
     s.yaw += Math.sign(dy) * m;
   }
   s.vx = (s.x - x0) / dt; s.vz = (s.z - z0) / dt;

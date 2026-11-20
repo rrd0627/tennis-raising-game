@@ -25,6 +25,7 @@ function spriteAt(p, T) {
   return [x, z];
 }
 const D = Math.PI / 180;
+const WARP_BACK = 0.55;   // 하체를 튼 만큼 상체를 되돌리는 몫
 const wrapD = a => ((a % 360) + 540) % 360 - 180;   // 각(도)을 -180~180으로
 // 동작이 바뀔 때 뼈를 섞지 않는 곳: 다리와 골반·몸통(이것들은 자세 값에서 섞어 다리 IK가 디딘 발에 맞는다)
 const NOFADE = /^(hips|spine|chest|upperChest|(left|right)(UpperLeg|LowerLeg|Foot|Toes))$/;
@@ -422,7 +423,8 @@ export class Players3D {
         c.hipP = h; return h;
       },
       chest: ch => {
-        ch = [ch[0] + 0.5 * lp.cy + (c.hipMove || 0), ch[1] + 0.5 * (lp.cp - this.locoDB.cp0), ch[2] + 0.5 * lp.cr];
+        // 하체를 가는 쪽으로 튼 만큼(c.warp) 상체는 55% 되돌려 네트 쪽에 남긴다(어깨는 45%만 따라 돌아 몸이 살짝 비틀린다, orientation warping)
+        ch = [ch[0] + 0.5 * lp.cy + (c.hipMove || 0) - clamp(wrapD((c.yaw - (c.faceBase ?? c.yaw)) / D), -80, 80) * WARP_BACK, ch[1] + 0.5 * (lp.cp - this.locoDB.cp0), ch[2] + 0.5 * lp.cr];
         if (c.fade > 0 && c.snapChest) { const u = sstep(0, 1, 1 - c.fade / FADE); ch = ch.map((v, k) => c.snapChest[k] + (v - c.snapChest[k]) * u); }
         c.chestP = ch; return ch;
       },
@@ -534,17 +536,25 @@ export class Players3D {
     let face = base;
     const aim = inSw ? sw.aim : null;
     if (aim && Math.hypot(aim[0], aim[1]) > 0.1) face = base + clamp(wr(Math.atan2(aim[0], aim[1]) - base) * 0.4, -15 * D, 15 * D);
-    // (빠르게 옆으로 멀리 갈 때 네트를 본 채 옆걸음으로 가면 다리를 크게 벌리고 깡충거린다. 동호인도 그때는 돌아서 달린다. 옆걸음은 짧은 거리·느린 빠르기에만)
-    const ddx = (p.tx ?? p.x) - p.x, ddz = (p.tz ?? p.z) - p.z, dd = Math.hypot(ddx, ddz);
-    if (dd > 0.8 && (p.speed || 0) > 1.6) {
-      const rel = wr(Math.atan2(ddx, ddz) - base);
-      const off = Math.abs(rel) > 150 * D ? -80 * D : clamp(rel, -80 * D, 80 * D) * sstep(35 * D, 60 * D, Math.abs(rel));
-      face += off * sstep(0.8, 1.8, dd) * sstep(1.6, 2.4, p.speed) * sstep(0.4, 0.75, toIn);
+    // 하체 방향 틀기(트리플A의 orientation warping, 사용자 2026-11-20: 크로스 스텝으로 오면 오른발이 왼쪽으로 가야지, 몸을 왼쪽으로 살짝 비틀면서).
+    // 옆으로 빨리 가면 하체(골반·다리)는 가는 쪽으로 틀어 달리는 걸음을 쓰고(바깥 발이 안쪽 발 앞으로 엇갈려 건너간다), 상체는 반대로 비틀어 네트 쪽에 남긴다(c.warp, chest).
+    // 예전에는 남은 거리(0.8m 넘게)와 그림 선수의 목표 빠르기로만 정해서, 1~2m를 초속 2.4m로 옆으로 갈 때 네트를 본 옆걸음(사이드 스텝) 동작이 빠르기를 못 따라가
+    // 뒷발이 끌려가며 다리가 옆으로 크게 벌어졌다. 지금은 앞으로 0.35초 동안 실제로 갈 빠르기로 정한다: 초속 1.0m 아래는 옆걸음, 1.9m에서 다 튼다. 칠 때가 다가오면(0.45~0.22초 전, 스윙이 시작되기 직전) 다시 선다
+    {
+      const q0 = spriteAt(p, 0), q1 = spriteAt(p, 0.35), vx = (q1[0] - q0[0]) / 0.35, vz = (q1[1] - q0[1]) / 0.35, vs = Math.hypot(vx, vz);
+      let tw = 0;
+      if (vs > 0.3) {
+        const rel = wr(Math.atan2(vx, vz) - base);
+        const off = Math.abs(rel) > 150 * D ? -75 * D : clamp(rel, -75 * D, 75 * D) * sstep(30 * D, 55 * D, Math.abs(rel));   // 뒤로 갈 때(로브)는 오른쪽으로 돌아 옆으로 물러난다
+        tw = off * sstep(1.0, 1.9, vs) * sstep(0.22, 0.45, toIn);
+      }
+      c.warp = (c.warp || 0) + (tw - (c.warp || 0)) * Math.min(1, pdt * 7);
+      c.faceBase = face; face += c.warp;
     }
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
-    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh };
+    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh, pivot: Math.abs(c.warp || 0) > 0.35 };
     c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
     B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
   }
@@ -578,7 +588,7 @@ export class Players3D {
       if (!L.lock) L.lock = { x: ux, z: uz, y: uy };
       // 몸이 목표 쪽으로 당겨지며 디딘 발과 너무 벌어지면(40cm 넘게) 발을 조금씩 끌어 다리가 지나치게 펴지지 않게
       const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez);
-      if (e > 0.4) { const m = Math.min(e - 0.4, 1.5 * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }
+      if (e > 0.4) { const m = Math.min(e - 0.4, (1.5 + 0.8 * x.spd) * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }   // 빨리 움직일수록 빨리(발만 뒤에 남아 다리가 벌어지지 않게)
       L.lock.y += wrapD(wy - L.lock.y) * Math.min(1, x.pdt * 3);   // 디딘 채 앞꿈치를 축으로 조금 돈다
       ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
     } else if (L.lock) {
