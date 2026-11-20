@@ -132,6 +132,7 @@ export function locoUpdate(db, s, dt, Q) {
   const lx = c0 * dxw - s0 * dzw, lz = s0 * dxw + c0 * dzw;   // 자료 뿌리 기준 움직임
   const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw), k = s.w * s.sc;
   s.x += (cy * lx + sy * lz) * k; s.z += (-sy * lx + cy * lz) * k; s.yaw += ry1 - ry0;
+  const xa = s.x, za = s.z;   // 동작(걸음)이 만든 움직임까지
   s.f = f1;
   // 2) 0.1초마다(또는 구간 끝, 크게 바뀌면) 앞으로 갈 길이 가장 비슷한 프레임을 찾는다
   s.tS += dt;
@@ -150,23 +151,27 @@ export function locoUpdate(db, s, dt, Q) {
       s.off = {}; for (const kk of KEYS) s.off[kk] = ANG.has(kk) ? wrapD(p0[kk] - p1[kk]) : p0[kk] - p1[kk];
       s.offT = 0; s.f = b.i;
     }
-    // 빠르기 맞추기: 자료가 가는 빠르기와 가려는 빠르기의 비. 더 빨리 틀고(걸음이 잦아짐) 보폭을 늘린다
-    const fv = sub(Q.fut(0.3), Q.fut(0)), vd = Math.hypot(...fv) / 0.3, vf = db.speedAt(Math.floor(s.f)) * s.sc;
-    const ratio = vf > 0.35 ? clamp(vd / vf, 0.8, 2.8) : 1;
+    // 빠르기 맞추기: 자료가 가는 빠르기와 가려는 빠르기의 비. 더 빨리 틀고(걸음이 잦아짐) 보폭을 늘린다.
+    // 가려는 빠르기는 지금 몸 자리에서 0.3초 뒤 목표까지(뒤처진 만큼도 걸음으로 메운다. 사용자 2026-11-20: 캐릭터를 옮기고 다리가 제멋대로 따라오는 느낌.
+    // 예전에는 목표의 빠르기만 맞추고 뒤처진 만큼은 몸을 끌어 메워서, 움직임의 절반쯤만 걸음이 만들었다)
+    const fa = Q.fut(0.3), fv = [fa[0] - s.x, fa[1] - s.z], vd = Math.hypot(...fv) / 0.3, vf = db.speedAt(Math.floor(s.f)) * s.sc;
+    const ratio = vf > 0.35 ? clamp(vd / vf, 0.8, 3.2) : 1;
     // 옆으로 가는 몫(몸이 보는 쪽 기준, 1이면 곧장 옆): 옆걸음(사이드 스텝)은 보폭을 늘리지 않고 걸음을 잦게 한다
     // (사용자 2026-11-20: 옆으로 갈 때 다리가 옆으로 크게 벌어진다. 보폭을 1.3배 늘리면 두 발이 1m 넘게 벌어졌다. 실제 사이드 스텝은 폭은 그대로, 빨리 딛는다)
     const cyq = Math.cos(s.yaw), syq = Math.sin(s.yaw), lxq = cyq * fv[0] - syq * fv[1], lzq = syq * fv[0] + cyq * fv[1];
     const side = vd > 0.2 ? Math.abs(lxq) / Math.max(1e-6, Math.hypot(lxq, lzq)) : 0, sk = clamp((side - 0.5) / 0.4, 0, 1);
-    const we = 0.32 * (1 - 0.85 * sk);
-    s.rT = clamp(Math.pow(ratio, 1 - we), 0.85, 1.95 + 0.4 * sk); s.wT = clamp(Math.pow(ratio, we), 0.92, 1.32 - 0.27 * sk);   // 보폭은 1.3배까지(더 늘리면 다리를 찢듯 벌렸다), 옆걸음은 1.05배까지
+    // 앞으로 달릴 때는 사람처럼 보폭이 주로 늘고(빨리 달릴수록 걸음은 조금만 잦아진다), 옆걸음은 걸음만 잦아진다
+    const we = 0.55 * (1 - 0.9 * sk);
+    s.rT = clamp(Math.pow(ratio, 1 - we), 0.85, 1.75 + 0.6 * sk); s.wT = clamp(Math.pow(ratio, we), 0.92, 1.55 - 0.5 * sk);   // 보폭: 앞으로 1.55배, 옆걸음 1.05배까지
   }
   const kr = 1 - Math.exp(-dt / 0.12);
   s.r += ((s.rT ?? 1) - s.r) * kr; s.w += ((s.wT ?? 1) - s.w) * kr;
-  // 3) 목표와의 차이를 조금씩: 반감기 0.25초, 한 프레임에 (몸 빠르기의 60% + 초속 0.06m)까지(움직일 때만 당긴다. 서 있는데 당기면 발은 그대로 몸만 옆으로 가 넘어질 자세가 됐다,
-  //    사용자 2026-11-16). 서 있을 때 차이는 동작 찾기가 걸음으로 메운다. 그래도 maxOff보다 벌어지면 그 안으로
+  // 3) 목표와의 차이를 조금씩(홀든의 adjustment): 반감기 0.3초, 한 프레임에 걸음 빠르기의 50%까지. 걸음이 멈춘(서 있는) 동안은 당기지 않는다
+  //    (서 있는데 당기면 발은 그대로 몸만 옆으로 가 넘어질 자세가 됐다, 사용자 2026-11-16). 서 있을 때 차이는 동작 찾기가 걸음으로 메운다.
+  //    maxOff는 비상용(예전 0.25~0.45m로 묶어 몸을 끌어 다녔다. 사용자 2026-11-20: 캐릭터를 옮기고 다리가 제멋대로 따라오는 느낌)
   const ex = Q.tx - s.x, ez = Q.tz - s.z, el = Math.hypot(ex, ez);
   if (el > 1e-4) {
-    const sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.25)), (0.6 * sp + 0.06) * dt);
+    const sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.3)), 0.5 * sp * dt);
     s.x += ex / el * m; s.z += ez / el * m;
     const e2 = Math.hypot(Q.tx - s.x, Q.tz - s.z), mo = Q.maxOff ?? 0.45;
     if (e2 > mo) { const u = (e2 - mo) / e2; s.x += (Q.tx - s.x) * u; s.z += (Q.tz - s.z) * u; }
@@ -178,6 +183,7 @@ export function locoUpdate(db, s, dt, Q) {
     s.yaw += Math.sign(dy) * m;
   }
   s.vx = (s.x - x0) / dt; s.vz = (s.z - z0) / dt;
+  s.dA = Math.hypot(xa - x0, za - z0); s.dC = Math.hypot(s.x - xa, s.z - za);   // 잰 값: 걸음이 만든 움직임, 목표 쪽으로 당긴 움직임(m)
   if (s.off) { s.offT += dt; if (s.offT >= BLEND) s.off = null; }
   return poseOut(db, s);
 }

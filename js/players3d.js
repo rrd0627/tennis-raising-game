@@ -313,6 +313,8 @@ export class Players3D {
     // 마지막에 빠르기의 변화를 묶는다: 앞·옆으로 초속² 7.5m, 몸이 보는 쪽의 뒤로 5.5m, 가던 쪽을 거슬러 멈출 때 9m(칠 공 0.4초 전부터 공 쪽으로 내딛을 때만 11·6·12m), 빠르기는 초속 5.5m까지.
     // (목표가 갑자기 멀어지면 이동 엔진이 몸을 그 거리 안으로 끌어당겨 초속² 35m까지, 칠 공 앞 마지막 한 발은 18m까지 냈다.) 순간이동(포인트 사이)은 빼고
     if (tele || !c.lim || (id === 'sv' && inSw)) c.lim = { x: B.x, z: B.z, vx: id === 'sv' ? B.vx : 0, vz: id === 'sv' ? B.vz : 0 };   // 서브 토스부터는 그 자리 그대로(묶으면 토스 중에 미끄러진다)
+    // 이동 엔진은 걸음(모션캡처)이 곧 사람 가속도라 묶지 않는다(묶으면 걸음과 상관없이 몸 자리를 덮어써 다리가 따로 놀았다, 2026-11-20). 따라만 간다
+    else if (useLoco && pdt > 0) { c.dL = 0; c.lim = { x: B.x, z: B.z, vx: B.vx, vz: B.vz }; }
     else if (pdt > 0) {
       const L = c.lim; let vx = (B.x - L.x) / pdt, vz = (B.z - L.z) / pdt, dx = vx - L.vx, dz = vz - L.vz; const dl = Math.hypot(dx, dz);
       if (dl > 1e-6) {
@@ -328,6 +330,7 @@ export class Players3D {
       }
       vx = L.vx + dx; vz = L.vz + dz; const vl = Math.hypot(vx, vz); if (vl > 5.5) { vx *= 5.5 / vl; vz *= 5.5 / vl; }
       L.x += vx * pdt; L.z += vz * pdt; L.vx = vx; L.vz = vz;
+      c.dL = Math.hypot(B.x - L.x, B.z - L.z);   // 잰 값: 가속도 묶기가 옮긴 만큼(m)
       B.x = L.x; B.z = L.z; B.vx = vx; B.vz = vz;
       if (c.lc) { c.lc.x = L.x; c.lc.z = L.z; c.lc.vx = vx; c.lc.vz = vz; }   // 이동 엔진의 뿌리도 같은 자리로
     }
@@ -554,7 +557,7 @@ export class Players3D {
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
-    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.25 + 0.2 * sstep(0.4, 1.0, toIn), force: c.lc.fresh, pivot: Math.abs(c.warp || 0) > 0.35 };
+    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh, pivot: Math.abs(c.warp || 0) > 0.35 };
     c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
     B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
   }
