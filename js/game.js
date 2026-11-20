@@ -8,7 +8,7 @@ import { MatchSim, quickMatch, aiChoices, makeStats, makeNpcTeam, mulberry32, ga
 
 export const TOTAL_WEEKS = 156;
 export const WEEKS_PER_TURN = 2;
-export const GROWTH = 6.5; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
+export const GROWTH = 6.9; // 행동 1회의 성장 속도 (tools/season.js 로 조정)
 // 확인 링크(?check)는 실제 저장을 건드리지 않도록 따로 저장한다
 const SAVE_KEY = typeof location !== 'undefined' && location.search.includes('check') ? 'tennis-raising-save-check' : 'tennis-raising-save-v3';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

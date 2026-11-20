@@ -1008,7 +1008,8 @@ export class MatchView {
     else if (v >= 13) this.punch = Math.max(this.punch, 0.06);
     const arc = s.res === 'net' || s.res === 'fault' || s.res === 'df' ? null : fl;
     // 끝나는 공(위너·아웃·에이스): 받는 쪽은 실제 공 길을 보고 끝까지 쫓아간다(chasePlan)
-    const cp = !next && ['win', 'out', 'ace', 'poach'].includes(s.res) ? this.chasePlan(s, fl) : null;
+    // 아웃인 줄 알고 보낸 서브(misread)는 쫓지 않는다: 받을 자리에서 준비하다 라켓을 거둔다(엔진의 let 계획)
+    const cp = !next && ['win', 'out', 'ace', 'poach'].includes(s.res) && !s.misread ? this.chasePlan(s, fl) : null;
     // 위너가 맞는 사람 곁을 지나가면 가만히 보내지 않는다. 어떻게든 라켓을 대거나(틱) 몸에 맞는다(퍽). 점수는 그대로 친 쪽 것이다
     // (거의 닿을 뻔한 공만. 멀리 지나가는 공에 라켓을 대려고 사람이 날아가지 않게)
     let touch = null;
@@ -1125,6 +1126,8 @@ export class MatchView {
     }
     // 나가는 공을 쳐 버렸다(판단 실수)
     if (s.outBall) this.later(Math.max(0, dur - 0.06), () => this.popText(s.to[0], 2.0, s.to[1], '아웃 볼!', 'out'));
+    // 라인 근처 서브를 아웃인 줄 알고 보냈는데 들어왔다
+    if (s.misread) this.later(Math.max(0, (fl.t1 || tPass) - 0.02), () => this.popText(s.bounce[0], 1.2, s.bounce[1], '인!', 'out'));
     // 누가 받나(각자 판단, js/sim.js claim): 한 사람이 '내 거!', 파트너에게 맡김('너!'), 둘 다 가다 엉킴('어!'), 둘 다 미룸('어…?')
     if (s.claim) {
       const c = s.claim, P = this.players, say = (j, t, txt, cls) => this.later(t, () => this.popText(P[j].x, 2.3, P[j].z, txt, cls));

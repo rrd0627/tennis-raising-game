@@ -111,7 +111,7 @@ const range = xs => `${Math.min(...xs)}~${Math.max(...xs)} (중앙값 ${med(xs)}
 const prom = rs.map(r => r.promoted).filter(Boolean);
 const count = key => { const m = {}; rs.forEach(r => { m[r[key]] = (m[r[key]] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '); };
 console.log(`--- ${RUNS}회 요약 (턴 ${med(rs.map(r => r.turns))})`);
-console.log(`국화 승급 주: ${prom.length ? range(prom) : '없음'} | 승급 ${prom.length}/${RUNS}회 | 85~120주 ${prom.filter(w => w >= 85 && w <= 120).length}회`);
+console.log(`국화 승급 주: ${prom.length ? range(prom) : '없음'} | 승급 ${prom.length}/${RUNS}회 | 85~120주 ${prom.filter(w => w >= 85 && w <= 120).length}회 | 97주까지 ${prom.filter(w => w <= 97).length}회`);
 console.log(`대회: ${range(rs.map(r => r.tours))} | 경기: ${range(rs.map(r => r.matches))} | 중계 경기: ${range(rs.map(r => r.watched))} | 승률 ${(rs.reduce((a, r) => a + r.wins, 0) / rs.reduce((a, r) => a + r.matches, 0) * 100).toFixed(0)}%`);
 console.log(`최종 종합: ${range(rs.map(r => Math.round(r.overall)))} | 부상: ${range(rs.map(r => r.injuries))} | 달성 목표: ${range(rs.map(r => r.goals))} | 이야기 ${med(rs.map(r => r.stories))} 이정표 ${med(rs.map(r => r.miles))}`);
 const fb = rs.map(r => r.firstBond).filter(Boolean);

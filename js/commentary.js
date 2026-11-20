@@ -148,7 +148,8 @@ export function afterPoint(pt, st) {
   const by = who(st, pt.by), shot = SHOT_NAME[last.type] || '샷';
   const v = { by, shot, shotI: josa(shot, '이가') };
   const R = {
-    ace: [`서브 에이스! ${by}, 손도 못 대게 합니다.`, `에이스! ${by}의 서브가 깨끗하게 꽂힙니다.`],
+    ace: last.misread ? ['아웃인 줄 알고 보냈는데, 들어왔습니다! 에이스!', `${by}의 서브가 라인에 걸칩니다. 받는 쪽이 보냈어요!`]
+      : [`서브 에이스! ${by}, 손도 못 대게 합니다.`, `에이스! ${by}의 서브가 깨끗하게 꽂힙니다.`],
     df: [`더블폴트. ${by}, 아쉬운 실점입니다.`, '아, 더블폴트가 나옵니다.'],
     win: [pt.text, `${by}의 ${shot}! 위너입니다!`, `받을 수 없는 공! ${by}의 ${shot}!`],
     poach: [`${by} 포치! 가로채서 끝냅니다!`, `포치 성공! ${by}가 네트에서 끊어 냅니다!`],
