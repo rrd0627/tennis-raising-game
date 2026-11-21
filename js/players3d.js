@@ -63,7 +63,11 @@ function softServe(keys) {
     return o;
   });
 }
-const TAIL = { fh: 0.72, bh: 0.72, fv: 0.45, bv: 0.45, sm: 0.85, fs: 0.65, bs: 0.65 };
+// 서브는 착지(오른발이 앞으로 내려앉는 때, 약 0.6초)까지만 쓰고 이동 엔진으로 넘긴다(사용자 2026-11-20: 서브하고 자리를 잡을 때 끌려다닌다.
+// 예전에는 1초 동안 서브 동작에 묶인 채 몸을 그림 선수 자리에 붙여 끌고 다녔다)
+const TAIL = { fh: 0.72, bh: 0.72, fv: 0.45, bv: 0.45, sm: 0.85, fs: 0.65, bs: 0.65, sv: 0.62 };
+// 친 뒤 이동 엔진이 다리를 넘겨받는 때(임팩트 뒤 초). 위(팔로스로)는 동작 끝(TAIL)까지 그대로 겹친다
+const HAND_OFF = [0.3, 0.42];
 export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
 const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
@@ -280,7 +284,7 @@ export class Players3D {
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
     // 이동 엔진(사용자 2026-11-16: 트리플A처럼 갈 곳을 정하고 → 자연스럽게 가고 → 도착하면 다음 동작). 기다리기·움직이기는 모션캡처 걷기·달리기(loco3d.js)로,
     // 칠 때(임팩트 0.3초 전~0.7초 뒤)·서브·포인트가 끝난 몸짓은 예전처럼 그 동작으로. 스윙 앞부분(백스윙)은 위는 스윙, 아래는 이동 엔진으로 겹친다
-    const pwPre = inSw && sw.id !== 'sv' ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(0.35, 0.7, tc)) : 1;
+    const pwPre = inSw && sw.id !== 'sv' ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(HAND_OFF[0], HAND_OFF[1], tc)) : 1;
     const useLoco = !!this.locoDB && id !== 'sv' && !gest && pwPre >= 0.999;
     if (!useLoco && c.lc) { c.lc = null; this.locoFade(c); c.gait.on = false; for (const sd of ['left', 'right']) c.lk[sd] = {}; }
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
@@ -303,9 +307,17 @@ export class Players3D {
       let ivx = (tgx - c.tp[0]) / pdt, ivz = (tgz - c.tp[1]) / pdt; const il = Math.hypot(ivx, ivz); if (il > 8) { ivx *= 8 / il; ivz *= 8 / il; }
       const k = Math.min(1, pdt * 10); c.tv[0] += (ivx - c.tv[0]) * k; c.tv[1] += (ivz - c.tv[1]) * k;
       // 서버: 기다리는 동안에도 칠 자리를 그대로 따라간다(그 자리는 몸이 서브 방향으로 돌며 조금씩 움직인다. 기다리는 동안 따로 움직이다 토스 때 한 번에 맞추면 30~40cm 순간이동했다). 토스부터는 그 자리 그대로
-      if (id === 'sv') Object.assign(B, { x: tgx, z: tgz, vx: inSw ? 0 : c.tv[0], vz: inSw ? 0 : c.tv[1] });
-      else if (useLoco) this.locoStep(c, p, B, tgx, tgz, pdt, base, inSw, sw, tc);
-      else {
+      // 서브를 친 뒤에는 그 자리 그대로(착지 걸음은 동작이 골반을 옮긴다). 그림 선수가 자리를 잡으러 가도 몸을 붙여 끌지 않고, 착지 뒤 이동 엔진이 걸음으로 간다
+      // (사용자 2026-11-20: 서브하고 자리를 잡을 때 끌려다닌다)
+      if (id === 'sv') { if (inSw && tc > 0) { B.vx = 0; B.vz = 0; } else Object.assign(B, { x: tgx, z: tgz, vx: inSw ? 0 : c.tv[0], vz: inSw ? 0 : c.tv[1] }); }
+      else if (useLoco) { if (!c.lc) this.reRoot(c, B); this.locoStep(c, p, B, tgx, tgz, pdt, base, inSw, sw, tc); }
+      else if (inSw && this.bt >= sw.tImpact) {
+        // 친 뒤 이동 엔진이 넘겨받기 전(팔로스로, 동작의 발): 그림 선수를 쫓지 않고 가던 빠르기를 디딘 발로 줄여 멈춘다(초속² 9m). 골반 움직임은 동작이 만든다
+        // (예전에는 친 뒤 0.1~0.5초에 그림 선수 자리로 몸을 끌어 디딘 발은 그대로인 채 몸만 미끄러졌다)
+        const vv = Math.hypot(B.vx, B.vz), m = Math.min(vv, 9 * pdt);
+        if (vv > 1e-6) { B.vx -= B.vx / vv * m; B.vz -= B.vz / vv * m; }
+        B.x += B.vx * pdt; B.z += B.vz * pdt; c.acc = [0, 0];
+      } else {
         const air = !!(c.jmp && c.jmp.t >= c.jmp.pre && c.jmp.t < c.jmp.pre + c.jmp.air) || (!!c.ft.left.sw && !!c.ft.right.sw && !c.ft.left.sw.clip && !c.ft.right.sw.clip);
         const gap = Math.hypot(tgx - B.x, tgz - B.z), tr = sw ? this.bt - sw.tImpact : 9;
         // 디딘 발로 낼 수 있는 힘: 선수 가속도(첫발)보다 조금 크게(그림 선수가 이미 그 가속도로 움직이고 공에 맞추는 만큼 더한다). 많이 뒤처지면 조금 더
@@ -395,7 +407,7 @@ export class Players3D {
     // 발놀림(사용자 2026-11-11~12: 걷는 느낌보다 스텝을 쓰는 느낌, 발이 미끄러진다. 발은 땅에 붙이고 IK로, 걷기·달리기·사이드 스텝·크로스 스텝이 자연스럽게).
     // 디딘 발은 언제나 코트 위 한 자리에 붙어 있다. 발이 움직이는 것은 들어서 옮겨 딛는 한 걸음뿐이다(planSteps, footOut).
     // 임팩트 둘레(0.3초 전~0.7초 뒤)와 서브는 동작(모션캡처)의 발을 따르되, 동작의 발이 땅에 있는 동안은 붙여 두고 동작이 발을 들 때만 따라간다
-    const pw = inSw ? (sw.id === 'sv' ? 1 - sstep(-SV_TOSS, -SV_TOSS + 0.15, tc) * (1 - sstep(0.4, 0.8, tc)) : 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(0.35, 0.7, tc))) : 1;
+    const pw = inSw ? (sw.id === 'sv' ? 1 - sstep(-SV_TOSS, -SV_TOSS + 0.15, tc) * (1 - sstep(0.4, 0.8, tc)) : 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(HAND_OFF[0], HAND_OFF[1], tc))) : 1;
     // 서브: 임팩트까지 앞꿈치는 베이스라인 뒤에(사용자 2026-11-11: 서브할 때 라인 밟지 않게)
     const svSide = id === 'sv' && (c.serve || sw)?.contact ? Math.sign((c.serve || sw).contact.z) : 0, toeK = svSide ? 1 - sstep(0, 0.1, tc) : 0;
     const toIn = sw ? sw.tImpact - this.bt : 9, adj = !!sw && sw.id !== 'sv' && toIn > 0.25 && toIn < 0.9 && spd < 0.6;
@@ -435,11 +447,13 @@ export class Players3D {
     const over = lp ? {
       // 이동 엔진: 아래(골반·발)는 모션캡처 걷기·달리기, 위(손·라켓)는 준비 자세나 스윙. 서 있을 때는 테니스 준비 자세처럼 조금 낮게
       reach,
+      hand: () => c.handSh ? V3(c.handSh[0], 0, c.handSh[1]) : null,
       foot: (side, f) => this.locoFoot(c, side, lp, ctx, jw),
       heel: side => Math.max(0, lp[side[0] + 'he'] || 0),
       hip: h => {
         // 스윙 앞부분(백스윙)을 달리며 할 때: 스윙의 골반 돌기는 대부분 가슴(어깨)으로 옮긴다(다리는 달리는데 골반만 90도 넘게 돌아 꼬였다). 임팩트 0.3초 전에 가까워질수록 스윙대로
         const hk = inSw ? 0.3 + 0.7 * sstep(-0.65, -0.3, tc) : 1; c.hipMove = h[3] * (1 - hk);
+        c.handSh = inSw ? [lp.hx * LK - h[0], lp.hz * LK - h[2]] : null;   // 스윙의 손은 동작의 골반이 아니라 이동 엔진의 골반을 따라간다(over.hand)
         h = [lp.hx * LK, h[1] * (0.45 + 0.55 * idleW) + (lp.hy - this.locoDB.hipH) * LK - c.sq * 0.6 + jhip * jk, lp.hz * LK, h[3] * hk + lp.hyaw];
         if (c.fade > 0 && c.snapHip) { const u = sstep(0, 1, 1 - c.fade / FADE); h = h.map((v, k) => k === 3 ? c.snapHip[3] + wrapD(v - c.snapHip[3]) * u : c.snapHip[k] + (v - c.snapHip[k]) * u); }
         c.hipP = h; return h;
@@ -475,8 +489,12 @@ export class Players3D {
     // 균형(사용자 2026-11-16: 중심이 골반 쪽에 있는데 이러면 어떻게 안 넘어지나. 물리적으로 안 되는 자세를 자연스럽게):
     // 지난 프레임에 잰 몸 중심의 어긋남만큼 골반을 디딘 발 쪽으로 옮긴다(c.bal, balance()). 발 자리는 이번 프레임 값을 남긴다
     // 임팩트 앞뒤 0.35초(서브는 토스부터 착지까지)는 골반을 옮기지 않는다(어깨가 같이 옮겨져 라켓이 공을 비켰다)
-    { const f0 = over.foot, h0 = over.hip; c.fo = {};
-      const wb = inSw ? (sw.id === 'sv' ? 0 : sstep(0.12, 0.35, Math.abs(tc))) : 1;
+    { const f0 = over.foot, h0 = over.hip; c.foPrev = c.fo; c.fo = {};
+      // 서브는 준비부터 착지까지 옮기지 않고 착지(0.35~0.6초) 동안 다시 켠다. 켜고 끄는 것은 초당 8만큼 천천히
+      // (한 프레임에 켜고 끄면 토스를 시작할 때·이동 엔진으로 넘어갈 때 골반이 14cm 튀었다, 2026-11-20)
+      const wbT = id === 'sv' ? (inSw && tc > 0 ? sstep(0.35, 0.6, tc) : 0) : inSw ? sstep(0.12, 0.35, Math.abs(tc)) : 1;
+      c.wbS = c.wbS == null ? wbT : c.wbS + clamp(wbT - c.wbS, -8 * pdt, 8 * pdt);
+      const wb = c.wbS;
       over.foot = (side, f) => { const o = f0(side, f); c.fo[side] = o; return o; };
       over.hip = h => { h = h0(h); if (c.bal && wb > 0) { h = [h[0] + c.bal[0] * wb, h[1], h[2] + c.bal[1] * wb, h[3]]; c.hipP = h; } return h; }; }
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
@@ -577,6 +595,15 @@ export class Players3D {
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
     const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh, pivot: Math.abs(c.warp || 0) > 0.35 };
+    // 막 넘겨받았을 때(친 뒤·서브 착지 뒤)는 그동안 그림 선수가 멀어져 있어도 묶지 않고 걸음으로 따라잡는다(1.5초에 걸쳐 원래 값으로)
+    c.lc.age = (c.lc.age || 0) + pdt; Q.maxOff += 2.0 * (1 - sstep(0.6, 1.5, c.lc.age));
+    // 처음 찾을 때는 실제 발 자리(뿌리 기준, 자료 단위)와 몸 빠르기로
+    if (c.lc.fresh && c.ft.left.init && c.ft.right.init) {
+      const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), s = 1 / (K * this.locoK);
+      const loc = (wx, wz) => { const dx = wx - B.x, dz = wz - B.z; return [(dx * cy - dz * sy) * s, (dx * sy + dz * cy) * s]; };
+      const r = loc(c.ft.right.x, c.ft.right.z), l = loc(c.ft.left.x, c.ft.left.z), v = [(B.vx * cy - B.vz * sy) * s, (B.vx * sy + B.vz * cy) * s];
+      Q.pose = [r[0], r[1], l[0], l[1], 0, 0, 0, 0, v[0], v[1]];
+    }
     c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
     B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
   }
@@ -600,17 +627,30 @@ export class Players3D {
     const con = !x.air && cv > (L.lock ? 0.35 : 0.65);
     if (!L.seen) {   // 이동 엔진에 막 들어왔다: 디딘 발은 지금 자리에 붙이고, 뜬 발은 지금 자리에서 이어지게
       L.seen = true;
-      if (F.init) { if (con) L.lock = { x: F.x, z: F.z, y: F.y }; else { L.off = [F.x - wx, F.z - wz, wrapD(F.y - wy)]; L.offT = 0; } }
+      // 땅에 디딘 발인데 동작은 발을 들었거나 다른 자리(10cm 넘게)에 디디면 땅에서 미끄러뜨리지 않고 들어서 옮겨 딛는다(한 번에 한 발)
+      const O = c.lk[s === 'r' ? 'left' : 'right'], down = F.init && !F.air && !F.sw && (c.foPrev?.[side]?.[3] ?? 0) < 0.02, far = Math.hypot(F.x - wx, F.z - wz);
+      if (down && !O.step && (!con || far > 0.1) && far > 0.04) {
+        L.step = { fx: F.x, fz: F.z, tx: wx + c.v[0] * 0.1, tz: wz + c.v[1] * 0.1, y: F.y, t: 0, T: clamp(0.12 + 0.2 * far, 0.14, 0.24) };
+        return this.locoFoot(c, side, lp, x, jw);
+      }
+      if (F.init) { if (con || down) L.lock = { x: F.x, z: F.z, y: F.y }; else { L.off = [F.x - wx, F.z - wz, wrapD(F.y - wy)]; L.offT = 0; } }
     }
     if (L.off) { L.offT += x.pdt; if (L.offT > 0.18) L.off = null; }
     const ow = L.off ? 1 - sstep(0, 0.18, L.offT) : 0;
     let ux = wx + (L.off ? L.off[0] * ow : 0), uz = wz + (L.off ? L.off[1] * ow : 0), uy = wy + (L.off ? L.off[2] * ow : 0);
-    let lf = lift;
+    // 자리를 이어 붙이는 동안(L.off)은 옮기는 거리만큼 발을 든다(땅에 붙은 채 미끄러지지 않게)
+    let lf = L.off ? Math.max(lift, Math.min(0.08, 0.35 * Math.hypot(L.off[0], L.off[1])) * Math.sin(Math.PI * Math.min(1, L.offT / 0.18))) : lift;
     if (con) {
       if (!L.lock) L.lock = { x: ux, z: uz, y: uy };
-      // 몸이 목표 쪽으로 당겨지며 디딘 발과 너무 벌어지면(40cm 넘게) 발을 조금씩 끌어 다리가 지나치게 펴지지 않게
-      const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez);
-      if (e > 0.4) { const m = Math.min(e - 0.4, (1.5 + 0.8 * x.spd) * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }   // 빨리 움직일수록 빨리(발만 뒤에 남아 다리가 벌어지지 않게)
+      // 디딘 발이 동작의 발 자리에서 30cm 넘게 벌어지면(몸이 목표 쪽으로 당겨졌거나, 막 넘겨받아 자세가 달랐을 때) 끌지 않고 들어서 그 자리로 옮겨 딛는다
+      // (트리플A 발 고정의 unplant·replant. 예전에는 40cm 넘으면 땅에 붙인 채 끌어서 발이 미끄러져 끌려다니는 것처럼 보였다, 사용자 2026-11-20)
+      const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez), O = c.lk[s === 'r' ? 'left' : 'right'];
+      if (e > 0.3 && !O.step) {
+        L.step = { fx: L.lock.x, fz: L.lock.z, tx: wx, tz: wz, y: L.lock.y, t: 0, T: clamp(0.1 + 0.2 * e, 0.14, 0.24) }; L.lock = null;
+        c.unplant = (c.unplant || 0) + 1;   // 잰 값
+        return this.locoFoot(c, side, lp, x, jw);
+      }
+      if (e > 0.45) { const m = Math.min(e - 0.45, (1.5 + 0.8 * x.spd) * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }   // 다른 발이 옮겨 딛는 중이면 끈다(두 발이 다 뜨지 않게)
       L.lock.y += wrapD(wy - L.lock.y) * Math.min(1, x.pdt * 3);   // 디딘 채 앞꿈치를 축으로 조금 돈다
       ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
     } else if (L.lock) {
@@ -622,6 +662,19 @@ export class Players3D {
     return [r[0], r[1], uy - x.yawD, lf];
   }
   locoFade(c) { if (c.last) { c.snap = c.last; c.fade = FADE; c.snapHip = c.hipP; c.snapChest = c.chestP; } }
+  // 동작(스윙·서브)에서 이동 엔진으로 넘어갈 때 뿌리를 지금 골반 밑으로 옮긴다(트리플A의 루트 모션처럼 몸의 자리는 골반을 따른다).
+  // 스윙 동작의 기준점은 골반 밑이 아니라서(서브는 골반이 옆으로 55cm, 땅볼은 팔로스로에 15~37cm 옮겨 간다) 그대로 넘기면
+  // 골반이 0.16초 만에 그만큼 미끄러져 끌려가 보였다. 골반 자리(세계)는 그대로 두고 리그 기준 값(c.hipP, 섞기의 시작)만 옮긴다
+  reRoot(c, B) {
+    if (!c.last || !c.hipP) return;
+    const R = c.rig, hw = R.B('hips').getWorldPosition(V3()), cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), h0 = R.REST.hips;
+    const dx = hw.x - (B.x + K * (h0.x * cy + h0.z * sy)), dz = hw.z - (B.z + K * (-h0.x * sy + h0.z * cy)), d = Math.hypot(dx, dz);
+    if (!(d > 0.01) || d > 1.2) return;
+    B.x += dx; B.z += dz;
+    // 새 뿌리는 골반 바로 밑이라 섞기를 시작하는 골반 자리는 (0, 높이, 0). 동작이 골반에 더한 것(공 쪽으로 다가가는 몫 등)까지 이 자리에 들어 있다
+    c.hipP = [0, c.hipP[1], 0, c.hipP[3]];
+    c.reRootD = d;   // 잰 값
+  }
   // 균형(트리플A의 무게중심·지지면 검사): 몸 중심(골반 55% + 가슴 45%)을 땅에 내린 자리가 디딘 발(앞꿈치~뒤꿈치) 둘레 안에 있어야 서 있을 수 있다.
   // 빨라지거나 느려지는 만큼은 그쪽으로 기울어도 된다(중심 높이 × 가속도 / g, ZMP). 그보다 나가면 1) 골반을 발 쪽으로 옮기고(16cm까지)
   // 2) 그래도 24cm 넘게 나가 있으면 가장 먼 발을 들어 중심 밑으로 한 걸음(회복 걸음). 리그 기준(제자리, 돌리지 않은 자세)에서 잰다

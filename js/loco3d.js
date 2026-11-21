@@ -196,6 +196,9 @@ function query(db, s, Q, q) {
   for (const fr of FUT) { const t = fr / FPS / s.r, a = Q.face(t) - s.yaw; q[d++] = Math.sin(a); q[d++] = Math.cos(a); }
   // 지금 자세(발 자리·발 빠르기·몸 빠르기)는 지금 틀고 있는 프레임 값
   db.featPose(Math.round(s.f), q);
+  // 막 넘겨받았을 때(스윙·서브 뒤)는 지금 틀고 있는 프레임이 없으니 실제 발 자리·몸 빠르기로 찾는다(모션 매칭의 '지금 자세'는 캐릭터의 실제 자세.
+  // 서 있는 프레임 값으로 찾으면 실제 발과 다른 자세에서 시작해 디딘 발이 끌려갔다, 2026-11-20)
+  if (Q.pose) for (let j = 0; j < Q.pose.length; j++) q[12 + j] = Q.pose[j];
   for (let j = 0; j < db.D; j++) q[j] *= db.W[j];
   return q;
 }

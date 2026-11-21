@@ -407,7 +407,9 @@ export function createRig(vrm) {
     const wt = useIK ? (t < 0 ? corrW(t) : 1 - sstep(0, 0.18, t)) : 0;
     const gq = gripAt(t); racket.matrix.copy(gripOf(bevelAt(t))).setPosition(GRIP_POS);
     const hq = new THREE.Quaternion().setFromAxisAngle(S.TILT_AX, wt * tiltOf(dl)).multiply(handAt(t));   // 낮은 공은 라켓 머리를 떨어뜨려서, 높은 공은 세워서
-    const rh = V3(...sample(t, 'rh')).add(Sb);
+    // 경기: 이동 엔진의 골반 위에 스윙의 위(팔로스로 등)를 겹칠 때 손을 골반과 같이 옮긴다(over.hand, 손 자리는 골반이 아니라 동작의 기준점 기준이라)
+    const HS = over?.hand ? over.hand() : null;
+    const rh = V3(...sample(t, 'rh')).add(Sb); if (HS) rh.add(HS);
     if (w > 0) {
       // 임팩트 순간의 라켓 가운데가 공에 오도록: 임팩트 때 손목이 있어야 할 자리 - 원래 자리
       const hq0 = new THREE.Quaternion().setFromAxisAngle(S.TILT_AX, tiltOf(dl)).multiply(S.HQ7);
@@ -453,7 +455,7 @@ export function createRig(vrm) {
     const rqW = hqA.clone().multiply(gq), rOrg = GRIP_POS.clone().applyQuaternion(hqA).add(wp('rightHand'));
 
     let hd = holdOf(hold.type, rqW, rOrg);
-    const lhAt = h => { const p = V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)); return (collect ? p : outOfTorso(p)).lerp(h.p, tw); };
+    const lhAt = h => { const p = V3(...sample(t, 'lh', h.p.toArray())).add(Sb.clone().setY(crouch).multiplyScalar(1 - tw)); if (HS) p.addScaledVector(HS, 1 - tw); return (collect ? p : outOfTorso(p)).lerp(h.p, tw); };
     let lDel = null;
     const lPole = tg => { const p = lp(tg); if (collect || over?.lp || !GUARD.pole) return p; if (lDel === null) lDel = limitDelta('left', tg, p); return lDel ? p.applyAxisAngle(tg.clone().sub(wp('leftUpperArm')).normalize(), lDel * D) : p; };
     { const lt = lhAt(hd); ik(LIMB.leftArm, lt, lPole(lt)); }
