@@ -353,6 +353,7 @@ export function createRig(vrm) {
   const yawQ = deg => new THREE.Quaternion().setFromAxisAngle(V3(0, 1, 0), deg * D);
   const eul = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x * D, y * D, z * D, 'YXZ'));
   const TOE = B('rightToes') ? wp('rightToes').sub(wp('rightFoot')) : V3(0, -0.063, 0.11);   // 발목 → 앞꿈치(아직 처음 자세일 때 잰다)
+  const HEEL_BACK = 0.045, TOE_HEEL = Math.hypot(TOE.x, TOE.z) + HEEL_BACK;   // 뒤꿈치 땅 자리는 발목 뒤 4.5cm, 앞꿈치에서 뒤꿈치까지(발끝을 들 때 축)
   const ALLB = [...new Set([...BONES, ...FINGER_BONES, 'rightToes', 'leftToes'])].filter(n => B(n));
 
   // ── 한 순간의 자세 ──
@@ -381,27 +382,48 @@ export function createRig(vrm) {
     B('chest').quaternion.copy(eul(cp * 0.3, cy * 0.35, cr_ * 0.35));
     if (B('upperChest')) B('upperChest').quaternion.copy(eul(cp * 0.3, cy * 0.35, cr_ * 0.35));
     vrm.scene.updateMatrixWorld(true);
-    // 다리: 앞꿈치를 바닥에 두고 무릎은 발끝 쪽으로. 다리가 닿지 않으면 앞꿈치를 축으로 뒤꿈치를 든다
-    const legMiss = [];
+    // 다리: 앞꿈치를 바닥에 두고 무릎은 발끝 쪽으로. 뒤꿈치 각이 +면 앞꿈치를 축으로 뒤꿈치를 들고, -면 뒤꿈치를 축으로 발끝을 든다(뒤꿈치로 디딤, 2026-11-21)
+    const legMiss = [], LEG = {};
     for (const side of ['right', 'left']) {
       const [bx, bz, fyaw, lift] = over?.foot ? over.foot(side, sample(t, side[0] + 'f')) : sample(t, side[0] + 'f'), k = sw(side);
       const yq = yawQ(fyaw), fwd = V3(0, 0, 1).applyQuaternion(yq), ax = V3(0, 1, 0).cross(fwd).normalize();
       const pivot = V3(bx + k.x, 0, bz + k.z), rel = TOE.clone().applyQuaternion(yq).negate().setY(ANKLE);
-      const ankleAt = ph => pivot.clone().add(rel.clone().applyAxisAngle(ax, ph * D)).add(V3(0, Math.max(0, lift), 0));
-      const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
+      const heelP = pivot.clone().addScaledVector(fwd, -TOE_HEEL), relH = fwd.clone().multiplyScalar(HEEL_BACK).setY(ANKLE);   // 뒤꿈치 땅 자리, 뒤꿈치 → 발목
+      // 축(앞꿈치 또는 뒤꿈치)과 그 들림: 발끝을 들면 들림(앞꿈치 높이)에서 발끝이 든 만큼을 뺀 것이 뒤꿈치 높이
+      const pivAt = ph => ph >= 0 ? pivot.clone().add(V3(0, Math.max(0, lift), 0)) : heelP.clone().add(V3(0, Math.max(0, lift - TOE_HEEL * Math.sin(-ph * D)), 0));
+      const ankleAt = ph => pivAt(ph).add((ph >= 0 ? rel : relH).clone().applyAxisAngle(ax, ph * D));
       const hk = side[0] + 'heel';
       let heel = has(hk) ? Math.max(0, sample(t, hk)[0]) : 0;
-      if (over?.heel) heel = over.heel(side, heel);   // 이동 엔진(모션캡처 걷기·달리기)의 뒤꿈치
+      if (over?.heel) heel = over.heel(side, heel);   // 이동 엔진(모션캡처 걷기·달리기)의 뒤꿈치(-면 발끝을 든 것)
+      LEG[side] = { lift, yq, fwd, ax, pivAt, ankleAt, heel };
+    }
+    // 골반 낮추기(트리플A 보폭 늘이기의 골반 맞추기): 디딘 발이 다리가 닿는 거리보다 멀면 뒤꿈치를 들어 메우지 않고 골반을 낮춘다
+    // (사용자 2026-11-21: 넓은 보폭인데 앞꿈치로 선다. 몸의 중심이 멀리 떨어져 있으면 앞꿈치를 쓸 수 없다). 경기에서만(over.pelvisFit이 낮출 양을 부드럽게 정한다)
+    if (over?.pelvisFit) {
+      let need = 0;
+      for (const side of ['right', 'left']) {
+        const g = LEG[side]; if (g.lift > 0.02) continue;
+        const L = LIMB[side + 'Leg'], H = wp(L.up), a = g.ankleAt(g.heel), R = (L.l1 + L.l2) * 0.93;
+        const dh = Math.hypot(a.x - H.x, a.z - H.z), v = H.y - a.y;
+        need = Math.max(need, dh < R ? v - Math.sqrt(R * R - dh * dh) : v);
+      }
+      const drop = over.pelvisFit(need);
+      if (drop > 1e-4) { B('hips').position.y -= drop; vrm.scene.updateMatrixWorld(true); }
+    }
+    for (const side of ['right', 'left']) {
+      const { yq, fwd, ax, pivAt, ankleAt } = LEG[side];
+      let { heel } = LEG[side];
+      const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
       const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
-      if (overL > 0) heel = Math.max(heel, Math.min(38, heel + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
+      if (overL > 0) heel = Math.max(heel, Math.min(38, Math.max(0, heel) + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
       legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));
       // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
       const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
       const lean_ = Math.atan2(shin.dot(out_), shin.y), roll = lean_ - soft(lean_, -18 * D, 18 * D);
-      // 날로 기울 때는 앞꿈치를 축으로(발목을 축으로 돌리면 디딘 앞꿈치가 옆으로 밀려 미끄러져 보인다, 사용자 2026-11-12)
-      if (Math.abs(roll) > 0.01) { const a0 = ankleAt(heel), up = V3(0, Math.max(0, lift), 0), r0 = pivot.clone().add(up).sub(a0); ik(L, pivot.clone().add(up).sub(r0.applyAxisAngle(fwd, roll)), fwd.clone().add(V3(0, 0.25, 0))); }
+      // 날로 기울 때는 디딘 축(앞꿈치 또는 뒤꿈치)을 축으로(발목을 축으로 돌리면 디딘 앞꿈치가 옆으로 밀려 미끄러져 보인다, 사용자 2026-11-12)
+      if (Math.abs(roll) > 0.01) { const a0 = ankleAt(heel), pv = pivAt(heel), r0 = pv.clone().sub(a0); ik(L, pv.clone().sub(r0.applyAxisAngle(fwd, roll)), fwd.clone().add(V3(0, 0.25, 0))); }
       setWorldQuat(B(side + 'Foot'), new THREE.Quaternion().setFromAxisAngle(fwd, roll).multiply(yq).multiply(new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), heel * D)));
-      B(side + 'Toes')?.quaternion.setFromAxisAngle(V3(1, 0, 0), -heel * D);
+      B(side + 'Toes')?.quaternion.setFromAxisAngle(V3(1, 0, 0), -Math.max(0, heel) * D);
     }
     // 오른팔: 라켓 방향을 정하고, 공에 맞게 손목 자리를 옮긴다
     const wt = useIK ? (t < 0 ? corrW(t) : 1 - sstep(0, 0.18, t)) : 0;

@@ -60,7 +60,7 @@ rows = []   # 프레임마다 값
 CH = ['rx', 'rz', 'ry',            # 뿌리(세계): 자리, 방향(라디안)
       'hx', 'hy', 'hz', 'hyaw',     # 뿌리 기준 골반 자리(높이는 바닥 위), 골반 방향(도, 뿌리 기준)
       'cy', 'cp', 'cr',             # 가슴 회전(골반 방향 기준, 도)
-      'rfx', 'rfz', 'rfy', 'rfl', 'rhe', 'lfx', 'lfz', 'lfy', 'lfl', 'lhe',   # 발(뿌리 기준 앞꿈치 x z, 발끝 방향 도, 들림 m, 뒤꿈치 각 도)
+      'rfx', 'rfz', 'rfy', 'rfl', 'rhe', 'lfx', 'lfz', 'lfy', 'lfl', 'lhe',   # 발(뿌리 기준 앞꿈치 x z, 발끝 방향 도, 들림 m, 뒤꿈치 각 도: +뒤꿈치 듦, -발끝 듦)
       'rc', 'lc']                    # 발 닿음(0~1)
 seg_start = []
 allv = []
@@ -84,15 +84,21 @@ for s in segs:
         v = T - A; pitch = np.degrees(np.arctan2(-v[:, 1], np.hypot(v[:, 0], v[:, 2])))
         lift = T[:, 1] - gnd
         sp = np.linalg.norm(np.gradient(T[:, [0, 2]], 1 / FPS, axis=0), axis=1)
-        c = ((lift < 0.045) & (sp < 0.4)).astype(float)
+        toeC = (lift < 0.045) & (sp < 0.4)
+        # 뒤꿈치 닿음(사용자 2026-11-21: 넓은 보폭은 뒤꿈치부터 닿는다): 발목 높이가 앞꿈치로 서 있을 때 발목 높이 + 2.5cm 안이고 발목이 거의 서 있으면.
+        # 예전에는 앞꿈치가 닿아야만 디딘 것으로 봐서 뒤꿈치로 먼저 닿는 걸음이 없었다
+        ah = A[:, 1] - gnd; a0 = np.percentile(ah[toeC], 10) if toeC.any() else np.percentile(ah, 10)
+        asp = np.linalg.norm(np.gradient(A[:, [0, 2]], 1 / FPS, axis=0), axis=1)
+        heelC = (ah < a0 + 0.025) & (asp < 0.5)
+        c = (toeC | heelC).astype(float)
         c = np.round(np.convolve(c, np.ones(3) / 3, 'same'))
         feet[k] = (b, fy, lift, pitch, c)
-    # 뒤꿈치 각은 서 있을 때 값을 0으로
+    # 뒤꿈치 각은 서 있을 때 값을 0으로. 음수는 발끝을 든 것(뒤꿈치로 디딤, 2026-11-21. 예전에는 0으로 잘랐다)
     p0 = np.percentile(np.concatenate([feet['r'][3], feet['l'][3]]), 20)
     for f in range(F):
         r = feet['r']; l = feet['l']
         allv.append([rp[f, 0], rp[f, 1], yaw[f], h[f, 0], hy_[f], h[f, 2], hyaw[f], *ch[f],
-                     r[0][f, 0], r[0][f, 2], r[1][f], max(0, r[2][f] - 0.02), max(0, r[3][f] - p0), l[0][f, 0], l[0][f, 2], l[1][f], max(0, l[2][f] - 0.02), max(0, l[3][f] - p0), r[4][f], l[4][f]])
+                     r[0][f, 0], r[0][f, 2], r[1][f], max(0, r[2][f] - 0.02), r[3][f] - p0, l[0][f, 0], l[0][f, 2], l[1][f], max(0, l[2][f] - 0.02), l[3][f] - p0, r[4][f], l[4][f]])
 A = np.array(allv, dtype=np.float64); N = len(A)
 seg_start.append(N)
 # 서 있을 때 골반 높이(키 비교용): 뿌리가 거의 서 있는 프레임의 가운데값
