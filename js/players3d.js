@@ -7,7 +7,7 @@ import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { VRMLoaderPlugin } from '../vendor/three-vrm.module.min.js';
 import { createRig } from './rig3d.js';
 import { SHOTS, VARIANTS, FORMS, FORM_IDS } from './swings.js';
-import { loadLoco, locoState, locoUpdate } from './loco3d.js';
+import { loadLoco, locoState, locoUpdate, stanceLeft } from './loco3d.js';
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -285,7 +285,8 @@ export class Players3D {
     // 이동 엔진(사용자 2026-11-16: 트리플A처럼 갈 곳을 정하고 → 자연스럽게 가고 → 도착하면 다음 동작). 기다리기·움직이기는 모션캡처 걷기·달리기(loco3d.js)로,
     // 칠 때(임팩트 0.3초 전~0.7초 뒤)·서브·포인트가 끝난 몸짓은 예전처럼 그 동작으로. 스윙 앞부분(백스윙)은 위는 스윙, 아래는 이동 엔진으로 겹친다
     const pwPre = inSw && sw.id !== 'sv' ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(HAND_OFF[0], HAND_OFF[1], tc)) : 1;
-    const useLoco = !!this.locoDB && id !== 'sv' && !gest && pwPre >= 0.999;
+    // 포인트가 끝난 몸짓 동안에도 다리는 이동 엔진으로(위만 몸짓). 예전 걸음은 같은 발을 연달아 옮기기도 했다(2026-11-21)
+    const useLoco = !!this.locoDB && id !== 'sv' && pwPre >= 0.999;
     if (!useLoco && c.lc) { c.lc = null; this.locoFade(c); c.gait.on = false; for (const sd of ['left', 'right']) c.lk[sd] = {}; }
     // 움직임: 그림 선수의 자리를 따라간다. 달리는 쪽(세계)과 빠르기
     const mdx = p.x - c.px, mdz = p.z - c.pz, md = Math.hypot(mdx, mdz); c.px = p.x; c.pz = p.z;
@@ -594,9 +595,13 @@ export class Players3D {
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
-    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh, pivot: Math.abs(c.warp || 0) > 0.35 };
+    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh || !!c.lc.reSearch, pivot: Math.abs(c.warp || 0) > 0.35 };
     // 막 넘겨받았을 때(친 뒤·서브 착지 뒤)는 그동안 그림 선수가 멀어져 있어도 묶지 않고 걸음으로 따라잡는다(1.5초에 걸쳐 원래 값으로)
     c.lc.age = (c.lc.age || 0) + pdt; Q.maxOff += 2.0 * (1 - sstep(0.6, 1.5, c.lc.age));
+    // 지금 걸음 차례(오른발, 왼발: 디딘 지 +초, 뜬 지 -초): 이동 엔진이 같은 걸음 차례로 이어지는 프레임을 찾게
+    { const ph = sd => { const L = c.lk[sd]; if (!L.st) return (c.foPrev?.[sd]?.[3] ?? 0) < 0.02 ? 0.3 : -0.1; return L.st.p ? Math.min(L.st.t, 0.5) : -Math.min(L.st.t, 0.5); }; Q.phase = [ph('right'), ph('left')];
+      // 막 디딘 발(0.25초 안): 동작이 바뀌어도 그 발은 곧바로 다시 들지 않는다(걸음은 번갈아, 사용자 2026-11-21: 깽깽이 뛰듯이 움직인다)
+      const just = sd => { const L = c.lk[sd]; return !!(L.st && L.st.p && L.lock && L.st.t < 0.25); }; Q.keep = { r: just('right'), l: just('left') }; }
     // 처음 찾을 때는 실제 발 자리(뿌리 기준, 자료 단위)와 몸 빠르기로
     if (c.lc.fresh && c.ft.left.init && c.ft.right.init) {
       const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), s = 1 / (K * this.locoK);
@@ -604,7 +609,7 @@ export class Players3D {
       const r = loc(c.ft.right.x, c.ft.right.z), l = loc(c.ft.left.x, c.ft.left.z), v = [(B.vx * cy - B.vz * sy) * s, (B.vx * sy + B.vz * cy) * s];
       Q.pose = [r[0], r[1], l[0], l[1], 0, 0, 0, 0, v[0], v[1]];
     }
-    c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false;
+    c.lp = locoUpdate(db, c.lc, pdt, Q); c.lc.fresh = false; c.lc.reSearch = false;
     B.x = c.lc.x; B.z = c.lc.z; B.vx = c.lc.vx; B.vz = c.lc.vz; c.yaw = c.lc.yaw;
   }
   // 이동 엔진의 발: 자료에서 발이 땅에 닿은 동안은 코트 위 그 자리에 붙인다(발 고정). 들면 자료의 자리로, 바뀐 곳은 0.18초에 걸쳐 이어지게.
@@ -616,21 +621,25 @@ export class Players3D {
     const toR = (wx, wz) => { const dx = (wx - x.rx) / K, dz = (wz - x.rz) / K; return [dx * x.cy - dz * x.sy, dx * x.sy + dz * x.cy]; };
     const [wx, wz] = toW(fx, fz), wy = fy + x.yawD;
     const F = c.ft[side], L = c.lk[side], cv = lp[s + 'c'];
+    // 걸음 차례 재기: 디딘 채(또는 뜬 채) 몇 초째인지
+    const stT = pl => { const st = L.st || (L.st = { p: pl, t: 0.3 }); if (st.p !== pl) { st.p = pl; st.t = 0; } else st.t += x.pdt; };
     // 회복 걸음(balance): 중심 밑으로 0.2초에 걸쳐 들어 옮겨 딛고 그 자리에 붙인다
     if (L.step) {
       const S_ = L.step; S_.t += x.pdt; const u = Math.min(1, S_.t / S_.T), e = sstep(0, 1, u);
       const sx = S_.fx + (S_.tx - S_.fx) * e, sz = S_.fz + (S_.tz - S_.fz) * e, syw = S_.y + wrapD(wy - S_.y) * e;
-      if (u >= 1) { L.lock = { x: S_.tx, z: S_.tz, y: syw }; L.step = null; L.seen = true; }
+      if (u >= 1) { L.lock = { x: S_.tx, z: S_.tz, y: syw }; L.step = null; L.seen = true; if (c.lc) c.lc.reSearch = true; }   // 옮겨 디뎠으면 곧바로 다시 찾아 다음 걸음은 다른 발로(걸음 차례)
       Object.assign(F, { x: sx, z: sz, y: syw, init: true, sw: null, follow: null, air: null, fp: [fx, fz, fy, 0] });
-      const r = toR(sx, sz); return [r[0], r[1], syw - x.yawD, 0.06 * Math.sin(Math.PI * u)];
+      stT(u >= 1); const r = toR(sx, sz); return [r[0], r[1], syw - x.yawD, 0.06 * Math.sin(Math.PI * u)];
     }
     const con = !x.air && cv > (L.lock ? 0.35 : 0.65);
     if (!L.seen) {   // 이동 엔진에 막 들어왔다: 디딘 발은 지금 자리에 붙이고, 뜬 발은 지금 자리에서 이어지게
       L.seen = true;
       // 땅에 디딘 발인데 동작은 발을 들었거나 다른 자리(10cm 넘게)에 디디면 땅에서 미끄러뜨리지 않고 들어서 옮겨 딛는다(한 번에 한 발)
       const O = c.lk[s === 'r' ? 'left' : 'right'], down = F.init && !F.air && !F.sw && (c.foPrev?.[side]?.[3] ?? 0) < 0.02, far = Math.hypot(F.x - wx, F.z - wz);
-      if (down && !O.step && (!con || far > 0.1) && far > 0.04) {
-        L.step = { fx: F.x, fz: F.z, tx: wx + c.v[0] * 0.1, tz: wz + c.v[1] * 0.1, y: F.y, t: 0, T: clamp(0.12 + 0.2 * far, 0.14, 0.24) };
+      // 동작이 이 발을 곧(0.2초 안에) 들 것이면 따로 옮기지 않는다(옮겨 딛자마자 동작이 같은 발을 또 들어 같은 발이 연달아 걸음을 했다, 2026-11-21)
+      const soon = con && stanceLeft(this.locoDB, c.lc, s) < 0.2;
+      if (down && !O.step && (!con || far > 0.1) && far > 0.04 && !soon) {
+        L.step = { fx: F.x, fz: F.z, tx: wx + c.v[0] * 0.1, tz: wz + c.v[1] * 0.1, y: F.y, t: 0, T: clamp(0.12 + 0.2 * far, 0.14, 0.24), kind: 'entry' };
         return this.locoFoot(c, side, lp, x, jw);
       }
       if (F.init) { if (con || down) L.lock = { x: F.x, z: F.z, y: F.y }; else { L.off = [F.x - wx, F.z - wz, wrapD(F.y - wy)]; L.offT = 0; } }
@@ -645,19 +654,23 @@ export class Players3D {
       // 디딘 발이 동작의 발 자리에서 30cm 넘게 벌어지면(몸이 목표 쪽으로 당겨졌거나, 막 넘겨받아 자세가 달랐을 때) 끌지 않고 들어서 그 자리로 옮겨 딛는다
       // (트리플A 발 고정의 unplant·replant. 예전에는 40cm 넘으면 땅에 붙인 채 끌어서 발이 미끄러져 끌려다니는 것처럼 보였다, 사용자 2026-11-20)
       const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez), O = c.lk[s === 'r' ? 'left' : 'right'];
-      if (e > 0.3 && !O.step) {
-        L.step = { fx: L.lock.x, fz: L.lock.z, tx: wx, tz: wz, y: L.lock.y, t: 0, T: clamp(0.1 + 0.2 * e, 0.14, 0.24) }; L.lock = null;
+      if (e > 0.3 && !O.step && O.lock && (!L.st || !O.st || L.st.t >= O.st.t) && stanceLeft(this.locoDB, c.lc, s) >= 0.2) {   // 동작이 곧 이 발을 들 것이면 기다린다(그 걸음이 옮겨 준다)   // 다른 발이 디디고 있고 이 발 차례일 때만(이 발이 더 오래 디뎠을 때). 두 발이 다 뜨거나 같은 발이 연달아 옮기면 깡충 뛰는 것처럼 보였다
+        L.step = { fx: L.lock.x, fz: L.lock.z, tx: wx, tz: wz, y: L.lock.y, t: 0, T: clamp(0.1 + 0.2 * e, 0.14, 0.24), kind: 'unp' }; L.lock = null;
         c.unplant = (c.unplant || 0) + 1;   // 잰 값
         return this.locoFoot(c, side, lp, x, jw);
       }
       if (e > 0.45) { const m = Math.min(e - 0.45, (1.5 + 0.8 * x.spd) * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }   // 다른 발이 옮겨 딛는 중이면 끈다(두 발이 다 뜨지 않게)
       L.lock.y += wrapD(wy - L.lock.y) * Math.min(1, x.pdt * 3);   // 디딘 채 앞꿈치를 축으로 조금 돈다
       ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
+    } else if (L.lock && x.spd < 0.35 && Math.hypot(wx - L.lock.x, wz - L.lock.z) < 0.1) {
+      // 서 있을 때 동작이 발을 10cm 안에서만 옮기면(무게 옮기기) 디딘 채로 둔다(같은 발로 잔걸음을 연달아 했다, 2026-11-21)
+      ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
     } else if (L.lock) {
       L.off = [L.lock.x - wx, L.lock.z - wz, wrapD(L.lock.y - wy)]; L.offT = 0; L.lock = null;
       ux = wx + L.off[0]; uz = wz + L.off[1]; uy = wy + L.off[2];
     }
     Object.assign(F, { x: ux, z: uz, y: uy, init: true, sw: null, follow: null, air: null, fp: [fx, fz, fy, 0] });
+    stT(!!L.lock);
     const r = toR(ux, uz);
     return [r[0], r[1], uy - x.yawD, lf];
   }
@@ -724,7 +737,7 @@ export class Players3D {
     const sd = far === 'left' ? 1 : -1, a = zx + sd * 0.13, b = zz + 0.06;   // 중심 밑, 그 발 쪽으로 조금
     const wx = x.rx + K * (a * cy + b * sy), wz = x.rz + K * (-a * sy + b * cy), F = c.ft[far];
     c.balStep = this.bt; c.balE = 0;
-    if (c.lc && c.lk) { const L = c.lk[far]; L.step = { fx: F.x, fz: F.z, tx: wx, tz: wz, y: F.y, t: 0, T: 0.2 }; L.lock = null; L.off = null; }
+    if (c.lc && c.lk) { if (stanceLeft(this.locoDB, c.lc, far[0]) < 0.25) return; const L = c.lk[far]; L.step = { fx: F.x, fz: F.z, tx: wx, tz: wz, y: F.y, t: 0, T: 0.2, kind: 'bal' }; L.lock = null; L.off = null; }
     else if (!x.clip) F.sw = { t: 0, T: 0.2, fx: F.x, fz: F.z, fy: F.y, tx: wx, tz: wz, ty: F.y, h: 0.06 };
   }
 

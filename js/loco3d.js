@@ -33,15 +33,29 @@ export class LocoDB {
     let best = 0, bs = 1e9;
     for (let i = this.segBeg[S[1]] + 30; i < S[2] - 30; i += 3) { const s = this.speedAt(i); if (s < bs) { bs = s; best = i; } }
     this.idle = best;
-    // 찾을 프레임과 특징(앞으로 갈 길 6, 그때 바라볼 쪽 6, 발 자리 4, 발 빠르기 4, 몸 빠르기 2)
+    // 걸음 차례: 발마다 땅에 디딘 지(+) 또는 뜬 지(-) 몇 초인지(0.5초까지). 두 발이 다 땅에 있을 때도 어느 발이 막 디뎠는지 안다
+    this.phR = new Float32Array(this.N); this.phL = new Float32Array(this.N);
+    for (let k = 0; k + 1 < S.length; k++) for (const [c, A] of [['rc', this.phR], ['lc', this.phL]]) {
+      let st = this.v(S[k], c) > 0.5, t = 0.25;
+      for (let i = S[k]; i < S[k + 1]; i++) { const now = this.v(i, c) > 0.5; if (now !== st) { st = now; t = 0; } else if (i > S[k]) t += 1 / FPS; A[i] = st ? Math.min(t, 0.5) : -Math.min(t, 0.5); }
+    }
+    // 발마다 땅을 떠나기까지 남은 시간(초, 디딘 동안만. 뜬 동안 -1): 막 디딘 발을 곧 다시 드는 프레임은 찾지 않으려고
+    this.leftR = new Float32Array(this.N); this.leftL = new Float32Array(this.N);
+    for (let k = 0; k + 1 < S.length; k++) for (const [c, A] of [['rc', this.leftR], ['lc', this.leftL]]) {
+      let t = 1;
+      for (let i = S[k + 1] - 1; i >= S[k]; i--) { if (this.v(i, c) > 0.5) { t += 1 / FPS; A[i] = Math.min(t, 1); } else { A[i] = -1; t = 0; } }
+    }
+    // 찾을 프레임과 특징(앞으로 갈 길 6, 그때 바라볼 쪽 6, 발 자리 4, 발 빠르기 4, 몸 빠르기 2, 걸음 차례 2)
     const cand = [];
     for (let i = 0; i < this.N; i += CAND_STEP) if (i - 1 >= this.segBeg[i] && i + FUT[FUT.length - 1] + 1 < this.segEnd[i]) cand.push(i);
     this.cand = Int32Array.from(cand);
-    this.D = 22; this.F = new Float32Array(cand.length * this.D);
+    this.D = 24; this.F = new Float32Array(cand.length * this.D);
     const tmp = new Float32Array(this.D);
     cand.forEach((i, j) => { this.feat(i, tmp); this.F.set(tmp, j * this.D); });
     // 묶음마다 크기를 맞추고(표준편차) 무게를 준다
-    const groups = [[0, 6, 1.0], [6, 12, 1.4], [12, 16, 0.7], [16, 20, 0.9], [20, 22, 1.0]];
+    // 걸음 차례는 무겁게: 같은 걸음 차례에서 이어지게(사용자 2026-11-21: 가끔 깽깽이 뛰듯이 움직인다.
+    // 0.1초마다 다른 프레임으로 건너뛰면서 막 디딘 발이 또 뜨는 프레임을 골라 같은 발이 연달아 걸음을 했다. 어느 발이 땅에 있나만으로는 두 발이 다 땅에 있을 때 구별이 안 됐다)
+    const groups = [[0, 6, 1.0], [6, 12, 1.4], [12, 16, 0.7], [16, 20, 0.9], [20, 22, 1.0], [22, 24, 2.0]];
     this.W = new Float32Array(this.D); this.M = new Float32Array(this.D);
     for (const [a, b, wt] of groups) {
       let s = 0, s2 = 0, c = 0;
@@ -83,13 +97,16 @@ export class LocoDB {
     }
     const rv = this.toLocal(i, this.v(i, 'rx') + (this.v(i + 1, 'rx') - this.v(i - 1, 'rx')) * FPS / 2, this.v(i, 'rz') + (this.v(i + 1, 'rz') - this.v(i - 1, 'rz')) * FPS / 2);
     out[d++] = rv[0]; out[d++] = rv[1];
+    out[d++] = this.phR[i]; out[d++] = this.phL[i];   // 걸음 차례(디딘 지 +초, 뜬 지 -초)
     return out;
   }
   // 질의 q(이미 무게를 곱한 값)에 가장 가까운 후보 프레임
-  search(q, skipA = -1, skipB = -1) {
+  // keep = { r, l }: 막 디딘 발. 그 발을 0.2초 안에 드는 프레임은 건너뛴다(같은 발이 연달아 걸음을 하지 않게)
+  search(q, skipA = -1, skipB = -1, keep = null) {
     const F = this.F, D = this.D, n = this.cand.length; let best = -1, bc = Infinity;
     for (let j = 0; j < n; j++) {
       const i = this.cand[j]; if (i >= skipA && i <= skipB) continue;
+      if (keep && ((keep.r && this.leftR[i] < 0.2) || (keep.l && this.leftL[i] < 0.2))) continue;
       let c = 0; const o = j * D;
       for (let d = 0; d < D; d++) { const e = F[o + d] - q[d]; c += e * e; if (c >= bc) break; }
       if (c < bc) { bc = c; best = i; }
@@ -98,6 +115,7 @@ export class LocoDB {
   }
 }
 
+export const MMSTAT = { search: 0, force: 0, jump: 0, inf: 0, r: [] };   // 잰 값(찾기·건너뛰기 횟수)
 const URL_ = (() => { try { const u = new URL('../art/char3d/loco.bin', import.meta.url); u.search = new URL(import.meta.url).search; return u.href; } catch { return 'art/char3d/loco.bin'; } })();
 let pending = null;
 export function loadLoco() {
@@ -142,10 +160,15 @@ export function locoUpdate(db, s, dt, Q) {
     const ci = Math.round(s.f / CAND_STEP) * CAND_STEP;
     let curCost = Infinity;
     if (ci - 1 >= db.segBeg[ci] && ci + FUT[FUT.length - 1] + 1 < db.segEnd[ci]) {
-      db.feat(ci, s.cur); curCost = 0; for (let d = 0; d < db.D; d++) { const e = s.cur[d] * db.W[d] - want[d]; curCost += e * e; }
+      // 지금 틀던 동작은 앞으로 갈 길만 비교한다(지금 자세는 곧 그 동작의 자세. 실제 발 상태와 자료가 조금만 달라도 지금 동작에 벌점이 붙어
+      // 찾을 때마다 41%를 건너뛰었고, 건너뛸 때마다 걸음 차례가 깨졌다, 2026-11-21)
+      db.feat(ci, s.cur); curCost = 0; for (let d = 0; d < 12; d++) { const e = s.cur[d] * db.W[d] - want[d]; curCost += e * e; }
     }
-    const b = db.search(want, Math.floor(s.f) - 8, Math.floor(s.f) + 8);
+    let b = db.search(want, Math.floor(s.f) - 8, Math.floor(s.f) + 8, Q.keep && (Q.keep.r || Q.keep.l) ? Q.keep : null);
+    if (b.i < 0) b = db.search(want, Math.floor(s.f) - 8, Math.floor(s.f) + 8);   // 맞는 프레임이 없으면 그대로 찾는다
+    MMSTAT.search++; if (force) MMSTAT.force++; else if (b.i >= 0 && isFinite(curCost) && MMSTAT.r.length < 4000) MMSTAT.r.push(+(b.cost / Math.max(1e-6, curCost)).toFixed(3)); if (!isFinite(curCost)) MMSTAT.inf++;
     if (b.i >= 0 && (force || b.cost < curCost * 0.85 - 0.05)) {
+      MMSTAT.jump++;
       // 관성 이어붙이기: 앞 자세와의 차이를 BLEND초에 걸쳐 0으로
       const p0 = poseOut(db, s, true), p1 = poseAt(db, b.i);
       s.off = {}; for (const kk of KEYS) s.off[kk] = ANG.has(kk) ? wrapD(p0[kk] - p1[kk]) : p0[kk] - p1[kk];
@@ -187,6 +210,13 @@ export function locoUpdate(db, s, dt, Q) {
   if (s.off) { s.offT += dt; if (s.offT >= BLEND) s.off = null; }
   return poseOut(db, s);
 }
+// 이 발(side 'r'|'l')이 자료에서 땅을 떠나기까지 남은 시간(게임 초, 0.6초까지 본다). 지금 뜬 발이면 0
+export function stanceLeft(db, s, side) {
+  if (!db || !s) return 1;
+  const c = side + 'c', end = db.segEnd[Math.floor(s.f)] - 1;
+  for (let k = 0; k <= 18; k++) { const f = s.f + k; if (f >= end) return k / (FPS * s.r); if (db.v(Math.floor(f), c) <= 0.5) return k / (FPS * s.r); }
+  return 18 / (FPS * s.r);
+}
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
 // 질의: 목표가 앞으로 갈 길(지금 뿌리 기준, 자료 단위). 빨리 틀고 보폭을 늘리는 만큼 자료 시간으로 바꿔 본다
 function query(db, s, Q, q) {
@@ -199,6 +229,8 @@ function query(db, s, Q, q) {
   // 막 넘겨받았을 때(스윙·서브 뒤)는 지금 틀고 있는 프레임이 없으니 실제 발 자리·몸 빠르기로 찾는다(모션 매칭의 '지금 자세'는 캐릭터의 실제 자세.
   // 서 있는 프레임 값으로 찾으면 실제 발과 다른 자세에서 시작해 디딘 발이 끌려갔다, 2026-11-20)
   if (Q.pose) for (let j = 0; j < Q.pose.length; j++) q[12 + j] = Q.pose[j];
+  // 걸음 차례는 실제로 디딘 발(발 고정)로: 자료와 실제가 다를 때도 지금 걸음 차례에서 이어지는 프레임을 찾는다
+  if (Q.phase) { q[22] = Q.phase[0]; q[23] = Q.phase[1]; }
   for (let j = 0; j < db.D; j++) q[j] *= db.W[j];
   return q;
 }
