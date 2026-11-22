@@ -72,8 +72,9 @@ const HAND_OFF = [0.3, 0.42];
 const RUN_HIT = [1.8, 0.45];
 // 달리며 칠 때 스윙의 골반 돌기 중 골반에 남기는 몫(나머지는 가슴으로. 다리는 달리는데 골반만 크게 돌면 다리가 꼬인다)
 const RUN_HK = 0.4;
-// 디딘 발이 골반에서 이만큼(m) 떨어지면 뒤꿈치를 내리기 시작해 끝 값에서는 발바닥을 다 붙인다(앞꿈치는 몸 가까이에서만)
-const HEEL_NEAR = [0.25, 0.45];
+// 디딜 때 뒤꿈치 먼저(가는 쪽으로 발이 골반보다 앞에 나가 디딜 때): 닿기 전 발끝을 드는 각(도), 발바닥이 다 내려앉는 시간(초, 걷기 → 달리기).
+// 앞꿈치로 디딜 때 처음 뒤꿈치를 든 각(도). 발 길이(앞꿈치 → 뒤꿈치, 리그 단위)
+const HEEL_RULE = { toe: 16, flat: [0.11, 0.05], fore: 6, len: 0.155 };
 export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
 const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
@@ -469,25 +470,48 @@ export class Players3D {
     if (inSw && CROUCH[id]) { const core = /^[fb]v$/.test(id) ? 0 : sstep(-0.42, -0.15, tc) * (1 - sstep(0.2, 0.55, tc)); crouch = CROUCH[id] * (1 - core); }
     const lp = useLoco ? c.lp : null, LK = this.locoK, idleW = 1 - sstep(0.4, 1.4, spd);
     // 골반 낮추기(리그가 디딘 발까지 다리가 닿게 낮출 양을 주면): 낮출 때는 빨리(0.04초), 올릴 때는 천천히(0.18초), 17cm(리그 단위)까지. 서브는 동작 그대로
-    // 디딘 발의 뒤꿈치(사용자 2026-11-22: 앞꿈치는 잔발이나 몸의 중심이 가까울 때 쓰지, 중심이 멀리 떨어져 있는데 앞꿈치를 쓸 수는 없다).
-    // 걷기·달리기 자료는 밀어내는 뒷발이 떼기 전에 뒤꿈치를 20~57도 들어 골반 뒤 43~58cm에서 앞꿈치로 서 있었다. 디딘 발이 골반에서 25cm 넘게 떨어지면
-    // 뒤꿈치를 내려 45cm에서는 발바닥을 다 붙인다(그래도 다리가 모자라면 골반을 낮추고, 그래도 모자랄 때만 리그가 뒤꿈치를 든다). 발을 들면 자료대로, 바뀌는 것은 초당 450도까지
+    // 디딜 때 뒤꿈치냐 앞꿈치냐(사용자 2026-11-22): 가는 쪽으로 발이 골반보다 많이 나가 디디면 뒤꿈치가 앞꿈치보다 먼저 닿는다(발끝을 들고 디뎌 발바닥이 내려앉는다).
+    // 골반이 발보다 나가 있거나 비슷하면(사이드 스텝·크로스 스텝·백스텝·잔발, 밀어내는 뒷발) 앞꿈치. 발이 앞에 나갔다는 것은 가는 쪽과 그 발이 향한 쪽 둘 다로 본다
+    // (옆으로 내디딘 발은 발 앞쪽으로 나간 것이 아니라 뒤꿈치로 디딜 수 없다). 예전(같은 날)에는 골반에서 먼 발의 뒤꿈치를 방향 없이 내려 밀어내는 뒷발까지 발바닥을 붙였고,
+    // 내딛는 발은 자료대로 발바닥이나 앞꿈치로 디뎠다(규칙상 뒤꿈치 먼저인 디딤의 19%만 뒤꿈치 먼저). 바뀌는 것은 초당 450도까지
     c.heelS = c.heelS || { right: null, left: null };
-    const heelOf = (side, h) => {
-      const fo = c.fo?.[side], hp = c.hipP, planted = fo && fo[3] < 0.02;
-      let t = h;
-      // 거리는 발목(앞꿈치에서 발 뒤쪽으로 14cm)에서 잰다. 앞꿈치에서 재면 골반 뒤에 있는 발은 13cm쯤 가깝게 잡혀 덜 내렸다
-      if (planted && hp && h > 0) { const fy = fo[2] * D, ax = fo[0] - 0.14 * Math.sin(fy), az = fo[1] - 0.14 * Math.cos(fy), d = Math.hypot(ax - hp[0], az - hp[2]) * K; t = h * (1 - sstep(HEEL_NEAR[0], HEEL_NEAR[1], d)); }
-      const s = c.heelS[side], m = 450 * pdt; c.heelS[side] = s == null ? t : s + clamp(t - s, -m, m);
-      return c.heelS[side];
+    const vlx = c.v[0] * cy - c.v[1] * sy, vlz = c.v[0] * sy + c.v[1] * cy, vsp = Math.hypot(vlx, vlz);
+    const footRule = (side, o) => {
+      const L = c.lk[side], hs = L.hs || (L.hs = { kind: null, t: 0, hk: 0, a0: 0 }), hp = c.hipP, hd = clamp(lp[side[0] + 'he'] || 0, -25, 60), HL = HEEL_RULE.len;
+      let aV = 0, along = 0;
+      if (hp && vsp > 0.05) {   // 발목(앞꿈치에서 발 뒤쪽으로 14cm)이 골반보다 가는 쪽으로 얼마나 나갔나(m), 발이 향한 쪽과 가는 쪽이 얼마나 같나
+        const fy = o[2] * D, fx = Math.sin(fy), fz = Math.cos(fy), ux = vlx / vsp, uz = vlz / vsp;
+        aV = ((o[0] - 0.14 * fx - hp[0]) * ux + (o[1] - 0.14 * fz - hp[2]) * uz) * K; along = fx * ux + fz * uz;
+      }
+      const fwd = sstep(0.5, 1.0, vsp) * sstep(0.3, 0.65, along);   // 그 발 앞쪽으로 가고 있다
+      const low = Math.max(0, hd >= 0 ? o[3] : o[3] - HL * Math.sin(-hd * D));   // 자료의 발에서 가장 낮은 곳(앞꿈치 또는 뒤꿈치) 높이
+      const planted = !!L.lock && !L.step;
+      let t;
+      if (!planted) {
+        // 뜬 발: 골반보다 앞으로 나가면 발끝을 들어 뒤꿈치로 내려오고, 아니면 땅에 닿을 무렵 뒤꿈치를 조금 든다(앞꿈치로 닿게)
+        const hk = fwd * sstep(0.08, 0.2, aV), near = sstep(0.07, 0.015, low);
+        t = (1 - hk) * Math.max(hd, HEEL_RULE.fore * near) + hk * Math.min(hd, -HEEL_RULE.toe);
+        hs.kind = null; hs.hk = hk; hs.aV = aV; hs.al = along;
+      } else {
+        if (hs.kind == null) { hs.kind = hs.hk > 0.5 ? 'heel' : 'fore'; hs.t = 0; hs.a0 = Math.min(0, c.heelS[side] ?? 0); c.tdN = c.tdN || { heel: 0, fore: 0 }; c.tdN[hs.kind]++; } else hs.t += pdt;
+        if (hs.kind === 'heel') {
+          // 뒤꿈치로 디딘 발: 발바닥이 내려앉고(걷기 0.11초, 달리기 0.05초), 골반이 발 위를 지나갈 때까지 뒤꿈치를 들지 않는다. 지나가면 자료대로 뒤꿈치를 들어 민다(앞꿈치)
+          const pass = 1 - (1 - sstep(0.03, -0.06, aV)) * fwd, Tf = HEEL_RULE.flat[0] + (HEEL_RULE.flat[1] - HEEL_RULE.flat[0]) * sstep(1, 3.5, vsp);
+          t = hs.a0 * (1 - sstep(0, Tf, hs.t)) + Math.max(0, hd) * pass;
+        } else t = Math.max(hd, 0, HEEL_RULE.fore * (1 - sstep(0.02, 0.12, hs.t)));   // 앞꿈치로 디딘 발: 발끝을 들고 서지 않는다
+      }
+      const s = c.heelS[side], m = 450 * pdt, v = c.heelS[side] = s == null ? t : s + clamp(t - s, -m, m);
+      // 발끝을 든 만큼 발을 올려 가장 낮은 곳(뒤꿈치)이 자료의 발 높이에 오게(닿는 때는 자료 그대로). 디딘 발은 땅에
+      if (!planted) o[3] = v < 0 ? low + HL * Math.sin(-v * D) : low;
+      return o;
     };
     const pelvisFit = id === 'sv' ? null : need => { const cur = c.pFit || 0, tg = clamp(need, 0, 0.17), k = Math.min(1, pdt / (tg > cur ? 0.04 : 0.18)); c.pFit = cur + (tg - cur) * k; return c.pFit; };
     const over = lp ? {
       // 이동 엔진: 아래(골반·발)는 모션캡처 걷기·달리기, 위(손·라켓)는 준비 자세나 스윙. 서 있을 때는 테니스 준비 자세처럼 조금 낮게
       reach, pelvisFit,
       hand: () => c.handSh ? V3(c.handSh[0], 0, c.handSh[1]) : null,
-      foot: (side, f) => this.locoFoot(c, side, lp, ctx, jw),
-      heel: side => heelOf(side, clamp(lp[side[0] + 'he'] || 0, -25, 60)),   // -면 발끝을 든 것(뒤꿈치로 디딤)
+      foot: (side, f) => footRule(side, this.locoFoot(c, side, lp, ctx, jw)),
+      heel: side => c.heelS[side] ?? 0,   // -면 발끝을 든 것(뒤꿈치로 디딤). footRule이 정한다
       hip: h => {
         // 스윙 앞부분(백스윙)을 달리며 할 때: 스윙의 골반 돌기는 대부분 가슴(어깨)으로 옮긴다(다리는 달리는데 골반만 90도 넘게 돌아 꼬였다). 임팩트 0.3초 전에 가까워질수록 스윙대로
         const hk = inSw ? (sw.runLegs ? RUN_HK : 0.3 + 0.7 * sstep(-0.65, -0.3, tc)) : 1; c.hipMove = h[3] * (1 - hk);
@@ -668,15 +692,7 @@ export class Players3D {
       Object.assign(F, { x: sx, z: sz, y: syw, init: true, sw: null, follow: null, air: null, fp: [fx, fz, fy, 0] });
       stT(u >= 1); const r = toR(sx, sz); return [r[0], r[1], syw - x.yawD, 0.06 * Math.sin(Math.PI * u)];
     }
-    // 이른 발 떼기(트리플A 발 놓기의 최대 다리 뻗음, 사용자 2026-11-22: 중심이 멀리 떨어져 있는데 앞꿈치를 쓸 수는 없다): 밀어내는 발(자료가 뒤꿈치를 15도 넘게 든 발)이
-    // 골반에서 45cm 넘게 멀어지면 자료가 떼기를 기다리지 않고 지금 뗀다(뒤꿈치를 내리면 다리가 닿지 않아 앞꿈치로 서 있던 것). 다른 발이 디디고 있을 때만, 자료가 발을 들면 끝
-    // 자료가 곧(0.12초 안) 뗄 발만 당겨 뗀다(일찍 떼어 오래 떠 있으면 같은 발이 연달아 걸음을 하고 걷는데 두 발이 다 떴다). 0.25초 넘게 떠 있으면 그만둔다
-    if (L.early != null) { if (cv < 0.35 || L.early > 0.25) L.early = null; else L.early += x.pdt; }
-    else if (L.lock && !L.step && (lp[s + 'he'] || 0) > 15 && c.lk[s === 'r' ? 'left' : 'right'].lock && !c.lk[s === 'r' ? 'left' : 'right'].step && stanceLeft(this.locoDB, c.lc, s) < 0.12) {
-      const fyR = L.lock.y * D, [hx, hz] = toW(lp.hx * LK, lp.hz * LK);
-      if (Math.hypot(L.lock.x - 0.14 * K * Math.sin(fyR) - hx, L.lock.z - 0.14 * K * Math.cos(fyR) - hz) > HEEL_NEAR[1]) { L.early = 0; c.earlyOff = (c.earlyOff || 0) + 1; }
-    }
-    const con = !x.air && cv > (L.lock ? 0.35 : 0.65) && L.early == null;
+    const con = !x.air && cv > (L.lock ? 0.35 : 0.65);
     if (!L.seen) {   // 이동 엔진에 막 들어왔다: 디딘 발은 지금 자리에 붙이고, 뜬 발은 지금 자리에서 이어지게
       L.seen = true;
       // 땅에 디딘 발인데 동작은 발을 들었거나 다른 자리(10cm 넘게)에 디디면 땅에서 미끄러뜨리지 않고 들어서 옮겨 딛는다(한 번에 한 발)
@@ -694,7 +710,6 @@ export class Players3D {
     let ux = wx + (L.off ? L.off[0] * ow : 0), uz = wz + (L.off ? L.off[1] * ow : 0), uy = wy + (L.off ? L.off[2] * ow : 0);
     // 자리를 이어 붙이는 동안(L.off)은 옮기는 거리만큼 발을 든다(땅에 붙은 채 미끄러지지 않게)
     let lf = L.off ? Math.max(lift, Math.min(0.08, 0.35 * Math.hypot(L.off[0], L.off[1])) * Math.sin(Math.PI * Math.min(1, L.offT / 0.18))) : lift;
-    if (L.early != null) lf = Math.max(lf, 0.07 * sstep(0, 0.07, L.early));   // 일찍 뗀 발은 자료가 떼기 전까지도 땅에서 들어 둔다
     if (con) {
       if (!L.lock) L.lock = { x: ux, z: uz, y: uy };
       // 디딘 발이 동작의 발 자리에서 30cm 넘게 벌어지면(몸이 목표 쪽으로 당겨졌거나, 막 넘겨받아 자세가 달랐을 때) 끌지 않고 들어서 그 자리로 옮겨 딛는다

@@ -402,7 +402,9 @@ export function createRig(vrm) {
     if (over?.pelvisFit) {
       let need = 0;
       for (const side of ['right', 'left']) {
-        const g = LEG[side]; if (g.lift > 0.02) continue;
+        // 땅에 닿을 무렵(가장 낮은 곳이 5cm 안)의 발부터 미리 본다. 디딘 뒤에야 낮추면 닿는 순간 다리가 모자라 뒤꿈치를 들어, 뒤꿈치로 디딜 발이 앞꿈치로 닿았다(2026-11-22)
+        // 스윙(모션캡처) 동안은 예전대로 디딘 발만 본다(스윙 중에 미리 낮추면 높은 공·낮은 공에서 라켓이 공을 더 비켰다)
+        const g = LEG[side], low = g.heel < 0 ? Math.max(0, g.lift - TOE_HEEL * Math.sin(-g.heel * D)) : g.lift; if (low > (over.heel ? 0.05 : 0.02)) continue;
         const L = LIMB[side + 'Leg'], H = wp(L.up), a = g.ankleAt(g.heel), R = (L.l1 + L.l2) * 0.93;
         const dh = Math.hypot(a.x - H.x, a.z - H.z), v = H.y - a.y;
         need = Math.max(need, dh < R ? v - Math.sqrt(R * R - dh * dh) : v);
