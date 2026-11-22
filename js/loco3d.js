@@ -177,7 +177,9 @@ export function locoUpdate(db, s, dt, Q) {
     // 빠르기 맞추기: 자료가 가는 빠르기와 가려는 빠르기의 비. 더 빨리 틀고(걸음이 잦아짐) 보폭을 늘린다.
     // 가려는 빠르기는 지금 몸 자리에서 0.3초 뒤 목표까지(뒤처진 만큼도 걸음으로 메운다. 사용자 2026-11-20: 캐릭터를 옮기고 다리가 제멋대로 따라오는 느낌.
     // 예전에는 목표의 빠르기만 맞추고 뒤처진 만큼은 몸을 끌어 메워서, 움직임의 절반쯤만 걸음이 만들었다)
-    const fa = Q.fut(0.3), fv = [fa[0] - s.x, fa[1] - s.z], vd = Math.hypot(...fv) / 0.3, vf = db.speedAt(Math.floor(s.f)) * s.sc;
+    // 달리며 칠 때(Q.due: 임팩트까지 남은 초)는 임팩트 때 설 자리까지 남은 시간에 닿는 빠르기로(트리플A의 거리 맞추기: 걸음이 칠 자리에 맞춰 닿는다)
+    const fT = Q.due > 0 && Q.due < 0.3 ? Math.max(Q.due, 0.08) : 0.3;
+    const fa = Q.fut(fT), fv = [fa[0] - s.x, fa[1] - s.z], vd = Math.hypot(...fv) / fT, vf = db.speedAt(Math.floor(s.f)) * s.sc;
     const ratio = vf > 0.35 ? clamp(vd / vf, 0.8, 3.2) : 1;
     // 옆으로 가는 몫(몸이 보는 쪽 기준, 1이면 곧장 옆): 옆걸음(사이드 스텝)은 보폭을 늘리지 않고 걸음을 잦게 한다
     // (사용자 2026-11-20: 옆으로 갈 때 다리가 옆으로 크게 벌어진다. 보폭을 1.3배 늘리면 두 발이 1m 넘게 벌어졌다. 실제 사이드 스텝은 폭은 그대로, 빨리 딛는다)
@@ -194,7 +196,9 @@ export function locoUpdate(db, s, dt, Q) {
   //    maxOff는 비상용(예전 0.25~0.45m로 묶어 몸을 끌어 다녔다. 사용자 2026-11-20: 캐릭터를 옮기고 다리가 제멋대로 따라오는 느낌)
   const ex = Q.tx - s.x, ez = Q.tz - s.z, el = Math.hypot(ex, ez);
   if (el > 1e-4) {
-    const sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.3)), 0.5 * sp * dt);
+    const sp = Math.hypot(s.x - x0, s.z - z0) / dt;
+    // 달리며 칠 때는 남은 차이를 임팩트 때까지 다 메운다(라켓이 공에 오게. 반감기 0.3초로는 임팩트 때 13~27cm 모자랐다). 걸음 빠르기의 50% + 초속 0.8m까지
+    const m = Q.due > 0 ? Math.min(el * Math.min(1, dt / Math.max(0.03, Q.due - 0.01)), (0.5 * sp + 0.8) * dt) : Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.3)), 0.5 * sp * dt);
     s.x += ex / el * m; s.z += ez / el * m;
     const e2 = Math.hypot(Q.tx - s.x, Q.tz - s.z), mo = Q.maxOff ?? 0.45;
     if (e2 > mo) { const u = (e2 - mo) / e2; s.x += (Q.tx - s.x) * u; s.z += (Q.tz - s.z) * u; }
@@ -202,7 +206,10 @@ export function locoUpdate(db, s, dt, Q) {
   // 바라볼 쪽도 조금씩(반감기 0.15초, 초당 (자료가 도는 빠르기의 80% + 움직이는 빠르기에 따라 60~200도)까지. 서서 제자리에서 휙 돌지 않게, 달리면서는 빨리)
   const fy = Q.face(0), dy = wrapR(fy - s.yaw);
   if (Math.abs(dy) > 1e-4) {
-    const om = Math.abs(ry1 - ry0) / dt, sp = Math.hypot(s.x - x0, s.z - z0) / dt, m = Math.min(Math.abs(dy) * (1 - Math.exp(-dt * Math.LN2 / 0.15)), (0.8 * om + (Q.pivot ? 360 : 60 + 140 * clamp(sp / 2, 0, 1)) * Math.PI / 180) * dt);   // pivot: 크로스 스텝 첫발은 골반을 빨리 돌린다
+    const om = Math.abs(ry1 - ry0) / dt, sp = Math.hypot(s.x - x0, s.z - z0) / dt;
+    // 달리며 칠 때는 임팩트 때까지 칠 쪽을 다 보게(늦으면 라켓이 몸 둘레로 돌아 공을 비켰다, 임팩트 때 18도까지 어긋났다)
+    const ku = Q.due > 0 ? Math.min(1, dt / Math.max(0.03, Q.due - 0.02)) : 1 - Math.exp(-dt * Math.LN2 / 0.15);
+    const m = Math.min(Math.abs(dy) * ku, (0.8 * om + (Q.pivot || Q.due > 0 ? 360 : 60 + 140 * clamp(sp / 2, 0, 1)) * Math.PI / 180) * dt);   // pivot: 크로스 스텝 첫발은 골반을 빨리 돌린다
     s.yaw += Math.sign(dy) * m;
   }
   s.vx = (s.x - x0) / dt; s.vz = (s.z - z0) / dt;

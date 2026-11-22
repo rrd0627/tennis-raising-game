@@ -68,6 +68,10 @@ function softServe(keys) {
 const TAIL = { fh: 0.72, bh: 0.72, fv: 0.45, bv: 0.45, sm: 0.85, fs: 0.65, bs: 0.65, sv: 0.62 };
 // 친 뒤 이동 엔진이 다리를 넘겨받는 때(임팩트 뒤 초). 위(팔로스로)는 동작 끝(TAIL)까지 그대로 겹친다
 const HAND_OFF = [0.3, 0.42];
+// 달리며 치기: 임팩트 0.3초 전 몸 빠르기(초속 m)가 이보다 빠르거나, 칠 자리까지 남은 거리(m)가 이보다 길면 다리는 이동 엔진이 끝까지 맡는다
+const RUN_HIT = [1.8, 0.45];
+// 달리며 칠 때 스윙의 골반 돌기 중 골반에 남기는 몫(나머지는 가슴으로. 다리는 달리는데 골반만 크게 돌면 다리가 꼬인다)
+const RUN_HK = 0.4;
 export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
 const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
@@ -284,7 +288,16 @@ export class Players3D {
     const tc = inSw ? clamp(this.bt - sw.tImpact, S.T0, S.T1) : id === 'sv' ? Math.max(S.T0, -SV_TOSS) : S.T0;
     // 이동 엔진(사용자 2026-11-16: 트리플A처럼 갈 곳을 정하고 → 자연스럽게 가고 → 도착하면 다음 동작). 기다리기·움직이기는 모션캡처 걷기·달리기(loco3d.js)로,
     // 칠 때(임팩트 약 0.21초 전~0.42초 뒤)·서브의 다리는 그 동작으로. 스윙 앞부분(백스윙)은 위는 스윙, 아래는 이동 엔진으로 겹친다
-    const pwPre = inSw && sw.id !== 'sv' ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(HAND_OFF[0], HAND_OFF[1], tc)) : 1;
+    // 달리며 치기(트리플A의 위아래 나눠 섞기, 사용자 2026-11-22: 빨려가는 듯한 움직임): 동작이 다리를 넘겨받을 때가 되어도(임팩트 0.3초 전) 아직 빨리 움직이고 있거나
+    // 칠 자리까지 갈 길이 많이 남았으면 다리는 끝까지 이동 엔진이 맡고, 위(손·라켓·가슴)만 스윙으로 친다. 제자리에서 치는 스윙 동작의 발은 서 있는데
+    // 몸은 초속 2~4m로 계속 가서, 디딘 발이 뒤에 남은 채 골반이 빠져나갔다(임팩트 0.1초 전 12%). 스윙마다 한 번 정한다
+    if (inSw && sw.id !== 'sv' && sw.runLegs == null && this.bt - sw.tImpact >= -0.3) {
+      const Bd = c.body, toI = Math.max(0, sw.tImpact - this.bt), [qx, qz] = spriteAt(p, toI);
+      const rem = Bd?.init ? Math.hypot(qx + (c.offT?.x ?? c.off.x) - Bd.x, qz + (c.offT?.z ?? c.off.z) - Bd.z) : 0;
+      // 스매시는 빼고(머리 위로 치는 동작은 다리째 동작을 쓴다. 이동 엔진 다리로 치면 라켓이 공을 40cm 비켰다)
+      sw.runLegs = sw.id !== 'sm' && !!c.lc && (Math.hypot(c.lc.vx, c.lc.vz) > RUN_HIT[0] || rem > RUN_HIT[1]);
+    }
+    const pwPre = inSw && sw.id !== 'sv' && !sw.runLegs ? 1 - sstep(-0.3, -0.12, tc) * (1 - sstep(HAND_OFF[0], HAND_OFF[1], tc)) : 1;
     // 포인트가 끝난 몸짓 동안에도 다리는 이동 엔진으로(위만 몸짓). 예전 걸음은 같은 발을 연달아 옮기기도 했다(2026-11-21)
     // 칠 때는 동작이 발을 넘겨받을 때(임팩트 약 0.21초 전)까지 이동 엔진이 다리를 맡는다. 예전에는 0.3초 전에 이동 엔진을 끄고 0.1초 동안 예전 걸음 계획이 새 걸음을 시작해,
     // 동작이 발을 넘겨받으며 다른 발도 옮겨 딛어 두 발이 다 뜬 채 몸이 공 쪽으로 당겨졌다(사용자 2026-11-22: 빨려가는 듯한 움직임. 임팩트 0.2초 전 72%가 두 발이 다 뜬 채 빨라짐)
@@ -463,7 +476,7 @@ export class Players3D {
       heel: side => clamp(lp[side[0] + 'he'] || 0, -25, 60),   // -면 발끝을 든 것(뒤꿈치로 디딤)
       hip: h => {
         // 스윙 앞부분(백스윙)을 달리며 할 때: 스윙의 골반 돌기는 대부분 가슴(어깨)으로 옮긴다(다리는 달리는데 골반만 90도 넘게 돌아 꼬였다). 임팩트 0.3초 전에 가까워질수록 스윙대로
-        const hk = inSw ? 0.3 + 0.7 * sstep(-0.65, -0.3, tc) : 1; c.hipMove = h[3] * (1 - hk);
+        const hk = inSw ? (sw.runLegs ? RUN_HK : 0.3 + 0.7 * sstep(-0.65, -0.3, tc)) : 1; c.hipMove = h[3] * (1 - hk);
         c.handSh = inSw ? [lp.hx * LK - h[0], lp.hz * LK - h[2]] : null;   // 스윙의 손은 동작의 골반이 아니라 이동 엔진의 골반을 따라간다(over.hand)
         h = [lp.hx * LK, h[1] * (0.45 + 0.55 * idleW) + (lp.hy - this.locoDB.hipH) * LK - c.sq * 0.6 + jhip * jk, lp.hz * LK, h[3] * hk + lp.hyaw];
         if (c.fade > 0 && c.snapHip) { const u = sstep(0, 1, 1 - c.fade / FADE); h = h.map((v, k) => k === 3 ? c.snapHip[3] + wrapD(v - c.snapHip[3]) * u : c.snapHip[k] + (v - c.snapHip[k]) * u); }
@@ -540,7 +553,7 @@ export class Players3D {
       }   // 서브: 준비하는 동안 걸어가 서고, 토스부터는 그 자리 그대로
     } else { c.offT = null; const L = c.off.length(), mx = 1.3 * pdt; if (L > mx) c.off.multiplyScalar(1 - mx / L); else c.off.set(0, 0, 0); }   // 친 뒤 그림 선수 자리로 돌아갈 때는 초속 1.3m까지(그림 선수가 뛰는 빠르기에 더해져 휙 움직였다)
     // 친 뒤 팔로스로(동작의 발을 따르는 동안)에는 임팩트 자리에서 천천히 풀린다(위 hu). 디딘 발과 몸이 벌어지지 않게(사용자 2026-11-12: 발이 미끄러진다)
-    if (inSw && sw.id !== 'sv' && this.bt >= sw.tImpact && pw < 0.5) { if (!c.hold || c.hold[2] !== sw.tImpact) c.hold = [p.x + c.off.x, p.z + c.off.z, sw.tImpact]; }
+    if (inSw && sw.id !== 'sv' && this.bt >= sw.tImpact && pw < 0.5 && !sw.runLegs) { if (!c.hold || c.hold[2] !== sw.tImpact) c.hold = [p.x + c.off.x, p.z + c.off.z, sw.tImpact]; }
     else if (c.hold && this.bt - c.hold[2] > 0.5) c.hold = null;
     // 자세는 리그 기준(제자리, 돌리지 않음)으로 만들고 나서 코트 위로 옮긴다
     const key = id + (inSw ? ':' + sw.tImpact.toFixed(3) : ':idle');
@@ -599,13 +612,13 @@ export class Players3D {
         const off = Math.abs(rel) > 150 * D ? -75 * D : clamp(rel, -75 * D, 75 * D) * sstep(30 * D, 55 * D, Math.abs(rel));   // 뒤로 갈 때(로브)는 오른쪽으로 돌아 옆으로 물러난다
         tw = off * sstep(1.0, 1.9, vs) * sstep(0.22, 0.45, toIn);
       }
-      c.warp = (c.warp || 0) + (tw - (c.warp || 0)) * Math.min(1, pdt * 7);
+      c.warp = (c.warp || 0) + (tw - (c.warp || 0)) * Math.min(1, pdt * (sw?.runLegs ? 16 : 7));   // 달리며 칠 때는 임팩트 전에 다 선다
       c.faceBase = face; face += c.warp;
     }
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
-    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh || !!c.lc.reSearch, pivot: Math.abs(c.warp || 0) > 0.35 };
+    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh || !!c.lc.reSearch, pivot: Math.abs(c.warp || 0) > 0.35, due: sw?.runLegs && toIn > 0 && toIn < 9 ? toIn : 0 };
     // 막 넘겨받았을 때(친 뒤·서브 착지 뒤)는 그동안 그림 선수가 멀어져 있어도 묶지 않고 걸음으로 따라잡는다(1.5초에 걸쳐 원래 값으로)
     c.lc.age = (c.lc.age || 0) + pdt; Q.maxOff += 2.0 * (1 - sstep(0.6, 1.5, c.lc.age));
     // 지금 걸음 차례(오른발, 왼발: 디딘 지 +초, 뜬 지 -초): 이동 엔진이 같은 걸음 차례로 이어지는 프레임을 찾게
