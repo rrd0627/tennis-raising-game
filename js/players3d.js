@@ -73,8 +73,9 @@ const RUN_HIT = [1.8, 0.45];
 // 달리며 칠 때 스윙의 골반 돌기 중 골반에 남기는 몫(나머지는 가슴으로. 다리는 달리는데 골반만 크게 돌면 다리가 꼬인다)
 const RUN_HK = 0.4;
 // 디딜 때 뒤꿈치 먼저(가는 쪽으로 발이 골반보다 앞에 나가 디딜 때): 닿기 전 발끝을 드는 각(도), 발바닥이 다 내려앉는 시간(초, 걷기 → 달리기).
-// 앞꿈치로 디딜 때 처음 뒤꿈치를 든 각(도). 발 길이(앞꿈치 → 뒤꿈치, 리그 단위)
-const HEEL_RULE = { toe: 16, flat: [0.11, 0.05], fore: 6, len: 0.155 };
+// 발 길이(앞꿈치 → 뒤꿈치, 리그 단위). 앞꿈치로 서지 않는다(사용자 2026-11-22): 뒤꿈치를 드는 것은 발끝이 땅에서 air[0]~air[1] 뜬 만큼 0 → up도까지
+const HEEL_RULE = { toe: 16, flat: [0.11, 0.05], len: 0.155, air: [0.02, 0.09], up: 45 };
+const toeMax = lift => HEEL_RULE.up * sstep(HEEL_RULE.air[0], HEEL_RULE.air[1], lift);
 export const SV_TOSS = 1.25;   // 서브: 임팩트 이만큼 전부터 토스(서브 준비 자세도 이 때의 자세. 손이 가장 낮다)
 const BASELINE = 11.885, TOE_GAP = 0.1;   // 베이스라인 바깥 끝, 서브 때 앞꿈치(발가락 관절)를 이만큼 뒤에 둔다(발끝 살)
 const G = 9.81;
@@ -469,7 +470,7 @@ export class Players3D {
     let crouch = 0;
     if (inSw && CROUCH[id]) { const core = /^[fb]v$/.test(id) ? 0 : sstep(-0.42, -0.15, tc) * (1 - sstep(0.2, 0.55, tc)); crouch = CROUCH[id] * (1 - core); }
     const lp = useLoco ? c.lp : null, LK = this.locoK, idleW = 1 - sstep(0.4, 1.4, spd);
-    // 골반 낮추기(리그가 디딘 발까지 다리가 닿게 낮출 양을 주면): 낮출 때는 빨리(0.04초), 올릴 때는 천천히(0.18초), 17cm(리그 단위)까지. 서브는 동작 그대로
+    // 골반 낮추기(리그가 디딘 발까지 다리가 닿게 낮출 양을 주면): 낮출 때는 빨리(0.04초), 올릴 때는 천천히(0.18초), 17cm(리그 단위)까지. 서브는 뛰어오르는 동안만 동작 그대로(아래 svW)
     // 디딜 때 뒤꿈치냐 앞꿈치냐(사용자 2026-11-22): 가는 쪽으로 발이 골반보다 많이 나가 디디면 뒤꿈치가 앞꿈치보다 먼저 닿는다(발끝을 들고 디뎌 발바닥이 내려앉는다).
     // 골반이 발보다 나가 있거나 비슷하면(사이드 스텝·크로스 스텝·백스텝·잔발, 밀어내는 뒷발) 앞꿈치. 발이 앞에 나갔다는 것은 가는 쪽과 그 발이 향한 쪽 둘 다로 본다
     // (옆으로 내디딘 발은 발 앞쪽으로 나간 것이 아니라 뒤꿈치로 디딜 수 없다). 예전(같은 날)에는 골반에서 먼 발의 뒤꿈치를 방향 없이 내려 밀어내는 뒷발까지 발바닥을 붙였고,
@@ -488,27 +489,36 @@ export class Players3D {
       const planted = !!L.lock && !L.step;
       let t;
       if (!planted) {
-        // 뜬 발: 골반보다 앞으로 나가면 발끝을 들어 뒤꿈치로 내려오고, 아니면 땅에 닿을 무렵 뒤꿈치를 조금 든다(앞꿈치로 닿게)
-        const hk = fwd * sstep(0.08, 0.2, aV), near = sstep(0.07, 0.015, low);
-        t = (1 - hk) * Math.max(hd, HEEL_RULE.fore * near) + hk * Math.min(hd, -HEEL_RULE.toe);
+        // 뜬 발: 골반보다 앞으로 나가면 발끝을 들어 뒤꿈치로 내려오고, 아니면 발바닥으로 내려온다(뒤꿈치를 드는 것은 발끝이 뜬 만큼만, 땅에 닿을 무렵 0. 리그의 toeMax)
+        const hk = fwd * sstep(0.08, 0.2, aV);
+        t = (1 - hk) * Math.min(hd, toeMax(o[3])) + hk * Math.min(hd, -HEEL_RULE.toe);
         hs.kind = null; hs.hk = hk; hs.aV = aV; hs.al = along;
       } else {
-        if (hs.kind == null) { hs.kind = hs.hk > 0.5 ? 'heel' : 'fore'; hs.t = 0; hs.a0 = Math.min(0, c.heelS[side] ?? 0); c.tdN = c.tdN || { heel: 0, fore: 0 }; c.tdN[hs.kind]++; } else hs.t += pdt;
-        if (hs.kind === 'heel') {
-          // 뒤꿈치로 디딘 발: 발바닥이 내려앉고(걷기 0.11초, 달리기 0.05초), 골반이 발 위를 지나갈 때까지 뒤꿈치를 들지 않는다. 지나가면 자료대로 뒤꿈치를 들어 민다(앞꿈치)
-          const pass = 1 - (1 - sstep(0.03, -0.06, aV)) * fwd, Tf = HEEL_RULE.flat[0] + (HEEL_RULE.flat[1] - HEEL_RULE.flat[0]) * sstep(1, 3.5, vsp);
-          t = hs.a0 * (1 - sstep(0, Tf, hs.t)) + Math.max(0, hd) * pass;
-        } else t = Math.max(hd, 0, HEEL_RULE.fore * (1 - sstep(0.02, 0.12, hs.t)));   // 앞꿈치로 디딘 발: 발끝을 들고 서지 않는다
+        if (hs.kind == null) { hs.kind = hs.hk > 0.5 ? 'heel' : 'flat'; hs.t = 0; hs.a0 = Math.min(0, c.heelS[side] ?? 0); c.tdN = c.tdN || { heel: 0, flat: 0 }; c.tdN[hs.kind]++; } else hs.t += pdt;
+        // 디딘 발은 앞꿈치로 서지 않는다(사용자 2026-11-22: 아예 앞꿈치로 딛는 걸 없애 봐. 예전에는 골반이 발을 지나가면 자료대로 뒤꿈치를 들어 밀었고, 옆·뒤로 디딘 발은 앞꿈치로 닿았다).
+        // 뒤꿈치로 디딘 발은 발바닥이 내려앉고(걷기 0.11초, 달리기 0.05초), 그 밖에는 발바닥으로 디딘다. 발이 뜰 때도 발바닥째로 뜨고, 뜬 뒤에야 발끝이 처진다
+        const Tf = HEEL_RULE.flat[0] + (HEEL_RULE.flat[1] - HEEL_RULE.flat[0]) * sstep(1, 3.5, vsp);
+        t = hs.kind === 'heel' ? hs.a0 * (1 - sstep(0, Tf, hs.t)) : 0;
       }
       const s = c.heelS[side], m = 450 * pdt, v = c.heelS[side] = s == null ? t : s + clamp(t - s, -m, m);
       // 발끝을 든 만큼 발을 올려 가장 낮은 곳(뒤꿈치)이 자료의 발 높이에 오게(닿는 때는 자료 그대로). 디딘 발은 땅에
       if (!planted) o[3] = v < 0 ? low + HL * Math.sin(-v * D) : low;
       return o;
     };
-    const pelvisFit = id === 'sv' ? null : need => { const cur = c.pFit || 0, tg = clamp(need, 0, 0.17), k = Math.min(1, pdt / (tg > cur ? 0.04 : 0.18)); c.pFit = cur + (tg - cur) * k; return c.pFit; };
+    // 앞꿈치로 서지 않으니(toeMax) 다리가 모자라는 디딘 발이 많아진다. 가는 쪽으로 골반보다 뒤에 남은 발(밀어내는 뒷발)은 골반을 낮추지 않고 발바닥째 뜨게 둔다
+    // (모두 골반으로 메우면 움직이는 동안 6~12cm 낮춘 채 웅크려 달렸다). 서브는 뛰어오르는 동안(임팩트 0.75초 전~0.35초 뒤)은 낮추지 않는다(라켓이 공에 못 미친다)
+    const trail = side => {
+      const o = c.fo?.[side], hp = c.hipP; if (!o || !hp || vsp < 0.5) return 0;
+      const fy = o[2] * D, aV = ((o[0] - 0.14 * Math.sin(fy) - hp[0]) * vlx + (o[1] - 0.14 * Math.cos(fy) - hp[2]) * vlz) / vsp * K;
+      return sstep(0.5, 1.0, vsp) * sstep(-0.02, -0.15, aV);
+    };
+    const svW = id !== 'sv' ? 1 : inSw ? 1 - sstep(-0.75, -0.5, tc) * (1 - sstep(0.15, 0.35, tc)) : 1;
+    const pelvisFit = (need, needS) => {
+      need = needS ? Math.max(0, ...['right', 'left'].map(s => (needS[s] ?? 0) * (1 - trail(s)))) : need; need *= svW; c.pNeed = need;
+      const cur = c.pFit || 0, tg = clamp(need, 0, 0.17), k = Math.min(1, pdt / (tg > cur ? 0.04 : 0.18)); c.pFit = cur + (tg - cur) * k; return c.pFit; };
     const over = lp ? {
       // 이동 엔진: 아래(골반·발)는 모션캡처 걷기·달리기, 위(손·라켓)는 준비 자세나 스윙. 서 있을 때는 테니스 준비 자세처럼 조금 낮게
-      reach, pelvisFit,
+      reach, pelvisFit, toeMax,
       hand: () => c.handSh ? V3(c.handSh[0], 0, c.handSh[1]) : null,
       foot: (side, f) => footRule(side, this.locoFoot(c, side, lp, ctx, jw)),
       heel: side => c.heelS[side] ?? 0,   // -면 발끝을 든 것(뒤꿈치로 디딤). footRule이 정한다
@@ -527,7 +537,7 @@ export class Players3D {
         c.chestP = ch; return ch;
       },
     } : {
-      reach, pelvisFit,
+      reach, pelvisFit, toeMax,
       foot: (side, f) => {
         if (jw) { const sd = side === 'right' ? -1 : 1; f = [f[0] + sd * jw, f[1], f[2] + sd * jw * 120, f[3]]; }   // 스플릿 착지: 발을 벌리고 발끝을 조금 밖으로
         const o = this.footOut(c, side, f, ctx);
@@ -598,7 +608,7 @@ export class Players3D {
     if (key !== c.key) { if (c.last && !(c.key === 'sv:idle' && id === 'sv')) { c.snap = c.last; c.fade = FADE; c.snapHip = c.hipP; c.snapChest = c.chestP; } c.key = key; if (!inSw) c.release = null; }   // 서브 준비 → 토스는 같은 자세라 섞지 않는다(섞으면 발이 밀린다)
     vrm.scene.position.set(0, 0, 0); vrm.scene.rotation.set(0, 0, 0); vrm.scene.scale.setScalar(1); vrm.scene.updateMatrixWorld(true);
     R.useShot(S);
-    R.pose(tc, inSw ? dl : V3(), null, over);
+    c.legMiss = R.pose(tc, inSw ? dl : V3(), null, over).legMiss;   // 다리가 디딜 자리에 못 미친 길이(잰 값)
     // 균형 재기: 칠 때(임팩트 둘레)·서브는 골반만 옮기고, 그 밖에는 모자라면 회복 걸음도
     this.balance(c, R, pdt, cy, sy, ctx, !ctx.clip && id !== 'sv' && !c.jmp);
     // 고개: 공(보이면) 쪽, 아니면 네트 너머

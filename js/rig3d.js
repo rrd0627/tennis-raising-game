@@ -395,21 +395,23 @@ export function createRig(vrm) {
       const hk = side[0] + 'heel';
       let heel = has(hk) ? Math.max(0, sample(t, hk)[0]) : 0;
       if (over?.heel) heel = over.heel(side, heel);   // 이동 엔진(모션캡처 걷기·달리기)의 뒤꿈치(-면 발끝을 든 것)
+      // 앞꿈치로 서지 않는다(사용자 2026-11-22: 아예 앞꿈치로 딛는 걸 없애 봐): 뒤꿈치를 드는 것은 발끝이 땅에서 뜬 만큼만(over.toeMax), 땅에 닿은 발은 발바닥이나 뒤꿈치로
+      if (over?.toeMax && heel > 0) heel = Math.min(heel, over.toeMax(lift));
       LEG[side] = { lift, yq, fwd, ax, pivAt, ankleAt, heel };
     }
     // 골반 낮추기(트리플A 보폭 늘이기의 골반 맞추기): 디딘 발이 다리가 닿는 거리보다 멀면 뒤꿈치를 들어 메우지 않고 골반을 낮춘다
     // (사용자 2026-11-21: 넓은 보폭인데 앞꿈치로 선다. 몸의 중심이 멀리 떨어져 있으면 앞꿈치를 쓸 수 없다). 경기에서만(over.pelvisFit이 낮출 양을 부드럽게 정한다)
     if (over?.pelvisFit) {
-      let need = 0;
+      let need = 0; const needS = {};
       for (const side of ['right', 'left']) {
         // 땅에 닿을 무렵(가장 낮은 곳이 5cm 안)의 발부터 미리 본다. 디딘 뒤에야 낮추면 닿는 순간 다리가 모자라 뒤꿈치를 들어, 뒤꿈치로 디딜 발이 앞꿈치로 닿았다(2026-11-22)
         // 스윙(모션캡처) 동안은 예전대로 디딘 발만 본다(스윙 중에 미리 낮추면 높은 공·낮은 공에서 라켓이 공을 더 비켰다)
         const g = LEG[side], low = g.heel < 0 ? Math.max(0, g.lift - TOE_HEEL * Math.sin(-g.heel * D)) : g.lift; if (low > (over.heel ? 0.05 : 0.02)) continue;
         const L = LIMB[side + 'Leg'], H = wp(L.up), a = g.ankleAt(g.heel), R = (L.l1 + L.l2) * 0.93;
         const dh = Math.hypot(a.x - H.x, a.z - H.z), v = H.y - a.y;
-        need = Math.max(need, dh < R ? v - Math.sqrt(R * R - dh * dh) : v);
+        needS[side] = dh < R ? v - Math.sqrt(R * R - dh * dh) : v; need = Math.max(need, needS[side]);
       }
-      const drop = over.pelvisFit(need);
+      const drop = over.pelvisFit(need, needS);   // 발마다 낮출 양(뒤에 남은 발은 골반을 낮추지 않고 발바닥째 뜨게 하는 등, 쓰는 쪽이 고른다)
       if (drop > 1e-4) { B('hips').position.y -= drop; vrm.scene.updateMatrixWorld(true); }
     }
     for (const side of ['right', 'left']) {
@@ -417,7 +419,8 @@ export function createRig(vrm) {
       let { heel } = LEG[side];
       const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
       const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
-      if (overL > 0) heel = Math.max(heel, Math.min(38, Math.max(0, heel) + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
+      // 앞꿈치로 서지 않을 때(over.toeMax)는 뒤꿈치를 들어 메우지 않는다(골반을 낮춘 것으로 모자라면 다리를 다 펴고 발이 조금 뜬다)
+      if (overL > 0 && !over?.toeMax) heel = Math.max(heel, Math.min(38, Math.max(0, heel) + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
       legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));
       // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
       const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
