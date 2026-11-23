@@ -7,7 +7,10 @@
 // MuJoCo: Google DeepMind, Apache-2.0 (vendor/mujoco/LICENSE)
 
 export const PHYS = {
-  dt: 1 / 600,          // 물리 한 걸음(초)
+  dt: 1 / 300,          // 물리 한 걸음(초). 학습(2단계, tools/phys/)과 같아야 한다(근육 세기 상한이 이 값에 달려 있다)
+  fps: 30,              // 학습한 제어기가 판단하는 빠르기(1초에 30번)
+  sig: 0.5,             // 제어기가 관절 목표에 더하는 회전의 최대(rad)
+  res: 0.5,             // 제어기가 골반에 주는 남는 힘의 최대(몸무게 비, Residual Force Control). 행동이 관절 수×3보다 3개 많을 때만
   maxSub: 24,           // 한 프레임에 최대 걸음 수
   mass: 55,             // 몸무게(kg)
   w: 60,                // 관절 근육의 고유 진동수(rad/s): 클수록 목표 자세를 빨리 따라간다
@@ -22,12 +25,15 @@ export const PHYS = {
   // 많을 때 1.5배)를 받치고 디딘 발이 11% 미끄러져(애니메이션은 0.1~4%) 물리 몸이 끌려다닐 뿐이다. 균형을 스스로 잡는 제어기(2단계, 학습)가 있어야 한다
   rootW: 10, rootZeta: 1.0, rootH: 1.5, rootUp: 1.2, rootDown: 0.2,
   rootWa: 14, rootTau: 800,
-  sync: 1,              // 몸이 못 따라간 만큼 애니메이션을 물리 몸 쪽으로 옮기는 몫
+  sync: 1,              // (1단계) 몸이 못 따라간 만큼 애니메이션을 물리 몸 쪽으로 옮기는 몫
+  bleed: 1,             // (2단계) 물리 목표를 물리 몸 쪽으로 옮겨 준 몫을 1/30초마다 줄이는 비율. 1이면 옮기지 않고 애니메이션 자리 그대로(제어기가 그 자리를 따라가게 학습했다)
   // 디딘 다리로 밀기(Coros 외 2010, 가상 힘): 골반을 목표 쪽으로 옮길 힘을 밖에서 주지 않고, 땅을 디딘 다리의 관절 힘(J^T f)으로 낸다.
   // 다리가 땅을 밀고 땅이 마찰로 받쳐 몸이 움직인다(마찰이 모자라면 발이 미끄러진다). 골반 기울기도 디딘 다리의 엉덩이 관절로 바로잡는다
   legs: false, legW: 7, legZeta: 1.0, legH: 0.9, legUp: 0.9, legDown: 0.5,
   residH: 0.04, residUp: 0.08, residTau: 50,   // 다리로 밀 때 남는 보조 힘(아주 작게)
   friction: 1.0,
+  footOnly: true,       // 바닥과 부딪는 것은 발만(학습 속도: MJX에서 충돌 쌍이 20개 → 2개)
+  iterations: 4, lsIterations: 8,   // 접촉 풀이 반복(학습 MJX와 게임이 같게)
 };
 
 let MJ = null, MJP = null;
@@ -96,7 +102,7 @@ export function buildXML(sp, opt = {}) {
       // 발: 발목(몸 원점) 아래 상자. 바닥은 처음 자세의 바닥(y = 0)에, 뒤꿈치부터 발끝까지(발가락 포함, 1단계는 발가락 관절 없이)
       const ank = P(n)[1], toe = has(n.replace('Foot', 'Toes')) ? sub(P(n.replace('Foot', 'Toes')), P(n)) : [0, -0.063, 0.11];
       const z0 = -0.07, z1 = toe[2] + 0.06, hy = 0.028;
-      return `<geom name="g_${n}" type="box" pos="${v([toe[0] * 0.5 * K, (-ank + hy) * K, (z0 + z1) / 2 * K])}" size="${v([0.043 * K, hy * K, (z1 - z0) / 2 * K])}" mass="${f(m)}" friction="${PHYS.friction} 0.02 0.002"/>`;
+      return `<geom name="g_${n}" type="box" pos="${v([toe[0] * 0.5 * K, (-ank + hy) * K, (z0 + z1) / 2 * K])}" size="${v([0.043 * K, hy * K, (z1 - z0) / 2 * K])}" mass="${f(m)}" conaffinity="1" friction="${PHYS.friction} 0.02 0.002"/>`;
     }
     const c = MAIN[n];
     if (!c) return '';
@@ -109,8 +115,8 @@ export function buildXML(sp, opt = {}) {
   };
   void chestTop;
   return `<mujoco model="player"><compiler angle="radian"/>
-<option timestep="${PHYS.dt}" gravity="0 -9.81 0" integrator="implicitfast" iterations="30" ls_iterations="10"/>
-<default><geom contype="0" conaffinity="1" condim="3" friction="${PHYS.friction} 0.02 0.002" solref="0.008 1" solimp="0.9 0.95 0.001"/></default>
+<option timestep="${PHYS.dt}" gravity="0 -9.81 0" integrator="implicitfast" iterations="${PHYS.iterations}" ls_iterations="${PHYS.lsIterations}"/>
+<default><geom contype="0" conaffinity="${PHYS.footOnly ? 0 : 1}" condim="3" friction="${PHYS.friction} 0.02 0.002" solref="0.008 1" solimp="0.9 0.95 0.001"/></default>
 <worldbody><geom name="floor" type="plane" size="40 40 0.1" euler="-1.5707963 0 0" contype="1" conaffinity="0"/>
 ${body('hips', null)}</worldbody></mujoco>`;
 }
@@ -123,6 +129,44 @@ const qrv = e => { if (e[0] < 0) e = [-e[0], -e[1], -e[2], -e[3]]; const s = Mat
 const qlerp = (a, b, u) => { const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3], s = d < 0 ? -1 : 1; return qnorm([a[0] + (s * b[0] - a[0]) * u, a[1] + (s * b[1] - a[1]) * u, a[2] + (s * b[2] - a[2]) * u, a[3] + (s * b[3] - a[3]) * u]); };
 const qrot = (q, v) => { const t = qmul(qmul(q, [0, v[0], v[1], v[2]]), qconj(q)); return [t[1], t[2], t[3]]; };
 const cap = (v, m) => { const l = Math.hypot(v[0], v[1], v[2]); return l > m ? v.map(x => x * m / l) : v; };
+
+// ── 학습한 제어기(2단계, DReCon 방식) ──
+// 물리 몸 상태와 다음 목표 자세를 보고 관절마다 목표 회전에 더할 작은 회전을 낸다. 학습은 tools/phys/(MuJoCo Warp + Brax PPO)에서,
+// 무게는 art/char3d/policy.json(관측 정규화 + 층마다 무게, swish, 마지막은 tanh). 관측은 학습 환경(tools/phys/env.py _obs)과 같아야 한다
+const b64f = s => { const b = typeof atob === 'function' ? Uint8Array.from(atob(s), c => c.charCodeAt(0)) : Uint8Array.from(Buffer.from(s, 'base64')); return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4); };
+export class Policy {
+  constructor(J) {
+    this.obs = J.obs; this.act = J.act; this.mean = b64f(J.mean); this.std = b64f(J.std);
+    this.L = J.layers.map(l => ({ W: b64f(l.w), b: b64f(l.b), n: l.in, m: l.out }));
+    this.buf = this.L.map(l => new Float32Array(l.m)); this.x0 = new Float32Array(J.obs);
+  }
+  run(o) {
+    let x = this.x0; for (let i = 0; i < this.obs; i++) x[i] = (o[i] - this.mean[i]) / this.std[i];
+    this.L.forEach((l, k) => {
+      const y = this.buf[k], W = l.W, n = l.n, m = l.m, last = k === this.L.length - 1;
+      for (let j = 0; j < m; j++) y[j] = l.b[j];
+      for (let i = 0; i < n; i++) { const xi = x[i]; if (xi === 0) continue; const r = i * m; for (let j = 0; j < m; j++) y[j] += xi * W[r + j]; }
+      if (!last) for (let j = 0; j < m; j++) { const v = y[j]; y[j] = v / (1 + Math.exp(-v)); }
+      x = y;
+    });
+    const a = new Float32Array(this.act); for (let j = 0; j < this.act; j++) a[j] = Math.tanh(x[j]); return a;
+  }
+}
+let POL = null, POLP = null;
+export function loadPolicy() {
+  if (POL) return Promise.resolve(POL);
+  if (!POLP) POLP = (async () => {
+    try { const u = new URL('../art/char3d/policy.json', import.meta.url); u.search = new URL(import.meta.url).search; const r = await fetch(u); if (!r.ok) return null; POL = new Policy(await r.json()); }
+    catch (e) { console.warn('제어기를 못 불러옴', e); POL = null; }
+    return POL;
+  })();
+  return POLP;
+}
+export function setPolicy(p) { POL = p; }
+const expq = v => { const a = Math.hypot(v[0], v[1], v[2]); if (a < 1e-7) return qnorm([1, v[0] / 2, v[1] / 2, v[2] / 2]); const s = Math.sin(a / 2) / a; return [Math.cos(a / 2), v[0] * s, v[1] * s, v[2] * s]; };
+const tan6 = q => { const [w, x, y, z] = q; return [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y), 2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]; };
+const headInv = q => { const [w, x, y, z] = q, fx = 2 * (x * z + w * y), fz = 1 - 2 * (x * x + y * y), yaw = Math.atan2(fx, fz); return [Math.cos(-yaw / 2), 0, Math.sin(-yaw / 2), 0]; };
+const KEYB = ['leftHand', 'rightHand', 'leftFoot', 'rightFoot', 'head'];
 
 // 물리 몸 하나(선수 한 명). 목표: { p: 골반 세계 자리[3], q: 골반 세계 회전[w,x,y,z], j: 관절마다 부모 기준 회전(J 순서, 4개씩) }
 export class PhysBody {
@@ -153,6 +197,83 @@ export class PhysBody {
     const jOf = n => this.J.find(J => J.n === n);
     this.legs = ['left', 'right'].map(sd => ({ foot: m.body(sd + 'Foot').id, thigh: m.body(sd + 'UpperLeg').id, hip: jOf(sd + 'UpperLeg').da, dofs: ['UpperLeg', 'LowerLeg', 'Foot'].flatMap(k => { const J = jOf(sd + k); return [J.da, J.da + 1, J.da + 2]; }) }));
     this.footY = spec.ankle * spec.K;
+    // 제어기: 주요 지점(손·발·머리 + 라켓 가운데), 목표 자세의 주요 지점을 셀 두 번째 데이터
+    this.kid = KEYB.map(n => m.body(n).id); this.rh = m.body('rightHand').id;
+    { const g = spec.grip, L = Math.hypot(...g.shaft); this.sweet = g.pos.map((x, k) => (x + g.shaft[k] / L * 0.45) * spec.K); }
+    this.dk = new mj.MjData(m); this.pol = null;
+  }
+  usePolicy(p) { this.pol = p; this.prev = null; }
+  // 주요 지점 세계 자리(d의 xpos·xquat로, 앞으로 계산을 한 뒤)
+  keyp(d) {
+    const x = d.xpos, xq = d.xquat, o = this.kid.map(b => [x[3 * b], x[3 * b + 1], x[3 * b + 2]]), h = this.rh;
+    const r = qrot([xq[4 * h], xq[4 * h + 1], xq[4 * h + 2], xq[4 * h + 3]], this.sweet); o.push([x[3 * h] + r[0], x[3 * h + 1] + r[1], x[3 * h + 2] + r[2]]); return o;
+  }
+  // 관측(tools/phys/env.py _obs와 같은 순서·값). R: 다음 목표 { p, q, j, lv(세계 빠르기), av(골반 기준 각속도) }
+  obsOf(R) {
+    const { m, d, mj } = this, q = d.qpos, qv = d.qvel, r = this.root, nj = this.J.length, o = [];
+    mj.mj_kinematics(m, d);
+    const rp = [q[r.qa], q[r.qa + 1], q[r.qa + 2]], rq = qnorm([q[r.qa + 3], q[r.qa + 4], q[r.qa + 5], q[r.qa + 6]]), hi = headInv(rq);
+    const jq = this.J.map(J => qnorm([q[J.qa], q[J.qa + 1], q[J.qa + 2], q[J.qa + 3]]));
+    const kp = this.keyp(d).map(p => qrot(hi, [p[0] - rp[0], p[1] - rp[1], p[2] - rp[2]]));
+    o.push(rp[1], ...tan6(qmul(hi, rq)), ...qrot(hi, [qv[r.da], qv[r.da + 1], qv[r.da + 2]]), ...qrot(hi, qrot(rq, [qv[r.da + 3], qv[r.da + 4], qv[r.da + 5]])));
+    for (const a of jq) o.push(...tan6(a));
+    for (const J of this.J) o.push(qv[J.da] * 0.1, qv[J.da + 1] * 0.1, qv[J.da + 2] * 0.1);
+    for (const p of kp) o.push(...p);
+    // 목표: 주요 지점은 목표 자세를 앞으로 계산해서
+    const dk = this.dk, qk = dk.qpos; qk[r.qa] = R.p[0]; qk[r.qa + 1] = R.p[1]; qk[r.qa + 2] = R.p[2]; for (let k = 0; k < 4; k++) qk[r.qa + 3 + k] = R.q[k];
+    this.J.forEach((J, i) => { for (let k = 0; k < 4; k++) qk[J.qa + k] = R.j[4 * i + k]; });
+    mj.mj_kinematics(m, dk);
+    const Rrq = qnorm(R.q), Rhi = headInv(Rrq), Rjq = this.J.map((J, i) => qnorm([R.j[4 * i], R.j[4 * i + 1], R.j[4 * i + 2], R.j[4 * i + 3]]));
+    const Rkp = this.keyp(dk).map(p => qrot(Rhi, [p[0] - R.p[0], p[1] - R.p[1], p[2] - R.p[2]]));
+    o.push(R.p[1] - rp[1], ...tan6(qmul(hi, Rrq)), ...qrot(Rhi, R.lv), ...qrot(Rhi, qrot(Rrq, R.av)));
+    for (const a of Rjq) o.push(...tan6(a));
+    Rkp.forEach((p, k) => o.push(p[0] - kp[k][0], p[1] - kp[k][1], p[2] - kp[k][2]));
+    for (let i = 0; i < nj; i++) o.push(...tan6(qmul(qconj(jq[i]), Rjq[i])));
+    // 목표 자리(물리 몸 쪽으로 옮겨 준 몫 포함, players3d.js physOff)까지 골반 가로 거리(몸 기준)
+    if (this.pol?.obs > o.length) { const pe = qrot(hi, [R.p[0] - rp[0], 0, R.p[2] - rp[2]]); o.push(pe[0], pe[2]); }
+    return o;
+  }
+  // 제어기로: 물리 1/300초씩, 1/30초마다 제어기가 관절 목표를 정한다(그 사이 목표는 앞 목표에서 고르게 넘어간다). 보조 힘은 없다
+  stepPolicy(dt, T) {
+    const { m, d, mj } = this, P = PHYS, h = P.dt, ns = Math.round(1 / P.fps / h), nj = this.J.length, r = this.root, f = P.fps;
+    m.opt.timestep = h;
+    this.acc = Math.min((this.acc || 0) + dt, 6 * h * ns);
+    while (this.acc >= h - 1e-9) {
+      if (!this.sub) {
+        // 목표 빠르기: 앞 판단 때 목표와의 차이
+        // 빠르기는 애니메이션 자리(T.pr: 물리 몸 쪽으로 옮겨 주기 전)로 잰다. 옮겨 준 자리로 재면 옮긴 몫의 변화가 섞여 목표가 물리 몸만큼만 움직이는 것으로 보여 따라잡지 않았다
+        const Rp = this.refPrev, pr = T.pr || T.p;
+        const R = { p: T.p, q: T.q, j: T.j, lv: Rp ? [(pr[0] - Rp.p[0]) * f, (pr[1] - Rp.p[1]) * f, (pr[2] - Rp.p[2]) * f] : [0, 0, 0], av: Rp ? qrv(qmul(qconj(qnorm(Rp.q)), qnorm(T.q))).map(x => x * f) : [0, 0, 0] };
+        const a = this.pol.run(this.obsOf(R));
+        // 남는 힘(학습 env.py와 같게): 행동의 마지막 3개(몸 기준) × res × 몸무게, 세계로 돌려 이 판단 동안 골반에
+        if (a.length > 3 * nj) { const hi = headInv(qnorm([d.qpos[r.qa + 3], d.qpos[r.qa + 4], d.qpos[r.qa + 5], d.qpos[r.qa + 6]])), Mg = this.M * 9.81 * P.res; this.fres = qrot(qconj(hi), [a[3 * nj] * Mg, a[3 * nj + 1] * Mg, a[3 * nj + 2] * Mg]); this.resU = (this.resU || 0) + Math.hypot(a[3 * nj], a[3 * nj + 1], a[3 * nj + 2]) / Math.sqrt(3); this.resN = (this.resN || 0) + 1; }
+        else this.fres = null;
+        this.tgPrev = this.tg; this.tg = new Float64Array(4 * nj); this.wff = new Float64Array(3 * nj);
+        for (let i = 0; i < nj; i++) {
+          const t = qmul(qnorm([T.j[4 * i], T.j[4 * i + 1], T.j[4 * i + 2], T.j[4 * i + 3]]), expq([a[3 * i] * P.sig, a[3 * i + 1] * P.sig, a[3 * i + 2] * P.sig]));
+          this.tg.set(t, 4 * i);
+          const w = qrv(qmul(qconj([this.tgPrev[4 * i], this.tgPrev[4 * i + 1], this.tgPrev[4 * i + 2], this.tgPrev[4 * i + 3]]), t)); this.wff.set([w[0] * f, w[1] * f, w[2] * f], 3 * i);
+        }
+        this.refPrev = { p: pr.slice(), q: T.q.slice() };
+      }
+      const u = (this.sub + 1) / ns, q = d.qpos, qf = d.qfrc_applied;
+      for (let i = 0; i < nj; i++) {
+        const J = this.J[i], a = J.qa;
+        const tg = qlerp([this.tgPrev[4 * i], this.tgPrev[4 * i + 1], this.tgPrev[4 * i + 2], this.tgPrev[4 * i + 3]], [this.tg[4 * i], this.tg[4 * i + 1], this.tg[4 * i + 2], this.tg[4 * i + 3]], u);
+        const e = qrv(qmul(qconj(qnorm([q[a], q[a + 1], q[a + 2], q[a + 3]])), tg));
+        let tx = J.kp * e[0] + J.kd * this.wff[3 * i], ty = J.kp * e[1] + J.kd * this.wff[3 * i + 1], tz = J.kp * e[2] + J.kd * this.wff[3 * i + 2];
+        const l = Math.hypot(tx, ty, tz); if (l > J.tm) { tx *= J.tm / l; ty *= J.tm / l; tz *= J.tm / l; }
+        qf[J.da] = tx; qf[J.da + 1] = ty; qf[J.da + 2] = tz;
+      }
+      const xf = d.xfrc_applied, b6 = 6 * r.bid; for (let k = 0; k < 6; k++) xf[b6 + k] = 0;
+      if (this.fres) { xf[b6] = this.fres[0]; xf[b6 + 1] = this.fres[1]; xf[b6 + 2] = this.fres[2]; }
+      mj.mj_step(m, d);
+      this.sub = (this.sub + 1) % ns; this.acc -= h;
+    }
+    const q = d.qpos;
+    const why = !Number.isFinite(q[r.qa]) ? 'nan' : q[r.qa + 1] < 0.45 ? 'low' : Math.abs(q[r.qa + 1] - T.p[1]) > 0.6 ? 'dy' : Math.hypot(q[r.qa] - T.p[0], q[r.qa + 2] - T.p[2]) > 1.2 ? 'far' : null;
+    if (why) { this.resets = (this.resets || 0) + 1; (this.why ||= {})[why] = (this.why[why] || 0) + 1; this.reset(T); return; }
+    this.prev = { p: T.p.slice(), q: T.q.slice(), j: Float64Array.from(T.j) };
   }
   // 목표 자세로 바로 옮긴다(처음, 화면을 끊고 자리를 옮길 때)
   reset(T) {
@@ -162,11 +283,13 @@ export class PhysBody {
     for (let i = 0; i < m.nv; i++) qv[i] = 0;
     mj.mj_forward(m, d);
     this.prev = { p: T.p.slice(), q: T.q.slice(), j: Float64Array.from(T.j) };
+    this.tg = Float64Array.from(T.j); this.tgPrev = Float64Array.from(T.j); this.wff = new Float64Array(3 * this.J.length); this.refPrev = { p: (T.pr || T.p).slice(), q: T.q.slice() }; this.sub = 0; this.acc = 0;
   }
   // dt초 동안 목표를 따라간다(프레임 사이 목표는 앞 프레임 목표에서 고르게 넘어간다)
   step(dt, T) {
     if (!this.prev) { this.reset(T); return; }
     if (!(dt > 0)) return;
+    if (this.pol && this.root) { this.stepPolicy(dt, T); return; }
     const { m, d, mj } = this, P = PHYS, r = this.root, Pv = this.prev;
     const n = Math.max(1, Math.min(P.maxSub, Math.round(dt / P.dt))), h = dt / n;
     m.opt.timestep = h;
@@ -240,5 +363,5 @@ export class PhysBody {
   }
   // 몸 부분의 세계 자리(잴 때)
   bodyPos(name) { const id = this.m.body(name).id, x = this.d.xpos; return [x[3 * id], x[3 * id + 1], x[3 * id + 2]]; }
-  dispose() { try { this.d.delete(); this.m.delete(); } catch { } }
+  dispose() { try { this.dk.delete(); this.d.delete(); this.m.delete(); } catch { } }
 }

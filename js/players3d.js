@@ -8,7 +8,7 @@ import { VRMLoaderPlugin } from '../vendor/three-vrm.module.min.js';
 import { createRig } from './rig3d.js';
 import { SHOTS, VARIANTS, FORMS, FORM_IDS } from './swings.js';
 import { loadLoco, locoState, locoUpdate, stanceLeft } from './loco3d.js';
-import { PhysBody, PHYS, loadMJ, restSpec } from './phys3d.js';
+import { PhysBody, PHYS, loadMJ, loadPolicy, restSpec } from './phys3d.js';
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -132,7 +132,7 @@ export function setPhysPref(on) { try { localStorage.setItem(PHYS_PREF, on ? '1'
 const SRC = (() => { try { const u = new URL('../art/char3d/vroid_sample.vrm', import.meta.url); u.search = new URL(import.meta.url).search; return u.href; } catch { return 'art/char3d/vroid_sample.vrm'; } })();
 let pending = null;
 // 모델 파일을 미리 받아 둔다(대회 첫 화면에서). 경기 화면에 들어오면 곧 3D 선수가 보이게
-export function prefetchP3d() { loadBuf(); loadLoco(); if (physPref()) loadMJ(); }
+export function prefetchP3d() { loadBuf(); loadLoco(); if (physPref()) { loadMJ(); loadPolicy(); } }
 function loadBuf() {
   if (!pending) pending = (async () => {
     if (typeof location !== 'undefined' && location.protocol === 'file:') return null;
@@ -238,9 +238,10 @@ export class Players3D {
   async attachPhys() {
     if (this.physState === 'loading' || this.physState === 'ready') { this.physOn = true; return; }
     this.physState = 'loading'; this.physOn = true;
-    const mj = await loadMJ();
+    const [mj, pol] = await Promise.all([loadMJ(), loadPolicy()]);
     if (!mj || !this.view.alive) { this.physState = 'fail'; this.physOn = false; this.view.onPhys?.(); return; }
-    try { for (const c of this.list) if (!c.pb) c.pb = new PhysBody(mj, this.pspec); this.physState = 'ready'; }
+    // 학습한 제어기(2단계)가 있으면 그것으로 균형을 잡는다(보조 힘 없음). 없으면 1단계(보조 힘)
+    try { for (const c of this.list) if (!c.pb) { c.pb = new PhysBody(mj, this.pspec); if (pol) c.pb.usePolicy(pol); } this.physPol = !!pol; this.physState = 'ready'; }
     catch (e) { console.warn('물리 몸을 못 만듦', e); this.physState = 'fail'; this.physOn = false; }
     this.view.onPhys?.();
   }
@@ -250,25 +251,36 @@ export class Players3D {
     for (const c of this.list) if (c.pb) c.pb.prev = null;   // 다시 켤 때는 지금 자세에서 시작
   }
   // 물리 한 프레임: 애니메이션이 만든 자세(목표)를 읽어 물리 몸을 dt초 굴리고, 물리 몸 자세를 뼈에 다시 쓴다
-  physStep(c, pdt, cut) {
+  physStep(c, pdt, cut, noSync) {
     const R = c.rig, hb = R.B('hips'), pb = c.pb;
     hb.matrixWorld.decompose(_pp, _pq, _ps);
     const T = c.pT || (c.pT = { p: [0, 0, 0], q: [1, 0, 0, 0], j: new Float64Array(4 * pb.J.length) });
     T.p = [_pp.x, _pp.y, _pp.z]; T.q = [_pq.w, _pq.x, _pq.y, _pq.z];
     pb.J.forEach((J, k) => { const b = R.B(J.n).quaternion; T.j[4 * k] = b.w; T.j[4 * k + 1] = b.x; T.j[4 * k + 2] = b.y; T.j[4 * k + 3] = b.z; });
     // 화면을 끊고 자리를 옮겼거나 한 프레임에 35cm 넘게 옮겨졌으면 목표 자세에서 다시 시작한다
+    // 학습한 제어기: 애니메이션은 그대로 두고 물리에 주는 목표만 물리 몸 쪽으로 옮겨 준다(c.physOff). 옮긴 몫은 프레임마다 조금씩 줄여(PHYS.bleed)
+    // 물리 몸이 애니메이션 자리로 천천히 다가가게 한다(애니메이션을 옮기면 이동 엔진이 그것을 보고 더 서둘러 물리 몸이 넘어졌다)
+    const po = c.physOff || (c.physOff = [0, 0]), A0 = [T.p[0], T.p[2]];
+    T.pr = [T.p[0], T.p[1], T.p[2]];   // 애니메이션 자리(목표 빠르기를 잴 때)
+    if (pb.pol) { T.p = [T.p[0] + po[0], T.p[1], T.p[2] + po[1]]; }
     const jump = pb.prev && Math.hypot(T.p[0] - pb.prev.p[0], T.p[2] - pb.prev.p[2]) > 0.35;
+    c.animPose = { hp: hb.position.clone(), n: pb.J.map(J => J.n), q: pb.J.map(J => R.B(J.n).quaternion.clone()) };
     if (globalThis.__physRec) globalThis.__physRec(c, T, this.bt, !!(cut || jump || !pb.prev));
-    if (cut || jump || !pb.prev) pb.reset(T); else pb.step(pdt, T);
+    if (cut || jump || !pb.prev) { po[0] = po[1] = 0; T.p = [A0[0], T.p[1], A0[1]]; pb.reset(T); } else pb.step(pdt, T);
     const o = pb.out();
+    if (pb.pol) {
+      const k = Math.min(1, PHYS.bleed * pdt * PHYS.fps); po[0] = (o.p[0] - A0[0]) * (1 - k); po[1] = (o.p[2] - A0[1]) * (1 - k);
+      if (c.rp) c.rp = [c.rp[0] + o.p[0] - A0[0], c.rp[1] + o.p[2] - A0[1]];   // 발밑 고리·그림자·감정 표시는 물리 몸 자리에
+    }
     _pm.compose(_pp.set(o.p[0], o.p[1], o.p[2]), _pq.set(o.q[1], o.q[2], o.q[3], o.q[0]), _ps.set(K, K, K));
     _pm.premultiply(_pi.copy(hb.parent.matrixWorld).invert()); _pm.decompose(hb.position, hb.quaternion, _ps);
     pb.J.forEach((J, k) => R.B(J.n).quaternion.set(o.j[4 * k + 1], o.j[4 * k + 2], o.j[4 * k + 3], o.j[4 * k]));
     c.vrm.scene.updateMatrixWorld(true);
     // 애니메이션은 물리 몸이 실제로 있는 곳에서 다음 프레임을 짠다(DReCon: 운동학 캐릭터의 뿌리를 시뮬레이션 캐릭터에 맞춘다).
     // 몸이 못 따라간 만큼(골반 가로 차이) 애니메이션의 세계 자리(뿌리, 디딘 발, 걸음)를 통째로 옮긴다. 목표(그림 선수 자리)는 그대로라 이동 엔진이 다시 다가간다
+    // 서브(준비·스윙)는 뿌리를 칠 자리에 붙여 두므로 옮기지 않는다(디딘 발만 옮겨져 다리가 벌어지고 골반이 내려앉아 물리 몸이 주저앉았다)
     const dx = (o.p[0] - T.p[0]) * PHYS.sync, dz = (o.p[2] - T.p[2]) * PHYS.sync;
-    if (Math.hypot(dx, dz) > 1e-5) shiftAnim(c, dx, dz);
+    if (!noSync && !pb.pol && Math.hypot(dx, dz) > 1e-5) shiftAnim(c, dx, dz);
   }
 
   // 그 선수의 폼으로 친 샷(없으면 기본). sv2는 그 사람 서브의 작은 동작
@@ -327,11 +339,17 @@ export class Players3D {
       if (L2 > mx) { a.sep[0] += dx2 * mx / L2; a.sep[1] += dz2 * mx / L2; } else { a.sep[0] = tx; a.sep[1] = tz; }
       void L;
     }
+    // 학습한 제어기는 1/30초 뒤 목표로 몸을 옮긴다(물리가 애니메이션보다 한 판단만큼 늦다). 애니메이션 시계(스윙 때)를 그만큼 앞서 돌려 라켓이 공에 제때 닿게 한다
+    const lead = this.physOn && this.physPol ? (PHYS.lead ?? 1) / PHYS.fps : 0;
+    this.bt += lead;
     for (let i = 0; i < 4; i++) this.updateOne(i, pdt, dt);
+    this.bt -= lead;
   }
 
   updateOne(i, pdt, dt) {
     const v = this.view, p = v.players[i], c = this.list[i], R = c.rig, vrm = c.vrm, team = c.team;
+    // 물리 몸을 그린 프레임 다음에는 애니메이션이 자기 자세(앞 프레임 목표)에서 이어 가게 뼈를 되돌린다(애니메이션이 물리 자세를 읽어 목표가 바뀌지 않게)
+    if (c.animPose) { const a = c.animPose; R.B('hips').position.copy(a.hp); a.q.forEach((q, k) => R.B(a.n[k]).quaternion.copy(q)); vrm.scene.updateMatrixWorld(true); c.animPose = null; }
     const base = team === 0 ? Math.PI : 0;
     // 지금 할 동작: 스윙 창 안이면 그 스윙, 아니면 준비 자세(네트 앞이면 발리 준비, 서브할 사람은 서브 준비)
     let sw = c.sw;
@@ -684,7 +702,7 @@ export class Players3D {
     // 코트 위로
     vrm.scene.position.set(rx, jy, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
     vrm.scene.updateMatrixWorld(true);
-    if (c.pb && this.physOn) this.physStep(c, pdt, v.cutting);   // 물리 몸(1단계): 애니메이션은 목표, 그리는 몸은 물리
+    if (c.pb && this.physOn) this.physStep(c, pdt, v.cutting, id === 'sv');   // 물리 몸(1단계): 애니메이션은 목표, 그리는 몸은 물리
     vrm.update(dt);
     // 서브 토스용: 왼손(공을 쥔 곳)의 세계 자리
     if (id === 'sv') {
