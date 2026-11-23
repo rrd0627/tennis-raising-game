@@ -916,10 +916,11 @@ export class MatchView {
     for (let t = 0.1; t <= fl.dur + 1e-6; t += 1 / 30) { const [x, z, y] = fl.at(t); path.push([t, x, z, y]); }
     if (fl.end) { const st = Float64Array.from(fl.end); let t = fl.dur; for (let k = 0; k < 45; k++) { for (let q = 0; q < 4; q++) stepFree(st, 1 / 120, this.surface); t += 1 / 30; path.push([t, st[0], st[2], st[1]]); } }
     const run = (tau, top, a) => (tau <= 0 ? 0 : tau < top / a ? 0.5 * a * tau * tau : top * tau - top * top / (2 * a));
-    const best = j => {
+    const best = (j, tMin = 0) => {
       const m = s.mv?.[j], p = this.players[j], top = m?.top || 3.9, reach = m?.reach || 1.1, react = m?.react ?? 0.22, a = p.acc || ACC;
       let b = null;
       for (const [t, x, z, y] of path) {
+        if (t < tMin) continue;
         if (y > 2.4 || (t > fl.t1 && (t > fl.t1 + 1.1 || y < 0.1))) continue;   // 너무 높거나, 두 번 튀어 끝난 공(바운드 뒤 1.1초까지만 칠 수 있다)
         if (Math.abs(x) > 10.4 || z < -18.9 || z > 20.4) continue;   // 펜스 너머
         const def = Math.hypot(x - p.x, z - p.z) - reach - run(t - react, top, a);
@@ -931,14 +932,22 @@ export class MatchView {
     if (s.res === 'out') {
       const c = ids.map(j => [j, best(j)]).filter(([, b]) => b).sort((a, b) => a[1].def - b[1].def);
       if (!c.length) return null;
-      const [j, b] = c[0], p = this.players[j], B = s.bounce || s.to;
+      const [j, b] = c[0], B = s.bounce || s.to;
       const outBy = Math.max(Math.abs(B[0]) - 5.485, Math.abs(B[1]) - 11.885);
-      const dx = p.x - b.x, dz = p.z - b.z, dd = Math.hypot(dx, dz) || 1, off = Math.min(0.7, dd);
-      const X = [b.x + (dx / dd) * off, b.z + (dz / dd) * off];
-      if (b.t < fl.t1 - 0.05 && b.def <= 0.3) plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top * 0.9, k: 'let', chase: 0, def: b.def };
-      else plan[j] = { x: X[0], z: X[1], t0: b.react, v: b.top, k: 'let', chase: 1, def: b.def, stopAt: outBy > 0.45 ? fl.t1 + 0.22 : Math.max(fl.t1 + 0.35, b.t - 0.05) };
-      const o = ids.find(i => i !== j), po = this.players[o], d = Math.hypot(b.x - po.x, b.z - po.z) || 1, go = Math.min(d, Math.max(0.6, d * 0.2));
-      plan[o] = { x: po.x + ((b.x - po.x) / d) * go, z: po.z + ((b.z - po.z) / d) * go * 0.5, t0: 0.28, v: 3.5, k: 'shift' };
+      // 공 옆(받을 사람 쪽 0.7m)까지 전속력으로 쫓는다. 확실히 나간 공(0.45m 넘게)은 떨어지는 것을 보고 멈춘다
+      const chaseTo = (i, q) => {
+        const p = this.players[i], dx = p.x - q.x, dz = p.z - q.z, dd = Math.hypot(dx, dz) || 1, off = Math.min(0.7, dd);
+        return { x: q.x + (dx / dd) * off, z: q.z + (dz / dd) * off, t0: q.react, v: q.top, k: 'let', chase: 1, def: q.def, stopAt: outBy > 0.45 ? fl.t1 + 0.22 : Math.max(fl.t1 + 0.35, q.t - 0.05) };
+      };
+      if (b.t < fl.t1 - 0.05 && b.def <= 0.3) { const X = chaseTo(j, b); plan[j] = { x: X.x, z: X.z, t0: b.react, v: b.top * 0.9, k: 'let', chase: 0, def: b.def }; }
+      else plan[j] = chaseTo(j, b);
+      // 파트너: 조금 나간 공(0.6m 안)은 나가는지 확실하지 않으니 받을 것처럼 뛴다(사용자 2026-11-23: 아웃이 많이 나가지 않았는데 쫓아가지 않는 게 이상하다,
+      // 확실하지 않으면 뛰어서 받으려고 한다). 앞사람이 곁을 지나는 공을 보냈으면 그 뒤(떨어지는 곳)를, 앞사람이 쫓는 공이면 둘 사이가 1.5m 넘게 떨어진 곳만
+      const o = ids.find(i => i !== j), po = this.players[o], passed = !plan[j].chase;
+      const bo = best(o, passed ? fl.t1 - 0.05 : 0);
+      // 파트너는 떨어진 것을 보면 곧 선다(바운드 뒤 0.6초까지만, 펜스까지 쫓아가지 않게)
+      if (bo && outBy < 0.6 && bo.def <= 2.5 && (passed || Math.hypot(bo.x - b.x, bo.z - b.z) > 1.5)) { plan[o] = chaseTo(o, bo); plan[o].stopAt = Math.min(plan[o].stopAt, fl.t1 + 0.6); }
+      else { const d = Math.hypot(b.x - po.x, b.z - po.z) || 1, go = Math.min(d, Math.max(0.6, d * 0.2)); plan[o] = { x: po.x + ((b.x - po.x) / d) * go, z: po.z + ((b.z - po.z) / d) * go * 0.5, t0: 0.28, v: 3.5, k: 'shift' }; }
       return plan;
     }
     // 위너: 닿을 가능성이 있는 사람은 모두 공 쪽으로 쫓아가 몸을 던진다(둘 사이로 오는 공은 둘 다 움직인다).
