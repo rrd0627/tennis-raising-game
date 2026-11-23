@@ -125,7 +125,7 @@ export function p3dPref() { try { return localStorage.getItem(PREF) !== '0'; } c
 export function setP3dPref(on) { try { localStorage.setItem(PREF, on ? '1' : '0'); } catch { } }
 // 물리 몸(1단계 시험, js/phys3d.js). 학습한 제어기(2단계)가 없어 지금은 애니메이션보다 나빠서 꺼 둔다. 주소에 ?phys를 붙이거나 이 기기에 켜 두면(tennis.phys = '1') 켜진다
 const PHYS_PREF = 'tennis.phys';
-export function physPref() { try { return /[?&]phys/.test(location.search) || localStorage.getItem(PHYS_PREF) === '1'; } catch { return false; } }
+export function physPref() { try { return /[?&]phys(?:[=&]|$)/.test(location.search) || localStorage.getItem(PHYS_PREF) === '1'; } catch { return false; } }
 export function setPhysPref(on) { try { localStorage.setItem(PHYS_PREF, on ? '1' : '0'); } catch { } }
 
 // 모델 주소는 이 모듈 기준(index.html이 붙인 빌드 번호를 같이 붙인다). play.html(한 파일)에서는 못 불러오고 그림 선수를 쓴다
