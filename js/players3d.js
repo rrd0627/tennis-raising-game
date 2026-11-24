@@ -568,7 +568,8 @@ export class Players3D {
     { const f0 = over.foot, h0 = over.hip; c.foPrev = c.fo; c.fo = {};
       // 서브는 준비부터 착지까지 옮기지 않고 착지(0.35~0.6초) 동안 다시 켠다. 켜고 끄는 것은 초당 8만큼 천천히
       // (한 프레임에 켜고 끄면 토스를 시작할 때·이동 엔진으로 넘어갈 때 골반이 14cm 튀었다, 2026-11-20)
-      const wbT = id === 'sv' ? (inSw && tc > 0 ? sstep(0.35, 0.6, tc) : 0) : inSw ? sstep(0.12, 0.35, Math.abs(tc)) : 1;
+      // 달리며 치는 공(다리는 이동 엔진)은 임팩트 둘레에도 골반을 디딘 발 쪽으로 옮긴다(손은 그대로라 라켓은 안 움직인다. 골반이 두 발보다 앞서 넘어지듯 기울었다, 2026-11-24)
+      const wbT = id === 'sv' ? (inSw && tc > 0 ? sstep(0.35, 0.6, tc) : 0) : inSw && !sw.runLegs ? sstep(0.12, 0.35, Math.abs(tc)) : 1;
       c.wbS = c.wbS == null ? wbT : c.wbS + clamp(wbT - c.wbS, -8 * pdt, 8 * pdt);
       const wb = c.wbS;
       over.foot = (side, f) => {
@@ -639,6 +640,9 @@ export class Players3D {
     // 코트 위로
     vrm.scene.position.set(rx, jy, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
     vrm.scene.updateMatrixWorld(true);
+    // 발밑 고리·감정 표시 자리: 골반을 땅에 내린 자리(0.08초로 편 것). 뿌리(c.rp)를 따르면 동작에서 이동 엔진으로 넘어갈 때 뿌리를 골반 밑으로 옮기는 순간(reRoot)
+    // 고리가 한 번에 33~63cm 옮겨 순간이동처럼 보였다(사용자 2026-11-24: 서브 이후에 순간이동하는 것 같다. 서브 뒤 0.65초에 63cm)
+    { const hw = R.B('hips').getWorldPosition(V3()), k = tele || !c.gp ? 1 : Math.min(1, pdt / 0.08); c.gp = c.gp ? [c.gp[0] + (hw.x - c.gp[0]) * k, c.gp[1] + (hw.z - c.gp[1]) * k] : [hw.x, hw.z]; }
     vrm.update(dt);
     // 서브 토스용: 왼손(공을 쥔 곳)의 세계 자리
     if (id === 'sv') {
@@ -662,20 +666,36 @@ export class Players3D {
     // 예전에는 남은 거리(0.8m 넘게)와 그림 선수의 목표 빠르기로만 정해서, 1~2m를 초속 2.4m로 옆으로 갈 때 네트를 본 옆걸음(사이드 스텝) 동작이 빠르기를 못 따라가
     // 뒷발이 끌려가며 다리가 옆으로 크게 벌어졌다. 지금은 앞으로 0.35초 동안 실제로 갈 빠르기로 정한다: 초속 1.0m 아래는 옆걸음, 1.9m에서 다 튼다. 칠 때가 다가오면(0.45~0.22초 전, 스윙이 시작되기 직전) 다시 선다
     {
-      const q0 = spriteAt(p, 0), q1 = spriteAt(p, 0.35), vx = (q1[0] - q0[0]) / 0.35, vz = (q1[1] - q0[1]) / 0.35, vs = Math.hypot(vx, vz);
+      // 몸이 실제로 가야 할 길(지금 몸 자리 → 0.35초 뒤 목표). 그림 선수의 움직임만 보면 몸이 뒤처졌다 따라잡는 동안(초속 4~7m)을 못 봐 옆걸음으로 따라잡았다(2026-11-24)
+      const gx = tgx - p.x, gz = tgz - p.z, q0 = spriteAt(p, 0), q1 = spriteAt(p, 0.35), vx = (q1[0] + gx - B.x) / 0.35, vz = (q1[1] + gz - B.z) / 0.35, vs = Math.hypot(vx, vz);
       let tw = 0;
       if (vs > 0.3) {
+        // 멀리(1초 뒤 1.8~3m 넘게) 빨리(초속 1.6~2.4m 넘게) 갈 때는 가는 쪽으로 150도까지 돌아 달린다(뒤로 가는 로브도 돌아서 달려간다).
+        // 짧게는 75도까지(옆걸음·크로스 스텝). 예전에는 뒤로 갈 때 늘 오른쪽으로 75도만 돌아 가는 쪽과 몸이 90도로 어긋난 옆걸음으로 3~6m를 갔다
+        // (사용자 2026-11-24: 달리는 상황이면 달리기 모션으로 바뀌어야 하는데, 멀리 가는데도 계속 스텝을 유지하면서 달리려고 한다)
+        const q2 = spriteAt(p, 1.0), far = Math.hypot(q2[0] + gx - B.x, q2[1] + gz - B.z);
+        // 초속 2.4~3.2m 넘게는 거리와 상관없이 달린다(그 빠르기의 옆걸음은 사람이 못 한다)
+        const maxW = (75 + 75 * Math.max(sstep(1.8, 3.0, far) * sstep(1.6, 2.4, vs), sstep(2.4, 3.2, vs))) * D;
         const rel = wr(Math.atan2(vx, vz) - base);
-        const off = Math.abs(rel) > 150 * D ? -75 * D : clamp(rel, -75 * D, 75 * D) * sstep(30 * D, 55 * D, Math.abs(rel));   // 뒤로 갈 때(로브)는 오른쪽으로 돌아 옆으로 물러난다
-        tw = off * sstep(1.0, 1.9, vs) * sstep(0.22, 0.45, toIn);
+        const off = Math.sign(rel) * Math.min(Math.abs(rel), maxW) * sstep(30 * D, 55 * D, Math.abs(rel));
+        // 칠 때가 다가오면 다시 선다(달리며 치는 공은 0.3~0.12초 전, 그 밖은 0.45~0.22초 전). 친 뒤에는 곧바로 다시 가는 쪽으로(예전에는 스윙이 끝날 때까지 네트를 본 채 옆걸음으로 갔다)
+        // 아직 정하기 전(임팩트 0.3초 전)이라도 초속 1.8m 넘게 달리고 있으면 달리며 치는 공이 된다(RUN_HIT): 그 시간표로
+        const runHit = sw?.runLegs ?? (sw?.runLegs == null && Math.hypot(B.vx, B.vz) > RUN_HIT[0]);
+        const hitK = toIn < 0 ? 1 : runHit ? sstep(0.12, 0.3, toIn) : sstep(0.22, 0.45, toIn);
+        tw = off * sstep(1.0, 1.9, vs) * hitK;
       }
-      c.warp = (c.warp || 0) + (tw - (c.warp || 0)) * Math.min(1, pdt * (sw?.runLegs ? 16 : 7));   // 달리며 칠 때는 임팩트 전에 다 선다
+      // 가까운 쪽으로 돈다(가는 쪽이 오른쪽 뒤에서 왼쪽 뒤로 바뀌면 네트 쪽을 거쳐 235도 돌지 않고 뒤쪽을 거쳐 125도). 달리며 칠 때는 임팩트 전에 다 선다
+      c.warp = wr((c.warp || 0) + wr(tw - (c.warp || 0)) * Math.min(1, pdt * (sw?.runLegs ? 16 : 7)));
       c.faceBase = face; face += c.warp;
     }
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
     // (지금 옮긴 만큼만 넣으면 서 있는 동안 미리 다가가지 않고 마지막 0.3초에 몰아서 갔다, 2026-11-19)
     const ox = tgx - p.x, oz = tgz - p.z, oT = c.offT && toIn < 9 ? c.offT : null;
-    const Q = { fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh || !!c.lc.reSearch, pivot: Math.abs(c.warp || 0) > 0.35, due: sw?.runLegs && toIn > 0 && toIn < 9 ? toIn : 0 };
+    // 몸(뿌리)은 디딘 발이 허락하는 만큼만 당긴다(트리플A: 캡슐이 발보다 먼저 가지 않는다. 사용자 2026-11-24: 무게중심이 넘어지듯 보인다, transform을 먼저 옮기지 말고 다리가 같이 움직이게).
+    // 디딘 발이 동작의 발 자리에서 12cm 넘게 벌어지면 당기기를 줄이고 30cm에서 멈춘다(그 전에 16cm에서 다시 디딘다). 나머지는 걸음(빨리 틀기·보폭)이 메운다. 예전에는 30cm 넘게 벌어져야 다시 디뎌서 골반이 디딘 발보다 40cm 앞서 기울었다
+    let disc = 0; for (const sd of ['left', 'right']) { const L = c.lk?.[sd]; if (L?.lock && !L.step) disc = Math.max(disc, L.disc || 0); }
+    const pullK = 1 - sstep(0.12, 0.3, disc); c.pullK = pullK;
+    const Q = { pullK, fut: t => { const q = spriteAt(p, t); let ax = ox, az = oz; if (oT) { const u = clamp(t / Math.max(0.05, toIn - 0.22), 0, 1); ax += (oT.x - c.off.x) * u; az += (oT.z - c.off.z) * u; } return [q[0] + ax, q[1] + az]; }, face: () => face, tx: tgx, tz: tgz, maxOff: 0.7 + 0.5 * sstep(0.4, 1.0, toIn), force: c.lc.fresh || !!c.lc.reSearch, pivot: Math.abs(c.warp || 0) > 0.35, due: sw?.runLegs && toIn > 0 && toIn < 9 ? toIn : 0 };
     // 막 넘겨받았을 때(친 뒤·서브 착지 뒤)는 그동안 그림 선수가 멀어져 있어도 묶지 않고 걸음으로 따라잡는다(1.5초에 걸쳐 원래 값으로)
     c.lc.age = (c.lc.age || 0) + pdt; Q.maxOff += 2.0 * (1 - sstep(0.6, 1.5, c.lc.age));
     // 지금 걸음 차례(오른발, 왼발: 디딘 지 +초, 뜬 지 -초): 이동 엔진이 같은 걸음 차례로 이어지는 프레임을 찾게
@@ -734,7 +754,8 @@ export class Players3D {
       // 디딘 발이 동작의 발 자리에서 30cm 넘게 벌어지면(몸이 목표 쪽으로 당겨졌거나, 막 넘겨받아 자세가 달랐을 때) 끌지 않고 들어서 그 자리로 옮겨 딛는다
       // (트리플A 발 고정의 unplant·replant. 예전에는 40cm 넘으면 땅에 붙인 채 끌어서 발이 미끄러져 끌려다니는 것처럼 보였다, 사용자 2026-11-20)
       const ex = wx - L.lock.x, ez = wz - L.lock.z, e = Math.hypot(ex, ez), O = c.lk[s === 'r' ? 'left' : 'right'];
-      if (e > 0.3 && !O.step && O.lock && (!L.st || !O.st || L.st.t >= O.st.t) && stanceLeft(this.locoDB, c.lc, s) >= 0.2) {   // 동작이 곧 이 발을 들 것이면 기다린다(그 걸음이 옮겨 준다)   // 다른 발이 디디고 있고 이 발 차례일 때만(이 발이 더 오래 디뎠을 때). 두 발이 다 뜨거나 같은 발이 연달아 옮기면 깡충 뛰는 것처럼 보였다
+      L.disc = e;   // 뿌리가 이 디딘 발보다 앞서 간 만큼(m). 이동 엔진이 목표 쪽으로 당기는 것을 줄인다(Q.pullK)
+      if (e > 0.16 && !O.step && O.lock && (!L.st || !O.st || L.st.t >= O.st.t) && stanceLeft(this.locoDB, c.lc, s) >= 0.2) {   // 16cm(예전 30cm): 뿌리가 디딘 발보다 많이 앞서 가기 전에 다시 디딘다(넘어지듯 기울었다, 2026-11-24)   // 동작이 곧 이 발을 들 것이면 기다린다(그 걸음이 옮겨 준다)   // 다른 발이 디디고 있고 이 발 차례일 때만(이 발이 더 오래 디뎠을 때). 두 발이 다 뜨거나 같은 발이 연달아 옮기면 깡충 뛰는 것처럼 보였다
         L.step = { fx: L.lock.x, fz: L.lock.z, tx: wx, tz: wz, y: L.lock.y, t: 0, T: clamp(0.1 + 0.2 * e, 0.14, 0.24), kind: 'unp' }; L.lock = null;
         c.unplant = (c.unplant || 0) + 1;   // 잰 값
         return this.locoFoot(c, side, lp, x, jw);

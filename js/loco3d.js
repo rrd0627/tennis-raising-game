@@ -10,7 +10,8 @@
 const FPS = 30, FUT = [6, 12, 18];   // 앞으로 갈 길을 보는 때(프레임, 0.2·0.4·0.6초)
 const CAND_STEP = 2;                  // 찾을 때 프레임 간격
 const SEARCH_EVERY = 0.1;             // 초
-const BLEND = 0.22;                   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
+const BLEND = 0.22;
+const VMAX = 5.0;                     // 걸음이 내는 빠르기 한계(m/s)                   // 동작이 바뀔 때 앞 자세에서 넘어가는 시간(초)
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const wrapR = a => Math.atan2(Math.sin(a), Math.cos(a));
 const wrapD = a => ((a % 360) + 540) % 360 - 180;
@@ -180,7 +181,8 @@ export function locoUpdate(db, s, dt, Q) {
     // 예전에는 목표의 빠르기만 맞추고 뒤처진 만큼은 몸을 끌어 메워서, 움직임의 절반쯤만 걸음이 만들었다)
     // 달리며 칠 때(Q.due: 임팩트까지 남은 초)는 임팩트 때 설 자리까지 남은 시간에 닿는 빠르기로(트리플A의 거리 맞추기: 걸음이 칠 자리에 맞춰 닿는다)
     const fT = Q.due > 0 && Q.due < 0.3 ? Math.max(Q.due, 0.08) : 0.3;
-    const fa = Q.fut(fT), fv = [fa[0] - s.x, fa[1] - s.z], vd = Math.hypot(...fv) / fT, vf = db.speedAt(Math.floor(s.f)) * s.sc;
+    // 가려는 빠르기는 초속 5.2m까지(따라잡는 동안 빨리 틀기 × 보폭이 초속 6~7m를 내 순간이동처럼 보였다, 2026-11-24)
+    const fa = Q.fut(fT), fv = [fa[0] - s.x, fa[1] - s.z], vd = Math.min(5.2, Math.hypot(...fv) / fT), vf = db.speedAt(Math.floor(s.f)) * s.sc;
     const ratio = vf > 0.35 ? clamp(vd / vf, 0.8, 3.2) : 1;
     // 옆으로 가는 몫(몸이 보는 쪽 기준, 1이면 곧장 옆): 옆걸음(사이드 스텝)은 보폭을 늘리지 않고 걸음을 잦게 한다
     // (사용자 2026-11-20: 옆으로 갈 때 다리가 옆으로 크게 벌어진다. 보폭을 1.3배 늘리면 두 발이 1m 넘게 벌어졌다. 실제 사이드 스텝은 폭은 그대로, 빨리 딛는다)
@@ -192,6 +194,9 @@ export function locoUpdate(db, s, dt, Q) {
   }
   const kr = 1 - Math.exp(-dt / 0.12);
   s.r += ((s.rT ?? 1) - s.r) * kr; s.w += ((s.wT ?? 1) - s.w) * kr;
+  // 걸음이 내는 빠르기(자료 빠르기 × 빨리 틀기 × 보폭)는 초속 5m까지(사람 빠르기). 빨리 틀기·보폭은 천천히 따라가서 자료가 빨라지는 동작(달리기 출발)에서
+  // 6~7.5m까지 넘쳐 몸이 휙 가 순간이동처럼 보였다(사용자 2026-11-24: 몇몇 순간이동하는 듯한 느낌)
+  { const vNow = db.speedAt(Math.floor(s.f)) * s.sc * s.r * s.w; if (vNow > VMAX) { const f = Math.sqrt(VMAX / vNow); s.r *= f; s.w *= f; } }
   // 3) 목표와의 차이를 조금씩(홀든의 adjustment): 반감기 0.3초, 한 프레임에 걸음 빠르기의 50%까지. 걸음이 멈춘(서 있는) 동안은 당기지 않는다
   //    (서 있는데 당기면 발은 그대로 몸만 옆으로 가 넘어질 자세가 됐다, 사용자 2026-11-16). 서 있을 때 차이는 동작 찾기가 걸음으로 메운다.
   //    maxOff는 비상용(예전 0.25~0.45m로 묶어 몸을 끌어 다녔다. 사용자 2026-11-20: 캐릭터를 옮기고 다리가 제멋대로 따라오는 느낌)
@@ -199,10 +204,13 @@ export function locoUpdate(db, s, dt, Q) {
   if (el > 1e-4) {
     const sp = Math.hypot(s.x - x0, s.z - z0) / dt;
     // 달리며 칠 때는 남은 차이를 임팩트 때까지 다 메운다(라켓이 공에 오게. 반감기 0.3초로는 임팩트 때 13~27cm 모자랐다). 걸음 빠르기의 50% + 초속 0.8m까지
-    const m = Q.due > 0 ? Math.min(el * Math.min(1, dt / Math.max(0.03, Q.due - 0.01)), (0.5 * sp + 0.8) * dt) : Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.3)), 0.5 * sp * dt);
+    // (25% + 0.3m로 줄여 보니 짧은 공에서 라켓이 공을 19cm 비켜 그대로 뒀다. 그 대신 골반을 디딘 발 쪽으로 옮긴다: players3d의 균형 잡기, 2026-11-24)
+    const m = (Q.pullK ?? 1) * (Q.due > 0 ? Math.min(el * Math.min(1, dt / Math.max(0.03, Q.due - 0.01)), (0.5 * sp + 0.8) * dt) : Math.min(el * (1 - Math.exp(-dt * Math.LN2 / 0.3)), 0.5 * sp * dt));
+    // pullK: 디딘 발이 허락하는 만큼만(디딘 발이 동작의 발 자리에서 벌어질수록 줄인다. 뿌리가 발보다 먼저 가면 넘어지는 것처럼 기울었다)
     s.x += ex / el * m; s.z += ez / el * m;
     const e2 = Math.hypot(Q.tx - s.x, Q.tz - s.z), mo = Q.maxOff ?? 0.45;
-    if (e2 > mo) { const u = (e2 - mo) / e2; s.x += (Q.tx - s.x) * u; s.z += (Q.tz - s.z) * u; }
+    // 비상용도 초속 2.5m까지만(한 번에 옮기면 몸이 한 프레임에 28cm 튀어 순간이동처럼 보였다, 2026-11-24). 나머지는 걸음이 따라잡는다
+    if (e2 > mo) { const u = Math.min(e2 - mo, 2.5 * dt) / e2; s.x += (Q.tx - s.x) * u; s.z += (Q.tz - s.z) * u; }
   }
   // 바라볼 쪽도 조금씩(반감기 0.15초, 초당 (자료가 도는 빠르기의 80% + 움직이는 빠르기에 따라 60~200도)까지. 서서 제자리에서 휙 돌지 않게, 달리면서는 빨리)
   const fy = Q.face(0), dy = wrapR(fy - s.yaw);

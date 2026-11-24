@@ -467,7 +467,7 @@ export class MatchView {
   placeAll() {
     const s3 = this.show3d;
     // 3D 선수일 때는 그림자·발밑 고리·감정 표시를 3D 몸 자리에(그림 선수 자리와 최대 1m 어긋난다)
-    const at = i => (s3 && this.p3d.list[i]?.rp) || [this.players[i].x, this.players[i].z];
+    const at = i => (s3 && (this.p3d.list[i]?.gp || this.p3d.list[i]?.rp)) || [this.players[i].x, this.players[i].z];   // 3D 선수는 골반을 땅에 내린 자리(c.gp)
     for (const [pi, p] of this.players.entries()) {
       p.sp.visible = !s3;
       // 뛸 때 위아래로 들썩이고 앞으로 기운다. 스윙 순간에는 몸이 돌아간다.
