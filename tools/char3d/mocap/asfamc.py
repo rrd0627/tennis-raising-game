@@ -1,5 +1,5 @@
 # CMU 모션캡처(ASF 뼈대 + AMC 동작)를 읽어 프레임마다 관절의 세계 자리를 낸다. loco.py가 100STYLE BVH와 같은 꼴로 쓰게
-# 관절 이름을 100STYLE 이름으로 바꾸고, 회전(골반·가슴·발목)은 자리로 만든 틀로 낸다(뼈대마다 축 약속이 달라서)
+# 관절 이름을 100STYLE 이름으로 바꾸고, 골반·가슴 회전은 자리로 만든 틀, 발목은 발 뼈 회전의 가로축으로 낸다(뼈대마다 축 약속이 달라서)
 # 자료: CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), 모든 쓰임에 자유(원본을 그대로 팔지만 않으면)
 import numpy as np
 
@@ -93,7 +93,7 @@ def frame_of(p0, p1, up_hint):
     return np.stack([x, y, z], -1)
 
 def load(asf_path, amc_path, fps_in=120):
-    """loco.py의 100STYLE 꼴: P(이름 → 자리 m, 세계, y 위), R(Hips·Chest3·LeftAnkle·RightAnkle 회전 틀), 프레임 간격(초)"""
+    """loco.py의 100STYLE 꼴: P(이름 → 자리 m, 세계, y 위), R(Hips·Chest3는 자리로 만든 틀, LeftAnkle·RightAnkle는 발 뼈 회전으로 낸 가로축 틀), 프레임 간격(초)"""
     asf = parse_asf(asf_path); frames = parse_amc(amc_path)
     pos, R = fk(asf, frames)
     P = {
@@ -109,8 +109,12 @@ def load(asf_path, amc_path, fps_in=120):
     up = np.array([0, 1.0, 0])
     spine = P['Neck'] - P['Hips']
     Rm = {'Hips': frame_of(P['LeftHip'], P['RightHip'], spine), 'Chest3': frame_of(P['LeftShoulder'], P['RightShoulder'], P['Neck'] - P['Chest'])}
-    for s in ('Left', 'Right'):
-        fw = P[s + 'Toe'] - P[s + 'Ankle']; fw[:, 1] = 0; fw /= np.linalg.norm(fw, axis=1, keepdims=True)
-        lat = np.cross(np.broadcast_to(up, fw.shape), fw)   # 발의 왼쪽(가로축): cross(lat, 위) = 발끝 쪽
-        Rm[s + 'Ankle'] = np.stack([lat, np.broadcast_to(up, fw.shape), fw], -1)
+    # 발의 가로축(발목 경첩 축)은 발 뼈의 회전으로 낸다. 발끝 자리로 내면(발목 → 앞꿈치를 바닥에 내린 쪽) 달리며 뒤로 차 올린 발처럼
+    # 발끝이 아래 뒤를 가리킬 때 앞뒤가 뒤집혀(동작에 따라 프레임의 5~34%) 게임에서 무릎이 뒤로 꺾였다(사용자 2026-11-24: 다리가 반대로 돌아간다)
+    for s, c in (('Left', 'l'), ('Right', 'r')):
+        d = asf['bones'][c + 'foot']['dir'].copy(); d[1] = 0; d /= np.linalg.norm(d)
+        lat = np.einsum('fij,j->fi', R[c + 'foot'], np.cross(up, d)); lat[:, 1] = 0
+        lat /= np.maximum(1e-6, np.linalg.norm(lat, axis=1, keepdims=True))   # 발의 왼쪽(가로축): cross(lat, 위) = 발끝 쪽
+        fw = np.cross(lat, np.broadcast_to(up, lat.shape))
+        Rm[s + 'Ankle'] = np.stack([lat, np.broadcast_to(up, lat.shape), fw], -1)
     return P, Rm, 1.0 / fps_in

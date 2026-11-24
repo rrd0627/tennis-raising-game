@@ -26,6 +26,10 @@ function spriteAt(p, T) {
 }
 const D = Math.PI / 180;
 const WARP_BACK = 0.55;   // 하체를 튼 만큼 상체를 되돌리는 몫
+// 발끝 방향은 골반 기준 바깥으로 70도, 안으로 45도까지(엉덩이 관절 돌림 + 무릎 굽혔을 때 정강이 돌림). 리그는 무릎을 발끝 쪽으로 굽히므로
+// 발이 골반과 90도 넘게 어긋나면 무릎이 뒤로 꺾여 보였다(사용자 2026-11-24: 다리가 반대로 돌아가는 경우가 꽤 자주). 넘으면 앞꿈치를 축으로 돈다
+const HIP_TURN = { out: [50, 70], in: [30, 45] };
+const softMax = (x, a, b) => x <= a ? x : a + (b - a) * Math.tanh((x - a) / (b - a));
 const wrapD = a => ((a % 360) + 540) % 360 - 180;   // 각(도)을 -180~180으로
 // 동작이 바뀔 때 뼈를 섞지 않는 곳: 다리와 골반·몸통(이것들은 자세 값에서 섞어 다리 IK가 디딘 발에 맞는다)
 const NOFADE = /^(hips|spine|chest|upperChest|(left|right)(UpperLeg|LowerLeg|Foot|Toes))$/;
@@ -567,7 +571,12 @@ export class Players3D {
       const wbT = id === 'sv' ? (inSw && tc > 0 ? sstep(0.35, 0.6, tc) : 0) : inSw ? sstep(0.12, 0.35, Math.abs(tc)) : 1;
       c.wbS = c.wbS == null ? wbT : c.wbS + clamp(wbT - c.wbS, -8 * pdt, 8 * pdt);
       const wb = c.wbS;
-      over.foot = (side, f) => { const o = f0(side, f); c.fo[side] = o; return o; };
+      over.foot = (side, f) => {
+        const o = f0(side, f), hy = c.hipP?.[3];
+        // 발끝 방향을 골반 기준 사람 범위 안으로(HIP_TURN). 오른발은 -가 바깥, 왼발은 +가 바깥
+        if (hy != null) { const sg = side === 'right' ? -1 : 1, out = sg * wrapD(o[2] - hy), lim = out >= 0 ? softMax(out, ...HIP_TURN.out) : -softMax(-out, ...HIP_TURN.in);
+          if (Math.abs(lim - out) > 1e-3) { o[2] = hy + sg * lim; c.hipTurnN = (c.hipTurnN || 0) + 1; } }
+        c.fo[side] = o; return o; };
       over.hip = h => { h = h0(h); if (c.bal && wb > 0) { h = [h[0] + c.bal[0] * wb, h[1], h[2] + c.bal[1] * wb, h[3]]; c.hipP = h; } return h; }; }
     // 공 높이는 IK로(리그 기준 높이 차이, 사람 범위 안), 앞뒤·옆은 몸을 옮겨 맞춘다
     const contact = sw && (inSw || sw.id !== 'sv') ? sw.contact : c.serve?.contact, Sc = sw ? this.shotOf(c, sw.id) : S;
@@ -732,6 +741,9 @@ export class Players3D {
       }
       if (e > 0.45) { const m = Math.min(e - 0.45, (1.5 + 0.8 * x.spd) * x.pdt); L.lock.x += ex / e * m; L.lock.z += ez / e * m; }   // 다른 발이 옮겨 딛는 중이면 끈다(두 발이 다 뜨지 않게)
       L.lock.y += wrapD(wy - L.lock.y) * Math.min(1, x.pdt * 3);   // 디딘 채 앞꿈치를 축으로 조금 돈다
+      // 몸이 빨리 돌면(칠 때 다시 서기, 크로스 스텝 첫발) 디딘 발은 동작보다 30도까지만 늦게 돈다(앞꿈치를 축으로 피벗. 트리플A 발 고정의 돌림 한계.
+      // 예전에는 초당 3만큼만 따라가 몸이 74도 도는 동안 발이 제자리를 가리켜, 발이 골반과 100도 넘게 어긋나 무릎이 뒤로 꺾였다)
+      { const lag = wrapD(wy - L.lock.y); if (Math.abs(lag) > 30) L.lock.y = wy - Math.sign(lag) * 30; }
       ux = L.lock.x; uz = L.lock.z; uy = L.lock.y; lf = 0;
     } else if (L.lock && x.spd < 0.35 && Math.hypot(wx - L.lock.x, wz - L.lock.z) < 0.1) {
       // 서 있을 때 동작이 발을 10cm 안에서만 옮기면(무게 옮기기) 디딘 채로 둔다(같은 발로 잔걸음을 연달아 했다, 2026-11-21)

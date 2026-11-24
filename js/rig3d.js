@@ -78,7 +78,7 @@ export function createRig(vrm) {
   }
 
 
-  const GUARD = { pole: true, racket: true };   // 사람 범위 지키기·라켓 비키기(시험할 때 끌 수 있다)
+  const GUARD = { pole: true, racket: true, knee: true };   // 사람 범위 지키기·라켓 비키기(시험할 때 끌 수 있다)
   // 지금 샷. rollK: 라켓을 축으로 돌리는 것을 얼마나 아낄지(모션캡처 샷은 손목 회전이 실제라 크게)
   let S = null;
   const sampleKeys = (L, t, key, sub) => {
@@ -155,6 +155,23 @@ export function createRig(vrm) {
     B(L.mid).quaternion.setFromAxisAngle(L.h0, Math.atan2(fd.dot(b), fd.dot(u)) - L.th0);
     B(L.mid).updateMatrixWorld(true);
     return dist - d;
+  }
+  // 무릎 방향: 발끝 쪽으로 굽히되(pole = 발끝 + 조금 위), 골반 앞쪽에서 50도를 넘으면 엉덩이-발목 축 둘레로 되돌려 65도 안으로(부드럽게).
+  // 발끝이 골반과 크게 어긋나거나 다리가 비스듬할 때 무릎이 옆·뒤로 꺾여 보였다(사용자 2026-11-24: 다리가 반대로 돌아가는 경우가 꽤 자주). 팔꿈치 지키기(GUARD.pole)와 같은 방식
+  function kneePole(L, tgt, fwd) {
+    const pole = fwd.clone().add(V3(0, 0.25, 0));
+    if (!GUARD.knee) return pole;
+    const dir = tgt.clone().sub(wp(L.up)).normalize(), perp = v => v.clone().sub(dir.clone().multiplyScalar(v.dot(dir)));
+    const k = perp(pole), hq = new THREE.Quaternion(); B('hips').getWorldQuaternion(hq);
+    const pf = perp(V3(0, 0, 1).applyQuaternion(hq));
+    if (k.length() < 0.3 || pf.length() < 0.3) return pole;   // 다리가 발끝·골반 앞쪽과 거의 나란하면 그대로(IK가 대신 쓸 쪽을 고른다)
+    k.normalize(); pf.normalize();
+    const ang = Math.acos(clamp(k.dot(pf), -1, 1)), A0 = 50 * D, A1 = 65 * D;
+    if (ang <= A0) return pole;
+    const lim = A0 + (A1 - A0) * Math.tanh((ang - A0) / (A1 - A0)), ax = pf.clone().cross(k);
+    if (ax.length() < 1e-6) ax.copy(dir); else ax.normalize();
+    kneePole.n = (kneePole.n || 0) + 1;
+    return pf.applyAxisAngle(ax, lim);
   }
   // 손목: 아래팔을 축으로 도는 것(엎침·뒤침 ±90도)과 손목 꺾임(손바닥 쪽 75, 손등 쪽 70, 엄지 쪽 20, 새끼 쪽 30도)을 사람 범위 안으로 부드럽게 묶는다
   const soft = (x, lo, hi) => { const m = (lo + hi) / 2, r = (hi - lo) / 2, u = (x - m) / r, a = Math.abs(u), k = 0.7; return m + Math.sign(u) * (a < k ? a : k + (1 - k) * Math.tanh((a - k) / (1 - k))) * r; };
@@ -415,18 +432,30 @@ export function createRig(vrm) {
       if (drop > 1e-4) { B('hips').position.y -= drop; vrm.scene.updateMatrixWorld(true); }
     }
     for (const side of ['right', 'left']) {
-      const { yq, fwd, ax, pivAt, ankleAt } = LEG[side];
+      let { yq, fwd, ax } = LEG[side]; const { pivAt, ankleAt } = LEG[side];
       let { heel } = LEG[side];
       const L = LIMB[side + 'Leg'], H = wp(L.up), reach = (L.l1 + L.l2) * 0.94;
       const overL = ankleAt(heel).distanceTo(H) - reach;   // 다리가 넘치는 길이: 1cm마다 약 7도(앞꿈치에서 발목까지 길이로 잰 값), 시작은 부드럽게
       // 앞꿈치로 서지 않을 때(over.toeMax)는 뒤꿈치를 들어 메우지 않는다(골반을 낮춘 것으로 모자라면 다리를 다 펴고 발이 조금 뜬다)
       if (overL > 0 && !over?.toeMax) heel = Math.max(heel, Math.min(38, Math.max(0, heel) + 700 * overL * overL / (overL + 0.01)));   // 키로 많이 든 뒤꿈치(모션캡처)는 그대로
-      legMiss.push(ik(L, ankleAt(heel), fwd.clone().add(V3(0, 0.25, 0))));
+      legMiss.push(ik(L, ankleAt(heel), kneePole(L, ankleAt(heel), fwd)));
+      // 뜬 발은 정강이를 따라간다: 무릎이 가리키는 쪽에서 25도까지만 어긋나게 발목을 축으로 돈다(정강이 돌림 범위). 무릎 지키기(kneePole)로 무릎이 돌았는데
+      // 발은 그대로면 아래 날 기울이기가 뜬 발을 옆으로 눕혔다(2026-11-24). 디딘 발(들림 2cm 아래)은 그대로(앞꿈치 자리가 움직이면 미끄러진다)
+      if (GUARD.knee && LEG[side].lift > 0.02) {
+        const Hk = wp(L.up), dd = wp(side + 'Foot').sub(Hk).normalize(), kk = wp(L.mid).sub(Hk); kk.sub(dd.clone().multiplyScalar(kk.dot(dd))); kk.y = 0;
+        const kl = kk.length(), u = sstep(0.02, 0.06, LEG[side].lift) * sstep(0.02, 0.06, kl);
+        if (u > 0) {
+          const fy0 = Math.atan2(fwd.x, fwd.z) / D, dy = wrapD(Math.atan2(kk.x, kk.z) / D - fy0), ex_ = (dy - clamp(dy, -25, 25)) * u;
+          if (Math.abs(ex_) > 0.01) { yq = yawQ(fy0 + ex_); fwd = V3(0, 0, 1).applyQuaternion(yq); ax = V3(0, 1, 0).cross(fwd).normalize(); }
+        }
+      }
       // 정강이가 옆으로 18도보다 많이 기울면 그만큼 발도 날로 기운다(발목이 꺾이지 않게)
       const shin = wp(side + 'LowerLeg').sub(wp(side + 'Foot')).normalize(), out_ = ax.clone().negate();
-      const lean_ = Math.atan2(shin.dot(out_), shin.y), roll = lean_ - soft(lean_, -18 * D, 18 * D);
+      // 디딘 발(들림 3cm 아래)만 기울인다. 뜬 발은 위에서 정강이를 따라 돌았고, 달리며 뒤로 차 올려 발목이 무릎보다 높으면(정강이가 아래를 가리키면)
+      // 기울기 각이 180도 가까이 돼 발이 뒤집혔다(2026-11-24)
+      const lean_ = Math.atan2(shin.dot(out_), shin.y), roll = (lean_ - soft(lean_, -18 * D, 18 * D)) * (1 - sstep(0.03, 0.1, LEG[side].lift)) * sstep(0.1, 0.35, shin.y);
       // 날로 기울 때는 디딘 축(앞꿈치 또는 뒤꿈치)을 축으로(발목을 축으로 돌리면 디딘 앞꿈치가 옆으로 밀려 미끄러져 보인다, 사용자 2026-11-12)
-      if (Math.abs(roll) > 0.01) { const a0 = ankleAt(heel), pv = pivAt(heel), r0 = pv.clone().sub(a0); ik(L, pv.clone().sub(r0.applyAxisAngle(fwd, roll)), fwd.clone().add(V3(0, 0.25, 0))); }
+      if (Math.abs(roll) > 0.01) { const a0 = ankleAt(heel), pv = pivAt(heel), r0 = pv.clone().sub(a0); const tg2 = pv.clone().sub(r0.applyAxisAngle(fwd, roll)); ik(L, tg2, kneePole(L, tg2, fwd)); }
       setWorldQuat(B(side + 'Foot'), new THREE.Quaternion().setFromAxisAngle(fwd, roll).multiply(yq).multiply(new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), heel * D)));
       B(side + 'Toes')?.quaternion.setFromAxisAngle(V3(1, 0, 0), -Math.max(0, heel) * D);
     }
