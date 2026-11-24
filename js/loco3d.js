@@ -1,5 +1,6 @@
 // 3D 선수의 이동 엔진(모션 매칭, 사용자 2026-11-16: 트리플A 게임처럼 '어디로 갈지 정하고 → 자연스럽게 가고 → 도착하면 다음 동작').
-// 자료: 사람이 걷고·달리고·옆으로·뒤로 가고·서 있는 모션캡처(100STYLE Neutral, CC BY 4.0, tools/char3d/mocap/loco.py가 art/char3d/loco.bin으로 만든다).
+// 자료: 사람이 걷고·달리고·옆으로·뒤로 가고·서 있는 모션캡처(100STYLE Neutral, CC BY 4.0)와 실제 빠르기의 달리기·출발·멈춤·꺾기·옆걸음(CMU 모션캡처),
+//   tools/char3d/mocap/loco.py가 art/char3d/loco.bin으로 만든다.
 // 하는 일(트리플A의 방식을 따랐다):
 //   1) 갈 길(목표가 0.2·0.4·0.6초 뒤 있을 자리와 바라볼 쪽)을 받아, 앞으로 갈 길과 지금 발·몸 빠르기가 가장 비슷한 프레임을 자료에서 찾는다(0.1초마다).
 //   2) 그 프레임부터 이어 틀며, 몸(뿌리)은 동작 자체의 움직임(발이 밀어서 나오는 움직임)으로 간다. 동작이 바뀔 때는 앞 자세에서 이어지게(관성 이어붙이기).
@@ -225,12 +226,14 @@ export function stanceLeft(db, s, side) {
   return 18 / (FPS * s.r);
 }
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
-// 질의: 목표가 앞으로 갈 길(지금 뿌리 기준, 자료 단위). 빨리 틀고 보폭을 늘리는 만큼 자료 시간으로 바꿔 본다
+// 질의: 목표가 앞으로 갈 길(지금 뿌리 기준, 자료 단위). 지금 빨리 틀고 보폭을 늘린 것은 빼고 실제 시간·거리로 본다
+// (2026-11-24, 사용자: 뛰는 것을 다양한 애니메이션으로. 예전에는 지금 배율만큼 자료 시간으로 바꿔 봐서, 느린 동작을 빨리 틀고 있으면 목표도 느려 보여
+//  빠른 달리기 동작(CMU)이 있어도 계속 느린 동작을 골라 1.6배로 틀었다)
 function query(db, s, Q, q) {
-  let d = 0; const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw), k = 1 / (s.w * s.sc);
+  let d = 0; const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw), k = 1 / s.sc;
   const loc = (wx, wz) => { const dx = wx - s.x, dz = wz - s.z; return [(cy * dx - sy * dz) * k, (sy * dx + cy * dz) * k]; };
-  for (const fr of FUT) { const t = fr / FPS / s.r, p = loc(...Q.fut(t)); q[d++] = p[0]; q[d++] = p[1]; }
-  for (const fr of FUT) { const t = fr / FPS / s.r, a = Q.face(t) - s.yaw; q[d++] = Math.sin(a); q[d++] = Math.cos(a); }
+  for (const fr of FUT) { const t = fr / FPS, p = loc(...Q.fut(t)); q[d++] = p[0]; q[d++] = p[1]; }
+  for (const fr of FUT) { const t = fr / FPS, a = Q.face(t) - s.yaw; q[d++] = Math.sin(a); q[d++] = Math.cos(a); }
   // 지금 자세(발 자리·발 빠르기·몸 빠르기)는 지금 틀고 있는 프레임 값
   db.featPose(Math.round(s.f), q);
   // 막 넘겨받았을 때(스윙·서브 뒤)는 지금 틀고 있는 프레임이 없으니 실제 발 자리·몸 빠르기로 찾는다(모션 매칭의 '지금 자세'는 캐릭터의 실제 자세.

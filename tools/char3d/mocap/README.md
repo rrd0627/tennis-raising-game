@@ -51,4 +51,11 @@ node tools/char3d/jointcheck.mjs              # 관절 검사
 python -I tools/char3d/mocap/loco.py        # art/char3d/loco.bin
 ```
 
+**CMU 달리기 동작(2026-11-24, 사용자: 뛰는 것을 다양한 애니메이션으로).** 100STYLE은 달리기가 초속 2.2m까지라 실제 빠르기의 동작을 더한다.
+
+- 자료: CMU Graphics Lab Motion Capture Database(http://mocap.cs.cmu.edu), 모든 쓰임에 자유(원본을 그대로 팔지만 않으면). 인용: "The data used in this project was obtained from mocap.cs.cmu.edu. The database was created with funding from NSF EIA-0196217."
+- 동작 53개(`loco.py`의 `CMU_CLIPS`): 농구 78번(곧게·크게·좁게 도는 달리기, 수비 옆걸음 좌우·지그재그, 멈췄다 출발, 피벗, 페인트, 드라이브), 104번(달리기·조깅 출발·멈춤·지나가기), 141·143번(달리기, 달리다 멈추기, 서서 출발), 141번(옆으로 크로스·발 붙이며 옆걸음), 16번(급정지, 90도 꺾기). 104_01은 뿌리가 한 프레임에 튀어 뺐다.
+- ASF·AMC를 `raw/cmu/`에 받는다(커밋하지 않음): `http://mocap.cs.cmu.edu/subjects/<사람>/<사람>.asf`, `.../<사람>_<번호>.amc`. `asfamc.py`가 읽어 100STYLE 관절 이름으로 바꾸고(골반·가슴·발목 회전은 자리로 만든 틀), 다리 길이(뼈 길이 합)를 100STYLE에 맞춰 키운다(사람마다 키가 다르다). 120fps를 30fps로 줄이고, 0.8초보다 긴 구간만 쓴다.
+- 잰 값(확인 링크 60초): 초속 2.5m 넘게 움직일 때 CMU 동작을 쓴 몫 68%, 그때 빨리 틀기 가운데값 1.62 → 1.37배, 보폭 늘리기 1.36 → 1.12배.
+
 `loco.py`는 T자세 앞뒤 1초를 빼고 30fps로 줄인 뒤, 프레임마다 뿌리(골반을 바닥에 내려 편 자리와 골반·어깨 앞쪽을 편 방향), 뿌리 기준 골반·가슴·발(앞꿈치 자리, 발끝 방향, 들림, 뒤꿈치 각), 발 닿음(앞꿈치 높이 4.5cm 아래, 빠르기 초속 0.4m 아래)을 남긴다.

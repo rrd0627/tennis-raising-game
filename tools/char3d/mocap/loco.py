@@ -1,14 +1,22 @@
-# 이동 동작(100STYLE, CC BY 4.0) → 이동 엔진 자료(art/char3d/loco.bin)
+# 이동 동작(100STYLE CC BY 4.0 + CMU 모션캡처) → 이동 엔진 자료(art/char3d/loco.bin)
 # 걷기·달리기·옆으로·뒤로·서 있기·바뀌기를 초당 30프레임으로 줄이고, 프레임마다
 #   뿌리(골반을 바닥에 내리고 부드럽게 편 자리와 방향)의 움직임, 뿌리 기준 골반·가슴·발(앞꿈치 자리, 발끝 방향, 들림, 뒤꿈치 각), 발 닿음을 남긴다.
 # 게임(js/loco3d.js)은 이것으로 '앞으로 갈 길'이 가장 비슷한 프레임을 찾아 이어 튼다(모션 매칭).
-# 실행: python -I tools/char3d/mocap/loco.py   (BVH는 tools/char3d/mocap/raw/100style/에, 커밋하지 않는다)
+# 실행: python -I tools/char3d/mocap/loco.py   (BVH는 tools/char3d/mocap/raw/100style/에, CMU ASF·AMC는 raw/cmu/에, 커밋하지 않는다)
+# CMU(2026-11-24, 사용자: 뛰는 것을 다양한 애니메이션으로): 100STYLE은 좁은 곳에서 찍어 달리기가 초속 2.2m까지라, 실제 빠르기의 달리기·출발·멈춤·꺾기·
+#   농구 수비 옆걸음(테니스 옆 스텝과 비슷)·크로스 옆걸음을 더한다. 사람마다 키가 달라 다리 길이(엉덩이 관절~발목)를 100STYLE에 맞춰 키운다
 import sys, os, json, struct, numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import bvh
+import bvh, asfamc
 RAW = os.path.join(HERE, 'raw', '100style') + os.sep
 OUT = os.path.join(HERE, '..', '..', '..', 'art', 'char3d', 'loco.bin')
 FILES = ['ID', 'FW', 'FR', 'BW', 'BR', 'SW', 'SR', 'TR1']
+CMU = os.path.join(HERE, 'raw', 'cmu') + os.sep
+# CMU 동작(사람_번호): 농구(78: 달리기·곡선·수비 옆걸음·멈췄다 출발·지그재그·피벗·페인트), 출발·멈춤(104), 달리기·멈추기(141·143), 크로스·옆걸음(141), 급정지·90도 꺾기(16)
+CMU_CLIPS = ['78_06', '78_07', '78_08', '78_09', '78_10', '78_12', '78_15', '78_16', '78_20', '78_21', '78_24', '78_25', '78_26', '78_27', '78_28', '78_29', '78_30', '78_31', '78_32', '78_33', '78_34',
+             '104_04', '104_06', '104_08', '104_09', '104_10', '104_37', '104_48', '104_53', '104_54', '104_55', '104_56', '104_57',
+             '143_01', '143_02', '143_03', '143_42', '141_01', '141_02', '141_03', '141_34', '141_32', '141_33',
+             '16_08', '16_57', '16_41', '16_42', '16_43', '16_44', '16_51', '16_52', '16_53', '16_54']
 FPS = 30
 
 def gauss(x, sig, axis=0):
@@ -24,16 +32,28 @@ def rotY(a):
     c, s = np.cos(a), np.sin(a); z, o = np.zeros_like(a), np.ones_like(a)
     return np.stack([np.stack([c, z, s], -1), np.stack([z, o, z], -1), np.stack([-s, z, c], -1)], -2)
 
-segs = []
-for name in FILES:
-    J, D, dt = bvh.parse(RAW + 'Neutral_%s.bvh' % name)
-    pos, R = bvh.fk(J, D)
+def sources():
+    for name in FILES:
+        J, D, dt = bvh.parse(RAW + 'Neutral_%s.bvh' % name)
+        pos, R = bvh.fk(J, D)
+        yield name, {k: v / 100 for k, v in pos.items()}, R, dt, True
+    for t in CMU_CLIPS:
+        P, R, dt = asfamc.load(CMU + t.split('_')[0] + '.asf', CMU + t + '.amc')
+        yield 'cmu' + t, P, R, dt, False
+
+segs = []; LEG = None
+for name, P0, R0, dt, tpose in sources():
     step = int(round(1 / FPS / dt))
-    P = {k: v[::step] / 100 for k, v in pos.items()}; Rm = {k: v[::step] for k, v in R.items()}
+    P = {k: v[::step] for k, v in P0.items()}; Rm = {k: v[::step] for k, v in R0.items()}
     F = len(P['Hips'])
-    # T자세(팔을 옆으로 편 것)와 그 앞뒤 1초는 뺀다
+    # 다리 길이(엉덩이 관절~발목)를 100STYLE에 맞춘다(사람마다 키가 달라서). 자리만 키우고 회전은 그대로
+    # 뼈 길이의 합(엉덩이~무릎 + 무릎~발목)이라 무릎을 굽혀도 같다. 100STYLE은 그대로, CMU만 맞춘다
+    leg = float(np.median(np.linalg.norm(P['LeftHip'] - P['LeftKnee'], axis=1) + np.linalg.norm(P['LeftKnee'] - P['LeftAnkle'], axis=1)))
+    if LEG is None: LEG = leg
+    if not tpose: P = {k: v * (LEG / leg) for k, v in P.items()}
+    # T자세(팔을 옆으로 편 것)와 그 앞뒤 1초는 뺀다(100STYLE만. CMU 동작에는 T자세가 없다)
     ww = np.linalg.norm(P['LeftWrist'] - P['RightWrist'], axis=1)
-    bad = ww > 1.15
+    bad = (ww > 1.15) if tpose else np.zeros(F, bool)
     bad = np.convolve(bad.astype(float), np.ones(2 * FPS + 1), 'same') > 0
     ground = np.percentile(np.minimum(P['LeftToe'][:, 1], P['RightToe'][:, 1]), 1)
     # 뿌리: 골반을 바닥에 내려 0.1초로 편 자리, 방향은 골반·가슴의 앞쪽을 0.2초로 편 것
@@ -51,7 +71,7 @@ for name in FILES:
         if not good[i]: i += 1; continue
         j = i
         while j < F and good[j]: j += 1
-        if j - i > 2 * FPS:
+        if j - i > (2 * FPS if tpose else int(0.8 * FPS)):
             segs.append(dict(name=name, P={k: v[i:j] for k, v in P.items()}, R={k: v[i:j] for k, v in Rm.items()}, yaw=yaw[i:j], rp=rp[i:j], ground=ground))
         i = j
 
@@ -108,7 +128,7 @@ print('N', N, 'hipH %.3f' % hipH, 'root speed p50 %.2f p90 %.2f max %.2f' % (np.
 print('contacts r %.2f l %.2f' % (A[:, -2].mean(), A[:, -1].mean()), 'lift p90 %.2f' % np.percentile(A[:, CH.index('rfl')], 90), 'heel p90 %.1f' % np.percentile(A[:, CH.index('rhe')], 90))
 # 묶음: 머리(JSON) + Float32
 meta = dict(fps=FPS, channels=CH, n=N, segs=seg_start, hipH=round(hipH, 4), names=[s['name'] for s in segs],
-            src='100STYLE (Neutral) https://www.ianxmason.com/100style CC BY 4.0')
+            src='100STYLE (Neutral) https://www.ianxmason.com/100style CC BY 4.0; CMU Graphics Lab Motion Capture Database http://mocap.cs.cmu.edu')
 mb = json.dumps(meta).encode('utf-8')
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 with open(OUT, 'wb') as f:
