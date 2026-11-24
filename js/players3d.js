@@ -640,9 +640,10 @@ export class Players3D {
     // 코트 위로
     vrm.scene.position.set(rx, jy, rz); vrm.scene.rotation.set(0, c.yaw, 0); vrm.scene.scale.setScalar(K);
     vrm.scene.updateMatrixWorld(true);
-    // 발밑 고리·감정 표시 자리: 골반을 땅에 내린 자리(0.08초로 편 것). 뿌리(c.rp)를 따르면 동작에서 이동 엔진으로 넘어갈 때 뿌리를 골반 밑으로 옮기는 순간(reRoot)
-    // 고리가 한 번에 33~63cm 옮겨 순간이동처럼 보였다(사용자 2026-11-24: 서브 이후에 순간이동하는 것 같다. 서브 뒤 0.65초에 63cm)
-    { const hw = R.B('hips').getWorldPosition(V3()), k = tele || !c.gp ? 1 : Math.min(1, pdt / 0.08); c.gp = c.gp ? [c.gp[0] + (hw.x - c.gp[0]) * k, c.gp[1] + (hw.z - c.gp[1]) * k] : [hw.x, hw.z]; }
+    // 발밑 고리·감정 표시 자리: 골반을 땅에 내린 자리. 뿌리(c.rp)를 따르면 동작에서 이동 엔진으로 넘어갈 때 뿌리를 골반 밑으로 옮기는 순간(reRoot)
+    // 고리가 한 번에 33~63cm 옮겨 순간이동처럼 보였다(사용자 2026-11-24: 서브 이후에 순간이동하는 것 같다. 서브 뒤 0.65초에 63cm).
+    // 펴지 않는다(0.08초로 폈더니 초속 4m로 달릴 때 고리가 20~45cm 뒤에 남았다, 사용자 같은 날: 앞으로 달려가는 것도 이상해진다)
+    { const hw = R.B('hips').getWorldPosition(V3()); c.gp = [hw.x, hw.z]; }
     vrm.update(dt);
     // 서브 토스용: 왼손(공을 쥔 곳)의 세계 자리
     if (id === 'sv') {
