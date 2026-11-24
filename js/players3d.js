@@ -668,25 +668,32 @@ export class Players3D {
     // 뒷발이 끌려가며 다리가 옆으로 크게 벌어졌다. 지금은 앞으로 0.35초 동안 실제로 갈 빠르기로 정한다: 초속 1.0m 아래는 옆걸음, 1.9m에서 다 튼다. 칠 때가 다가오면(0.45~0.22초 전, 스윙이 시작되기 직전) 다시 선다
     {
       // 몸이 실제로 가야 할 길(지금 몸 자리 → 0.35초 뒤 목표). 그림 선수의 움직임만 보면 몸이 뒤처졌다 따라잡는 동안(초속 4~7m)을 못 봐 옆걸음으로 따라잡았다(2026-11-24)
-      const gx = tgx - p.x, gz = tgz - p.z, q0 = spriteAt(p, 0), q1 = spriteAt(p, 0.35), vx = (q1[0] + gx - B.x) / 0.35, vz = (q1[1] + gz - B.z) / 0.35, vs = Math.hypot(vx, vz);
+      // 빠르기는 그림 선수가 실제로 가는 빠르기 위주로(뒤처진 만큼만으로 돌아 달리면 천천히 갈 때도 돌았다): 몸이 따라잡을 몫은 지금 몸 빠르기 + 초속 0.8m까지만 보탠다
+      const gx = tgx - p.x, gz = tgz - p.z, q0 = spriteAt(p, 0), q1 = spriteAt(p, 0.35), vx = (q1[0] + gx - B.x) / 0.35, vz = (q1[1] + gz - B.z) / 0.35;
+      const vs = Math.max(Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) / 0.35, Math.min(Math.hypot(vx, vz), Math.hypot(B.vx, B.vz) + 0.8));
       let tw = 0;
       if (vs > 0.3) {
         // 멀리(1초 뒤 1.8~3m 넘게) 빨리(초속 1.6~2.4m 넘게) 갈 때는 가는 쪽으로 150도까지 돌아 달린다(뒤로 가는 로브도 돌아서 달려간다).
         // 짧게는 75도까지(옆걸음·크로스 스텝). 예전에는 뒤로 갈 때 늘 오른쪽으로 75도만 돌아 가는 쪽과 몸이 90도로 어긋난 옆걸음으로 3~6m를 갔다
         // (사용자 2026-11-24: 달리는 상황이면 달리기 모션으로 바뀌어야 하는데, 멀리 가는데도 계속 스텝을 유지하면서 달리려고 한다)
         const q2 = spriteAt(p, 1.0), far = Math.hypot(q2[0] + gx - B.x, q2[1] + gz - B.z);
-        // 초속 2.4~3.2m 넘게는 거리와 상관없이 달린다(그 빠르기의 옆걸음은 사람이 못 한다)
-        const maxW = (75 + 75 * Math.max(sstep(1.8, 3.0, far) * sstep(1.6, 2.4, vs), sstep(2.4, 3.2, vs))) * D;
-        const rel = wr(Math.atan2(vx, vz) - base);
-        const off = Math.sign(rel) * Math.min(Math.abs(rel), maxW) * sstep(30 * D, 55 * D, Math.abs(rel));
+        // 초속 2.4~3.2m 넘게는 거리와 상관없이 달린다(그 빠르기의 옆걸음은 사람이 못 한다). 옆·옆 뒤(100도까지)로 돌아 달린다
+        const maxW = (75 + 25 * Math.max(sstep(1.8, 3.0, far) * sstep(1.6, 2.4, vs), sstep(2.4, 3.2, vs))) * D;
+        const rel = wr(Math.atan2(vx, vz) - base), ar = Math.abs(rel);
+        // 뒤로(125도 넘게) 갈 때는 네트를 본 채 뒷걸음(백스텝)으로: 가는 쪽이 몸 바로 뒤가 되게 35도까지만 돈다
+        // (사용자 2026-11-24: 뒤로 갈 때도 백스텝으로 가는 게 아니라 뒤로 달려간다. 바로 앞에 150도까지 돌아 달리게 했던 것을 바꿨다). 100~125도는 사이(옆 뒤로 옆걸음)
+        const side = Math.sign(rel) * Math.min(ar, maxW) * sstep(30 * D, 55 * D, ar), back = clamp(rel - Math.sign(rel) * Math.PI, -35 * D, 35 * D);
+        const off = side + (back - side) * sstep(100 * D, 125 * D, ar);
         // 칠 때가 다가오면 다시 선다(달리며 치는 공은 0.3~0.12초 전, 그 밖은 0.45~0.22초 전). 친 뒤에는 곧바로 다시 가는 쪽으로(예전에는 스윙이 끝날 때까지 네트를 본 채 옆걸음으로 갔다)
         // 아직 정하기 전(임팩트 0.3초 전)이라도 초속 1.8m 넘게 달리고 있으면 달리며 치는 공이 된다(RUN_HIT): 그 시간표로
         const runHit = sw?.runLegs ?? (sw?.runLegs == null && Math.hypot(B.vx, B.vz) > RUN_HIT[0]);
         const hitK = toIn < 0 ? 1 : runHit ? sstep(0.12, 0.3, toIn) : sstep(0.22, 0.45, toIn);
-        tw = off * sstep(1.0, 1.9, vs) * hitK;
+        // 멀리(1초 뒤 1.5~2.5m) 갈 때는 첫발부터 돈다(테니스의 첫발: 엉덩이를 열고 크로스 스텝으로 나간다). 빠르기가 붙을 때까지 기다리면
+        // 처음 0.2~0.3초를 옆으로 넓게 디디는 옆걸음으로 나가 다리가 스텝하듯 벌어졌다(사용자 2026-11-24, 두 발 옆으로 85cm 넘게 벌어진 프레임 대부분이 움직이기 시작할 때)
+        tw = off * Math.max(sstep(1.0, 1.9, vs), sstep(1.5, 2.5, far) * sstep(0.2, 0.6, vs)) * hitK;
       }
       // 가까운 쪽으로 돈다(가는 쪽이 오른쪽 뒤에서 왼쪽 뒤로 바뀌면 네트 쪽을 거쳐 235도 돌지 않고 뒤쪽을 거쳐 125도). 달리며 칠 때는 임팩트 전에 다 선다
-      c.warp = wr((c.warp || 0) + wr(tw - (c.warp || 0)) * Math.min(1, pdt * (sw?.runLegs ? 16 : 7)));
+      c.warp = wr((c.warp || 0) + wr(tw - (c.warp || 0)) * Math.min(1, pdt * (sw?.runLegs ? 16 : Math.abs(tw) > Math.abs(c.warp || 0) + 0.05 ? 12 : 7)));   // 돌아 나갈 때는 빨리(초당 12), 다시 설 때는 7
       c.faceBase = face; face += c.warp;
     }
     // 갈 길: 그림 선수가 앞으로 있을 자리 + 옮긴 만큼. 칠 공이 있으면 공에 맞추려고 옮길 만큼도 임팩트 0.22초 전까지 다 옮겨 가는 것으로 본다
